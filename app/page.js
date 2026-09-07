@@ -16,6 +16,8 @@ const CATEGORIES = [
   { name: "Other", color: "#6B6558" },
 ];
 
+const MOVIE_CATEGORY = { name: "Movies", color: "#7A3E56" };
+
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 function fmt(n) {
@@ -30,6 +32,7 @@ function todayISO() {
 
 export default function Page() {
   const [expenses, setExpenses] = useState([]);
+  const [movies, setMovies] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [amount, setAmount] = useState("");
@@ -42,11 +45,11 @@ export default function Page() {
 
   async function load() {
     try {
-      const res = await fetch("/api/expenses");
-      if (!res.ok) throw new Error("Request failed");
-      const data = await res.json();
+      const [expRes, movRes] = await Promise.all([fetch("/api/expenses"), fetch("/api/movies")]);
+      if (!expRes.ok) throw new Error("Request failed");
+      const expData = await expRes.json();
       setExpenses(
-        data.expenses.map((x) => ({
+        expData.expenses.map((x) => ({
           id: x.id,
           amount: parseFloat(x.amount),
           category: x.category,
@@ -54,6 +57,18 @@ export default function Page() {
           date: x.expense_date.slice(0, 10),
         }))
       );
+      if (movRes.ok) {
+        const movData = await movRes.json();
+        setMovies(
+          movData.movies.map((m) => ({
+            id: m.id,
+            title: m.title,
+            date: m.watched_date.slice(0, 10),
+            ticketPrice: parseFloat(m.ticket_price),
+            canteenPrice: parseFloat(m.canteen_price),
+          }))
+        );
+      }
       setLoadError("");
     } catch (err) {
       setLoadError("Couldn't load your expenses. Check the database connection and refresh.");
@@ -66,6 +81,35 @@ export default function Page() {
     load();
   }, []);
 
+  // Turn each movie's ticket + canteen spend into transaction-shaped entries
+  // so they flow into the same total, category breakdown, and list as expenses.
+  const movieItems = useMemo(() => {
+    const items = [];
+    for (const m of movies) {
+      if (m.ticketPrice > 0) {
+        items.push({
+          id: `movie-${m.id}-ticket`,
+          amount: m.ticketPrice,
+          category: MOVIE_CATEGORY.name,
+          note: `${m.title} (ticket)`,
+          date: m.date,
+        });
+      }
+      if (m.canteenPrice > 0) {
+        items.push({
+          id: `movie-${m.id}-canteen`,
+          amount: m.canteenPrice,
+          category: MOVIE_CATEGORY.name,
+          note: `${m.title} (canteen)`,
+          date: m.date,
+        });
+      }
+    }
+    return items;
+  }, [movies]);
+
+  const allItems = useMemo(() => [...expenses, ...movieItems], [expenses, movieItems]);
+
   async function addExpense(e) {
     e.preventDefault();
     const amt = parseFloat(amount);
@@ -75,6 +119,10 @@ export default function Page() {
     }
     if (!date) {
       setFormError("Pick a date");
+      return;
+    }
+    if (category === "Other" && !note.trim()) {
+      setFormError("Add a reason for this Other expense");
       return;
     }
     setFormError("");
@@ -114,45 +162,47 @@ export default function Page() {
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
 
-  const monthExpenses = useMemo(() => {
-    return expenses.filter((x) => {
+  const monthItems = useMemo(() => {
+    return allItems.filter((x) => {
       const d = new Date(x.date + "T00:00:00");
       return d.getFullYear() === year && d.getMonth() === month;
     });
-  }, [expenses, year, month]);
+  }, [allItems, year, month]);
 
-  const total = monthExpenses.reduce((s, x) => s + x.amount, 0);
+  const total = monthItems.reduce((s, x) => s + x.amount, 0);
 
   const lastMonthDate = new Date(year, month - 1, 1);
   const lastMonthTotal = useMemo(() => {
-    return expenses
+    return allItems
       .filter((x) => {
         const d = new Date(x.date + "T00:00:00");
         return d.getFullYear() === lastMonthDate.getFullYear() && d.getMonth() === lastMonthDate.getMonth();
       })
       .reduce((s, x) => s + x.amount, 0);
-  }, [expenses, year, month]);
+  }, [allItems, year, month]);
 
   const diff = lastMonthTotal > 0 ? ((total - lastMonthTotal) / lastMonthTotal) * 100 : null;
 
   const byCategory = useMemo(() => {
     const map = {};
     for (const c of CATEGORIES) map[c.name] = 0;
-    for (const x of monthExpenses) map[x.category] = (map[x.category] || 0) + x.amount;
-    return CATEGORIES.map((c) => ({ name: c.name, value: map[c.name], color: c.color }))
+    map[MOVIE_CATEGORY.name] = 0;
+    for (const x of monthItems) map[x.category] = (map[x.category] || 0) + x.amount;
+    return [...CATEGORIES, MOVIE_CATEGORY]
+      .map((c) => ({ name: c.name, value: map[c.name], color: c.color }))
       .filter((c) => c.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [monthExpenses]);
+  }, [monthItems]);
 
   const grouped = useMemo(() => {
-    const sorted = [...monthExpenses].sort((a, b) => (a.date < b.date ? 1 : -1));
+    const sorted = [...monthItems].sort((a, b) => (a.date < b.date ? 1 : -1));
     const map = new Map();
     for (const x of sorted) {
       if (!map.has(x.date)) map.set(x.date, []);
       map.get(x.date).push(x);
     }
     return Array.from(map.entries());
-  }, [monthExpenses]);
+  }, [monthItems]);
 
   function formatDateLabel(iso) {
     const d = new Date(iso + "T00:00:00");
@@ -161,6 +211,7 @@ export default function Page() {
   }
 
   function catColor(name) {
+    if (name === MOVIE_CATEGORY.name) return MOVIE_CATEGORY.color;
     return CATEGORIES.find((c) => c.name === name)?.color || "#6B6558";
   }
 
@@ -221,6 +272,7 @@ export default function Page() {
           <div className="lora tabnum" style={{ fontSize: 44, fontWeight: 600, lineHeight: 1 }}>
             {fmt(total)}
           </div>
+          <div style={{ fontSize: 11, color: "#8a8477", marginTop: 4 }}>Includes movie tickets and canteen spend</div>
         </div>
         {diff !== null && (
           <div style={{ fontSize: 13, color: diff > 0 ? "#A34A38" : "#2F6F5E", paddingBottom: 8 }}>
@@ -253,10 +305,11 @@ export default function Page() {
             </select>
             <input
               type="text"
-              placeholder="Note (optional)"
+              placeholder={category === "Other" ? "Reason (required)" : "Note (optional)"}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={80}
+              style={category === "Other" ? { borderColor: "#A34A38" } : undefined}
             />
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} max={todayISO()} />
             {formError && <div style={{ fontSize: 12, color: "#A34A38" }}>{formError}</div>}
@@ -334,31 +387,36 @@ export default function Page() {
                     <span className="tabnum">{fmt(items.reduce((s, x) => s + x.amount, 0))}</span>
                   </div>
                   <div style={{ borderTop: "1px solid #EAE5D9" }}>
-                    {items.map((x) => (
-                      <div key={x.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EAE5D9", gap: 12 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: catColor(x.category), flexShrink: 0 }} />
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {x.note || x.category}
+                    {items.map((x) => {
+                      const isMovie = x.category === MOVIE_CATEGORY.name;
+                      return (
+                        <div key={x.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EAE5D9", gap: 12 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: catColor(x.category), flexShrink: 0 }} />
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {x.note || x.category}
+                              </div>
+                              {x.note && <div style={{ fontSize: 12, color: "#8a8477" }}>{x.category}</div>}
                             </div>
-                            {x.note && <div style={{ fontSize: 12, color: "#8a8477" }}>{x.category}</div>}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                            <span className="tabnum" style={{ fontSize: 14, fontWeight: 500 }}>{fmt(x.amount)}</span>
+                            {!isMovie && (
+                              <button
+                                onClick={() => removeExpense(x.id)}
+                                aria-label="Delete"
+                                style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }}
+                                onMouseEnter={(e) => (e.currentTarget.style.color = "#A34A38")}
+                                onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </div>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                          <span className="tabnum" style={{ fontSize: 14, fontWeight: 500 }}>{fmt(x.amount)}</span>
-                          <button
-                            onClick={() => removeExpense(x.id)}
-                            aria-label="Delete"
-                            style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }}
-                            onMouseEnter={(e) => (e.currentTarget.style.color = "#A34A38")}
-                            onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
