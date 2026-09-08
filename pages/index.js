@@ -28,7 +28,7 @@ function todayISO() {
   return new Date(d - off).toISOString().slice(0, 10);
 }
 
-const emptyExpenseForm = { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), affectsBalance: true };
+const emptyExpenseForm = { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), time: "", affectsBalance: true };
 const emptyTopupForm = { amount: "", note: "", date: todayISO(), mode: "add" };
 
 export default function Page() {
@@ -68,6 +68,7 @@ export default function Page() {
           category: x.category,
           note: x.note || "",
           date: x.expense_date.slice(0, 10),
+          time: x.expense_time ? x.expense_time.slice(0, 5) : "",
           affectsBalance: x.affects_balance !== false,
         }))
       );
@@ -169,7 +170,7 @@ export default function Page() {
 
   function startEditExpense(x) {
     setEditingExpenseId(x.id);
-    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, affectsBalance: x.affectsBalance !== false });
+    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false });
     setFormError("");
   }
 
@@ -208,6 +209,7 @@ export default function Page() {
           category: expenseForm.category,
           note: expenseForm.note.trim(),
           date: expenseForm.date,
+          time: expenseForm.time,
           affectsBalance: expenseForm.affectsBalance,
         }),
       });
@@ -551,12 +553,13 @@ export default function Page() {
               maxLength={80}
               style={expenseForm.category === "Other" ? { borderColor: "#A34A38" } : undefined}
             />
-            <div>
-              <input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} />
-              {expenseForm.date > todayISO() && (
-                <div style={{ fontSize: 11, color: "#A3763F", marginTop: 4 }}>Future date — won't reduce your balance until this day arrives</div>
-              )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} style={{ flex: 1 }} />
+              <input type="time" value={expenseForm.time} onChange={(e) => setExpenseForm({ ...expenseForm, time: e.target.value })} style={{ flex: 1 }} />
             </div>
+            {expenseForm.date > todayISO() && (
+              <div style={{ fontSize: 11, color: "#A3763F", marginTop: -6 }}>Future date — won't reduce your balance until this day arrives</div>
+            )}
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#5f5a4f", cursor: "pointer" }}>
               <input type="checkbox" checked={expenseForm.affectsBalance} onChange={(e) => setExpenseForm({ ...expenseForm, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
               Deduct from balance
@@ -636,6 +639,7 @@ export default function Page() {
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {x.note || x.category}
+                                {x.time && <span style={{ fontSize: 10, color: "#8a8477" }}> · {x.time}</span>}
                                 {x.affectsBalance === false && <span style={{ fontSize: 10, color: "#8a8477" }}> · not deducted</span>}
                               </div>
                               {x.note && <div style={{ fontSize: 12, color: "#8a8477" }}>{x.category}</div>}
