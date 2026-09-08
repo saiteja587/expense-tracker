@@ -25,7 +25,7 @@ function takeInfo(value) {
 }
 
 const emptyForm = {
-  title: "", date: todayISO(), ticketPrice: "", canteenPrice: "", companions: "",
+  title: "", date: todayISO(), time: "", ticketPrice: "", canteenPrice: "", companions: "",
   myTake: "liked", publicTake: "liked", note: "", affectsBalance: true, quantity: 1,
 };
 
@@ -76,6 +76,7 @@ export default function MoviesPage() {
           id: m.id,
           title: m.title,
           date: m.watched_date.slice(0, 10),
+          time: m.watched_time ? m.watched_time.slice(0, 5) : "",
           ticketPrice: parseFloat(m.ticket_price),
           canteenPrice: parseFloat(m.canteen_price),
           companions: m.companions || "",
@@ -103,6 +104,7 @@ export default function MoviesPage() {
     setForm({
       title: m.title,
       date: m.date,
+      time: m.time || "",
       ticketPrice: String(m.ticketPrice),
       canteenPrice: String(m.canteenPrice),
       companions: m.companions,
@@ -149,6 +151,7 @@ export default function MoviesPage() {
           ...(isEdit ? { id: editingId } : {}),
           title: form.title.trim(),
           date: form.date,
+          time: form.time,
           ticketPrice: tp,
           canteenPrice: cp,
           companions: form.companions.trim(),
@@ -289,7 +292,10 @@ export default function MoviesPage() {
           </div>
           <form onSubmit={submitMovie} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <input type="text" placeholder="Movie title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} />
-            <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} max={todayISO()} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} max={todayISO()} style={{ flex: 1 }} />
+              <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} style={{ flex: 1 }} />
+            </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <input type="number" inputMode="decimal" placeholder="Ticket (₹)" value={form.ticketPrice} onChange={(e) => setForm({ ...form, ticketPrice: e.target.value })} step="0.01" min="0" />
               <input type="number" inputMode="decimal" placeholder="Canteen (₹)" value={form.canteenPrice} onChange={(e) => setForm({ ...form, canteenPrice: e.target.value })} step="0.01" min="0" />
@@ -372,6 +378,7 @@ export default function MoviesPage() {
                         </div>
                         <div style={{ fontSize: 12, color: "#8a8477", marginTop: 2 }}>
                           {new Date(m.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                          {m.time && <> · {m.time}</>}
                           {m.companions && <> · with {m.companions}</>}
                           {m.affectsBalance === false && <> · not deducted from balance</>}
                         </div>
