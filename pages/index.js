@@ -428,8 +428,11 @@ export default function Page() {
           <a href="/budget" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             Money rules →
           </a>
-          <a href="/sugar-challenge" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+          <a href="/sugar-challenge" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             No-sugar challenge →
+          </a>
+          <a href="/pause" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+            Pause →
           </a>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
