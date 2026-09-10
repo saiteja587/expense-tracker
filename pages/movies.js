@@ -65,12 +65,18 @@ export default function MoviesPage() {
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [viewDate, setViewDate] = useState(new Date());
+  const [movieCountGuideline, setMovieCountGuideline] = useState(null);
 
   async function load() {
     try {
-      const res = await fetch("/api/data?type=movies");
+      const [res, ruleRes] = await Promise.all([fetch("/api/data?type=movies"), fetch("/api/data?type=budget")]);
       if (!res.ok) throw new Error("Request failed");
       const data = await res.json();
+      if (ruleRes.ok) {
+        const ruleData = await ruleRes.json();
+        const rule = ruleData.rules.find((r) => r.rule_type === "movie_count");
+        setMovieCountGuideline(rule ? parseFloat(rule.amount) : null);
+      }
       setMovies(
         data.movies.map((m) => ({
           id: m.id,
@@ -253,6 +259,12 @@ export default function MoviesPage() {
           </button>
         </div>
       </div>
+
+      {movieCountGuideline && monthMovies.length > movieCountGuideline && (
+        <div style={{ fontSize: 13, color: "#C98A2C", marginBottom: 16, background: "#F7EEDD", borderRadius: 4, padding: "8px 12px" }}>
+          You've watched {monthMovies.length} this month — {monthMovies.length - movieCountGuideline} over your usual {movieCountGuideline}. Just a heads-up, not a stop sign.
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 40, marginBottom: 40, flexWrap: "wrap" }}>
         <div>
