@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert } from "lucide-react";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -36,6 +36,8 @@ export default function Page() {
   const [movies, setMovies] = useState([]);
   const [topups, setTopups] = useState([]);
   const [budgetRules, setBudgetRules] = useState([]);
+  const [challengeMeta, setChallengeMeta] = useState(null);
+  const [challengeDays, setChallengeDays] = useState({});
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [viewDate, setViewDate] = useState(new Date());
@@ -53,11 +55,12 @@ export default function Page() {
 
   async function load() {
     try {
-      const [expRes, movRes, balRes, ruleRes] = await Promise.all([
+      const [expRes, movRes, balRes, ruleRes, chalRes] = await Promise.all([
         fetch("/api/data?type=expenses"),
         fetch("/api/data?type=movies"),
         fetch("/api/data?type=balance"),
         fetch("/api/data?type=budget"),
+        fetch("/api/data?type=challenge"),
       ]);
       if (!expRes.ok) throw new Error("Request failed");
       const expData = await expRes.json();
@@ -102,6 +105,13 @@ export default function Page() {
       if (ruleRes.ok) {
         const ruleData = await ruleRes.json();
         setBudgetRules(ruleData.rules.map((r) => ({ id: r.id, ruleType: r.rule_type, category: r.category, amount: parseFloat(r.amount) })));
+      }
+      if (chalRes.ok) {
+        const chalData = await chalRes.json();
+        setChallengeMeta(chalData.meta);
+        const map = {};
+        for (const d of chalData.days || []) map[d.day_date.slice(0, 10)] = d.completed;
+        setChallengeDays(map);
       }
       setLoadError("");
     } catch (err) {
@@ -336,6 +346,10 @@ export default function Page() {
   }, [monthItems]);
 
   const overallRule = budgetRules.find((r) => r.ruleType === "overall");
+  const lowBalanceRule = budgetRules.find((r) => r.ruleType === "low_balance");
+  const balanceStatus = balanceCalc.balance < 0 ? "negative" : (lowBalanceRule && balanceCalc.balance < lowBalanceRule.amount) ? "low" : "ok";
+  const balanceColor = balanceStatus === "negative" ? "#A34A38" : balanceStatus === "low" ? "#C98A2C" : "#241F1A";
+  const balancePanelBg = balanceStatus === "negative" ? "#FAECE7" : balanceStatus === "low" ? "#F7EEDD" : "#F1ECDF";
   const categoryRuleMap = useMemo(() => {
     const map = {};
     for (const r of budgetRules) if (r.ruleType === "category") map[r.category] = r.amount;
@@ -343,6 +357,24 @@ export default function Page() {
   }, [budgetRules]);
   const categoryBreaches = byCategory.filter((c) => categoryRuleMap[c.name] && c.value > categoryRuleMap[c.name]);
   const overallBreach = overallRule && spentSoFar > overallRule.amount;
+
+  const currentStreak = useMemo(() => {
+    if (!challengeMeta) return null;
+    let streak = 0;
+    const start = challengeMeta.start_date.slice(0, 10);
+    for (let i = 0; i < challengeMeta.length_days; i++) {
+      const d = new Date(start + "T00:00:00");
+      d.setDate(d.getDate() + i);
+      const off = d.getTimezoneOffset() * 60000;
+      const iso = new Date(d - off).toISOString().slice(0, 10);
+      if (iso > today) break;
+      if (challengeDays[iso] === true) streak++;
+      else if (iso in challengeDays) streak = 0;
+    }
+    return streak;
+  }, [challengeMeta, challengeDays, today]);
+
+  const moviesThisMonth = useMemo(() => movies.filter((m) => m.date.slice(0, 7) === `${year}-${String(month + 1).padStart(2, "0")}`).length, [movies, year, month]);
 
   const grouped = useMemo(() => {
     const sorted = [...monthItems].sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -413,14 +445,33 @@ export default function Page() {
         </div>
       </div>
 
+      {/* Daily snapshot: money, movies, diet in one glance */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
+        <a href="/sugar-challenge" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
+          <Flame size={13} color={currentStreak > 0 ? "#C98A2C" : "#C4BDAC"} />
+          {challengeMeta ? `${currentStreak}-day streak` : "No challenge running"}
+        </a>
+        <a href="/movies" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
+          <Clapperboard size={13} color="#7A3E56" />
+          {moviesThisMonth} movie{moviesThisMonth !== 1 ? "s" : ""} this month
+        </a>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
+          {overallBreach || categoryBreaches.length > 0 ? <ShieldAlert size={13} color="#A34A38" /> : <ShieldCheck size={13} color="#2F6F5E" />}
+          {overallBreach || categoryBreaches.length > 0 ? "Over a budget rule" : "On budget"}
+        </span>
+      </div>
+
       {/* Balance */}
-      <div style={{ background: "#F1ECDF", borderRadius: 6, padding: "18px 20px", marginBottom: 28 }}>
+      <div style={{ background: balancePanelBg, borderRadius: 6, padding: "18px 20px", marginBottom: 28 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>Balance available</div>
-            <div className="lora tabnum" style={{ fontSize: "clamp(24px, 7vw, 32px)", fontWeight: 600, lineHeight: 1, color: balanceCalc.balance < 0 ? "#A34A38" : "#241F1A" }}>
+            <div className="lora tabnum" style={{ fontSize: "clamp(24px, 7vw, 32px)", fontWeight: 600, lineHeight: 1, color: balanceColor }}>
               {fmt(balanceCalc.balance)}
             </div>
+            {balanceStatus === "low" && (
+              <div style={{ fontSize: 11, color: "#C98A2C", marginTop: 4 }}>Below your {fmt(lowBalanceRule.amount)} alert threshold</div>
+            )}
             <div style={{ fontSize: 11, color: "#8a8477", marginTop: 4 }}>
               {balanceCalc.addedLabel} · {balanceCalc.spentLabel} deducted
             </div>
