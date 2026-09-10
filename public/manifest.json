@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "Expense Ledger",
   "short_name": "Ledger",
   "description": "Personal expense, movie, budget, and habit tracker",
