@@ -29,6 +29,7 @@ export default function SugarChallengePage() {
 
   const [selectedDay, setSelectedDay] = useState(null);
   const [noteDraft, setNoteDraft] = useState("");
+  const [pendingSlip, setPendingSlip] = useState(false);
 
   async function load() {
     try {
@@ -117,9 +118,15 @@ export default function SugarChallengePage() {
   }
 
   async function saveNote(date) {
-    const completed = days[date]?.completed;
+    const completed = pendingSlip ? false : days[date]?.completed;
     if (completed === undefined) return;
+    if (completed === false && !noteDraft.trim()) {
+      setLoadError("Add a quick reason before logging a slip — it's worth knowing your own pattern.");
+      return;
+    }
+    setLoadError("");
     setDays((prev) => ({ ...prev, [date]: { completed, note: noteDraft } }));
+    setPendingSlip(false);
     try {
       const res = await fetch("/api/data", {
         method: "POST",
@@ -273,7 +280,7 @@ export default function SugarChallengePage() {
                 <button onClick={() => markDay(today, true)} style={{ background: todayEntry.completed === true ? "#2F6F5E" : "#EAE5D9", color: todayEntry.completed === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                   <Check size={14} /> Sugar-free
                 </button>
-                <button onClick={() => markDay(today, false)} style={{ background: todayEntry.completed === false ? "#A34A38" : "#EAE5D9", color: todayEntry.completed === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => { setSelectedDay(today); setNoteDraft(""); setPendingSlip(true); }} style={{ background: todayEntry.completed === false ? "#A34A38" : "#EAE5D9", color: todayEntry.completed === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                   <X size={14} /> I slipped
                 </button>
               </div>
@@ -311,12 +318,12 @@ export default function SugarChallengePage() {
               </div>
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
                 <button onClick={() => markDay(selectedDay, true)} style={{ background: days[selectedDay]?.completed === true ? "#2F6F5E" : "#EAE5D9", color: days[selectedDay]?.completed === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Sugar-free</button>
-                <button onClick={() => markDay(selectedDay, false)} style={{ background: days[selectedDay]?.completed === false ? "#A34A38" : "#EAE5D9", color: days[selectedDay]?.completed === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Slipped</button>
+                <button onClick={() => setPendingSlip(true)} style={{ background: (days[selectedDay]?.completed === false || pendingSlip) ? "#A34A38" : "#EAE5D9", color: (days[selectedDay]?.completed === false || pendingSlip) ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Slipped</button>
               </div>
-              <input type="text" placeholder="Note (optional — what happened, cravings, etc.)" value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={140} style={{ marginBottom: 10 }} />
+              <input type="text" placeholder={pendingSlip ? "What happened? (required)" : "Note (optional)"} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={140} style={{ marginBottom: 10, borderColor: pendingSlip ? "#A34A38" : undefined }} />
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => saveNote(selectedDay)} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Save note</button>
-                <button onClick={() => setSelectedDay(null)} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Close</button>
+                <button onClick={() => { setSelectedDay(null); setPendingSlip(false); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Close</button>
               </div>
             </div>
           )}
