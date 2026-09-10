@@ -15,7 +15,8 @@ export default async function handler(req, res) {
       if (type === "challenge") {
         const meta = await db.getChallengeMeta();
         const days = await db.listChallengeDays();
-        return res.status(200).json({ meta, days });
+        const history = await db.listChallengeHistory();
+        return res.status(200).json({ meta, days, history });
       }
       return err(res, "Unknown type");
     }
@@ -78,6 +79,17 @@ export default async function handler(req, res) {
         if (typeof body.completed !== "boolean") return err(res, "Completed must be true or false");
         const day = await db.upsertChallengeDay(body.date, body.completed, body.note);
         return res.status(201).json({ day });
+      }
+
+      if (type === "challenge-archive") {
+        if (!body.startDate || !body.lengthDays) return err(res, "Missing challenge info");
+        await db.archiveChallenge({
+          startDate: body.startDate,
+          lengthDays: body.lengthDays,
+          completedDays: body.completedDays || 0,
+          longestStreak: body.longestStreak || 0,
+        });
+        return res.status(201).json({ ok: true });
       }
 
       return err(res, "Unknown type");
