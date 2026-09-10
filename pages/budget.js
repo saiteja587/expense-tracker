@@ -49,6 +49,8 @@ export default function BudgetPage() {
   const [editingSavings, setEditingSavings] = useState(false);
   const [editingLowBalance, setEditingLowBalance] = useState(false);
   const [lowBalanceInput, setLowBalanceInput] = useState("");
+  const [editingMovieCount, setEditingMovieCount] = useState(false);
+  const [movieCountInput, setMovieCountInput] = useState("");
 
   const [newCatCategory, setNewCatCategory] = useState("");
   const [newCatAmount, setNewCatAmount] = useState("");
@@ -100,6 +102,7 @@ export default function BudgetPage() {
 
   const monthExpenses = useMemo(() => expenses.filter((x) => x.date.slice(0, 7) === currentMonth && x.date <= today), [expenses, currentMonth, today]);
   const monthMovieSpend = useMemo(() => movies.filter((m) => m.date.slice(0, 7) === currentMonth && m.date <= today).reduce((s, m) => s + m.amount, 0), [movies, currentMonth, today]);
+  const monthMovieCount = useMemo(() => movies.filter((m) => m.date.slice(0, 7) === currentMonth && m.date <= today).length, [movies, currentMonth, today]);
   const monthAdded = useMemo(() => topups.filter((t) => t.mode === "add" && t.date.slice(0, 7) === currentMonth).reduce((s, t) => s + t.amount, 0), [topups, currentMonth]);
 
   const spentByCategory = useMemo(() => {
@@ -115,6 +118,7 @@ export default function BudgetPage() {
   const overallRule = rules.find((r) => r.ruleType === "overall");
   const savingsRule = rules.find((r) => r.ruleType === "savings");
   const lowBalanceRule = rules.find((r) => r.ruleType === "low_balance");
+  const movieCountRule = rules.find((r) => r.ruleType === "movie_count");
   const categoryRules = rules.filter((r) => r.ruleType === "category");
 
   async function saveRule(ruleType, category, amount) {
@@ -346,6 +350,49 @@ export default function BudgetPage() {
             <button onClick={() => { setEditingLowBalance(false); setLowBalanceInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {lowBalanceRule && (
               <button onClick={() => { removeRule(lowBalanceRule.id); setEditingLowBalance(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove</button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Movie count guideline */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div style={{ flex: 1 }}>
+            <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Movie count guideline</div>
+            <div style={{ fontSize: 11, color: "#8a8477", marginTop: 2 }}>A gentle heads-up only — this never blocks you from adding a movie.</div>
+            {movieCountRule ? (
+              <div style={{ fontSize: 13, color: "#5f5a4f", marginTop: 8 }}>
+                <span className="tabnum">{monthMovieCount}</span> of <span className="tabnum">{movieCountRule.amount}</span> watched this month
+                {monthMovieCount > movieCountRule.amount && <span style={{ color: "#C98A2C", fontWeight: 500 }}> — {monthMovieCount - movieCountRule.amount} over your usual</span>}
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: "#8a8477", marginTop: 8 }}>No guideline set.</div>
+            )}
+          </div>
+          {!editingMovieCount && (
+            <button onClick={() => { setEditingMovieCount(true); setMovieCountInput(movieCountRule ? String(movieCountRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}>
+              <Pencil size={14} />
+            </button>
+          )}
+        </div>
+        {editingMovieCount && (
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <input type="number" placeholder="Movies per month" value={movieCountInput} onChange={(e) => setMovieCountInput(e.target.value)} style={{ width: 160 }} />
+            <button
+              onClick={async () => {
+                const amt = parseInt(movieCountInput, 10);
+                if (!amt || amt <= 0) { setSaveError("Enter a number greater than 0"); return; }
+                const ok = await saveRule("movie_count", null, amt);
+                if (ok) { setEditingMovieCount(false); setMovieCountInput(""); }
+              }}
+              style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
+            >
+              <Check size={14} />
+            </button>
+            <button onClick={() => { setEditingMovieCount(false); setMovieCountInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            {movieCountRule && (
+              <button onClick={() => { removeRule(movieCountRule.id); setEditingMovieCount(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove</button>
             )}
           </div>
         )}
