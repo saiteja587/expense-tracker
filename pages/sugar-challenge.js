@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, Check, X, Flame, Trophy } from "lucide-react";
+import { ArrowLeft, Check, X, Flame, Trophy, RotateCcw } from "lucide-react";
 
 function todayISO() {
   const d = new Date();
@@ -17,6 +17,8 @@ function addDays(iso, n) {
 export default function SugarChallengePage() {
   const [meta, setMeta] = useState(null);
   const [days, setDays] = useState({});
+  const [history, setHistory] = useState([]);
+  const [restarting, setRestarting] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
 
@@ -39,6 +41,7 @@ export default function SugarChallengePage() {
         map[d.day_date.slice(0, 10)] = { completed: d.completed, note: d.note || "" };
       }
       setDays(map);
+      setHistory(data.history || []);
       setLoadError("");
     } catch (err) {
       setLoadError("Couldn't load your challenge. Check the database connection and refresh.");
@@ -70,6 +73,32 @@ export default function SugarChallengePage() {
       setSetupError(err.message || "Couldn't start the challenge. Try again.");
     } finally {
       setSetupSubmitting(false);
+    }
+  }
+
+  async function restartChallenge() {
+    if (!meta) return;
+    setRestarting(true);
+    try {
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "challenge-archive",
+          startDate: meta.start_date.slice(0, 10),
+          lengthDays: meta.length_days,
+          completedDays: completedCount,
+          longestStreak,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      setStartDate(todayISO());
+      setLengthDays(41);
+      await load();
+    } catch (err) {
+      setLoadError("Couldn't archive that challenge. Try again.");
+    } finally {
+      setRestarting(false);
     }
   }
 
@@ -223,6 +252,14 @@ export default function SugarChallengePage() {
             )}
           </div>
 
+          <button
+            onClick={restartChallenge}
+            disabled={restarting}
+            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "8px 14px", fontSize: 12, color: "#5f5a4f", cursor: restarting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 28 }}
+          >
+            <RotateCcw size={13} /> {restarting ? "Archiving…" : "End this challenge & start a new one"}
+          </button>
+
           {/* Today's quick action */}
           {todayEntry && (
             <div style={{ background: "#F1ECDF", borderRadius: 6, padding: "16px 18px", marginBottom: 28, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -284,6 +321,25 @@ export default function SugarChallengePage() {
             </div>
           )}
         </>
+      )}
+
+      {history.length > 0 && (
+        <div style={{ marginTop: 40, borderTop: "1px solid #D9D2C2", paddingTop: 24 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Past challenges</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {history.map((h) => (
+              <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "10px 14px", border: "1px solid #EAE5D9", borderRadius: 4 }}>
+                <span style={{ color: "#5f5a4f" }}>
+                  {new Date(h.start_date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · {h.length_days} days
+                </span>
+                <span>
+                  <span className="tabnum" style={{ color: "#2F6F5E", fontWeight: 500 }}>{h.completed_days}/{h.length_days} completed</span>
+                  <span style={{ color: "#8a8477" }}> · longest streak {h.longest_streak}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
