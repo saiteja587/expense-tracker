@@ -1,5 +1,5 @@
 const CACHE_NAME = "expense-ledger-v2";
-const APP_SHELL = ["/manifest.json", "/icon-192.png", "/icon-512.png"];
+const APP_SHELL = ["/manifest.json", "/icon-192.png", "/icon-512.png", "/pause"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
