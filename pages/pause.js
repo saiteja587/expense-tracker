@@ -13,27 +13,38 @@ const MESSAGES = [
 ];
 
 function playInterruptSound(audioCtx) {
-  // A short, distinct, slightly jarring pattern — different each time — to break focus.
+  // As loud and sharp as the Web Audio API allows — full gain, harsher waveform,
+  // layered tones per hit for more perceived volume. Actual physical loudness
+  // still depends on your device's own volume level, which no website can override.
   const patterns = [
     [660, 880, 990],
     [440, 550, 330],
     [523, 659, 784, 523],
     [800, 400, 800],
+    [988, 988, 988],
   ];
   const pattern = patterns[Math.floor(Math.random() * patterns.length)];
+  const master = audioCtx.createGain();
+  master.gain.value = 1.0;
+  master.connect(audioCtx.destination);
+
   let t = audioCtx.currentTime;
-  pattern.forEach((freq, i) => {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(freq, t);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
-    osc.connect(gain).connect(audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.2);
-    t += 0.22;
+  pattern.forEach((freq) => {
+    // Two layered oscillators per hit (fundamental + octave) for extra loudness/edge.
+    [freq, freq * 2].forEach((f, layerIdx) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "square";
+      osc.frequency.setValueAtTime(f, t);
+      const peak = layerIdx === 0 ? 0.9 : 0.5;
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(peak, t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+      osc.connect(gain).connect(master);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    });
+    t += 0.32;
   });
 }
 
