@@ -47,6 +47,8 @@ export default function BudgetPage() {
   const [editingOverall, setEditingOverall] = useState(false);
   const [savingsInput, setSavingsInput] = useState("");
   const [editingSavings, setEditingSavings] = useState(false);
+  const [editingLowBalance, setEditingLowBalance] = useState(false);
+  const [lowBalanceInput, setLowBalanceInput] = useState("");
 
   const [newCatCategory, setNewCatCategory] = useState("");
   const [newCatAmount, setNewCatAmount] = useState("");
@@ -112,6 +114,7 @@ export default function BudgetPage() {
 
   const overallRule = rules.find((r) => r.ruleType === "overall");
   const savingsRule = rules.find((r) => r.ruleType === "savings");
+  const lowBalanceRule = rules.find((r) => r.ruleType === "low_balance");
   const categoryRules = rules.filter((r) => r.ruleType === "category");
 
   async function saveRule(ruleType, category, amount) {
@@ -302,6 +305,47 @@ export default function BudgetPage() {
             <button onClick={() => { setEditingSavings(false); setSavingsInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {savingsRule && (
               <button onClick={() => { removeRule(savingsRule.id); setEditingSavings(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove goal</button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Low balance alert */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div style={{ flex: 1 }}>
+            <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Low balance alert</div>
+            {lowBalanceRule ? (
+              <div style={{ fontSize: 13, color: "#5f5a4f", marginTop: 4 }}>
+                Your balance panel turns amber under <span className="tabnum">{fmt(lowBalanceRule.amount)}</span>, and red if it goes negative.
+              </div>
+            ) : (
+              <div style={{ fontSize: 13, color: "#8a8477", marginTop: 4 }}>No threshold set — the balance only turns red if it goes negative.</div>
+            )}
+          </div>
+          {!editingLowBalance && (
+            <button onClick={() => { setEditingLowBalance(true); setLowBalanceInput(lowBalanceRule ? String(lowBalanceRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}>
+              <Pencil size={14} />
+            </button>
+          )}
+        </div>
+        {editingLowBalance && (
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <input type="number" inputMode="decimal" placeholder="Threshold (₹)" value={lowBalanceInput} onChange={(e) => setLowBalanceInput(e.target.value)} style={{ width: 160 }} />
+            <button
+              onClick={async () => {
+                const amt = parseFloat(lowBalanceInput);
+                if (!amt || amt <= 0) { setSaveError("Enter an amount greater than 0"); return; }
+                const ok = await saveRule("low_balance", null, amt);
+                if (ok) { setEditingLowBalance(false); setLowBalanceInput(""); }
+              }}
+              style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
+            >
+              <Check size={14} />
+            </button>
+            <button onClick={() => { setEditingLowBalance(false); setLowBalanceInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            {lowBalanceRule && (
+              <button onClick={() => { removeRule(lowBalanceRule.id); setEditingLowBalance(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove</button>
             )}
           </div>
         )}
