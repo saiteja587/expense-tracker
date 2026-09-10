@@ -62,6 +62,11 @@ export default function PausePage() {
       audioCtxRef.current.resume();
     }
     playInterruptSound(audioCtxRef.current);
+    // Vibration works regardless of volume/mute — Android Chrome supports it,
+    // iOS Safari does not (no web API for it there), so this is a bonus where available.
+    if (navigator.vibrate) {
+      navigator.vibrate([120, 60, 120, 60, 220]);
+    }
     setMessage(MESSAGES[Math.floor(Math.random() * MESSAGES.length)]);
     setBreathing(true);
   }
