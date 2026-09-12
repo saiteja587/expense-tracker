@@ -29,7 +29,8 @@ export default function SugarChallengePage() {
 
   const [selectedDay, setSelectedDay] = useState(null);
   const [noteDraft, setNoteDraft] = useState("");
-  const [pendingSlip, setPendingSlip] = useState(false);
+  const [pendingChoice, setPendingChoice] = useState(null); // null = nothing picked yet, true = sugar-free, false = slipped
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     try {
@@ -118,15 +119,18 @@ export default function SugarChallengePage() {
   }
 
   async function saveNote(date) {
-    const completed = pendingSlip ? false : days[date]?.completed;
-    if (completed === undefined) return;
-    if (completed === false && !noteDraft.trim()) {
+    if (pendingChoice === null) {
+      setLoadError("Pick Sugar-free or Slipped first, then Save.");
+      return;
+    }
+    if (pendingChoice === false && !noteDraft.trim()) {
       setLoadError("Add a quick reason before logging a slip — it's worth knowing your own pattern.");
       return;
     }
     setLoadError("");
+    setSaving(true);
+    const completed = pendingChoice;
     setDays((prev) => ({ ...prev, [date]: { completed, note: noteDraft } }));
-    setPendingSlip(false);
     try {
       const res = await fetch("/api/data", {
         method: "POST",
@@ -134,8 +138,12 @@ export default function SugarChallengePage() {
         body: JSON.stringify({ type: "challenge-day", date, completed, note: noteDraft }),
       });
       if (!res.ok) throw new Error();
+      setSelectedDay(null);
+      setPendingChoice(null);
     } catch (err) {
-      setLoadError("Couldn't save that note. Try again.");
+      setLoadError("Couldn't save that day. Try again.");
+    } finally {
+      setSaving(false);
     }
     setSelectedDay(null);
   }
@@ -187,6 +195,15 @@ export default function SugarChallengePage() {
 
   const todayEntry = dayList.find((d) => d.isToday);
 
+  const sugarPerDayVal = meta ? parseFloat(meta.sugar_per_day) || 0 : 0;
+  const savingsPerDayVal = meta ? parseFloat(meta.savings_per_day) || 0 : 0;
+  const totalSugarAvoided = completedCount * sugarPerDayVal;
+  const totalSaved = completedCount * savingsPerDayVal;
+  const cokesAvoided = sugarPerDayVal > 0 ? Math.round((totalSugarAvoided / 39) * 10) / 10 : 0; // ~39g sugar per 330ml Coke
+
+  const milestones = [7, 14, 21, 30, 41].filter((m) => !meta || m <= meta.length_days);
+  const highestMilestoneHit = milestones.filter((m) => completedCount >= m).pop();
+
   if (!loaded) {
     return (
       <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>
@@ -227,6 +244,16 @@ export default function SugarChallengePage() {
               <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Length (days)</label>
               <input type="number" value={lengthDays} onChange={(e) => setLengthDays(e.target.value)} min="1" max="365" style={{ width: 100 }} />
             </div>
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 12 }}>
+            <div>
+              <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Sugar avoided per clean day (g, optional)</label>
+              <input type="number" value={sugarPerDay} onChange={(e) => setSugarPerDay(e.target.value)} min="0" style={{ width: 140 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Money saved per clean day (₹, optional)</label>
+              <input type="number" value={savingsPerDay} onChange={(e) => setSavingsPerDay(e.target.value)} min="0" style={{ width: 140 }} />
+            </div>
             <button type="submit" disabled={setupSubmitting} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "10px 16px", fontSize: 14, fontWeight: 500, cursor: setupSubmitting ? "default" : "pointer" }}>
               {setupSubmitting ? "Starting…" : "Start"}
             </button>
@@ -258,6 +285,45 @@ export default function SugarChallengePage() {
               </div>
             )}
           </div>
+
+          {(sugarPerDayVal > 0 || savingsPerDayVal > 0) && (
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 24, padding: "14px 16px", background: "#F1ECDF", borderRadius: 6 }}>
+              {sugarPerDayVal > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#8a8477" }}>Sugar avoided</div>
+                  <div className="tabnum" style={{ fontSize: 18, fontWeight: 600, color: "#2F6F5E" }}>
+                    {totalSugarAvoided >= 1000 ? `${(totalSugarAvoided / 1000).toFixed(1)}kg` : `${totalSugarAvoided}g`}
+                  </div>
+                  {cokesAvoided > 0 && <div style={{ fontSize: 10, color: "#8a8477" }}>~{cokesAvoided} cans of Coke worth</div>}
+                </div>
+              )}
+              {savingsPerDayVal > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#8a8477" }}>Money saved</div>
+                  <div className="tabnum" style={{ fontSize: 18, fontWeight: 600, color: "#2F6F5E" }}>₹{totalSaved.toLocaleString("en-IN")}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {milestones.length > 0 && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
+              {milestones.map((m) => {
+                const hit = completedCount >= m;
+                return (
+                  <span
+                    key={m}
+                    style={{
+                      fontSize: 11, fontWeight: 500, padding: "5px 10px", borderRadius: 20,
+                      background: hit ? "#2F6F5E" : "#EAE5D9", color: hit ? "#FBF8F2" : "#8a8477",
+                    }}
+                  >
+                    {m} day{m !== 1 ? "s" : ""} {hit ? "✓" : ""}
+                  </span>
+                );
+              })}
+            </div>
+          )}
 
           <button
             onClick={restartChallenge}
@@ -300,7 +366,7 @@ export default function SugarChallengePage() {
                 <button
                   key={d.date}
                   disabled={d.isFuture}
-                  onClick={() => { setSelectedDay(d.date); setNoteDraft(d.note); }}
+                  onClick={() => { setSelectedDay(d.date); setNoteDraft(d.note); setPendingChoice(d.completed ?? null); }}
                   title={d.note || undefined}
                   style={{ aspectRatio: "1", background: bg, color, border, borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: d.isFuture ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                   className="tabnum"
@@ -316,14 +382,15 @@ export default function SugarChallengePage() {
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>
                 {new Date(selectedDay + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })}
               </div>
+              <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 8 }}>Pick one, then tap Save — nothing changes until you save.</div>
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                <button onClick={() => markDay(selectedDay, true)} style={{ background: days[selectedDay]?.completed === true ? "#2F6F5E" : "#EAE5D9", color: days[selectedDay]?.completed === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Sugar-free</button>
-                <button onClick={() => setPendingSlip(true)} style={{ background: (days[selectedDay]?.completed === false || pendingSlip) ? "#A34A38" : "#EAE5D9", color: (days[selectedDay]?.completed === false || pendingSlip) ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Slipped</button>
+                <button onClick={() => setPendingChoice(true)} style={{ background: pendingChoice === true ? "#2F6F5E" : "#EAE5D9", color: pendingChoice === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Sugar-free</button>
+                <button onClick={() => setPendingChoice(false)} style={{ background: pendingChoice === false ? "#A34A38" : "#EAE5D9", color: pendingChoice === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Slipped</button>
               </div>
-              <input type="text" placeholder={pendingSlip ? "What happened? (required)" : "Note (optional)"} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={140} style={{ marginBottom: 10, borderColor: pendingSlip ? "#A34A38" : undefined }} />
+              <input type="text" placeholder={pendingChoice === false ? "What happened? (required)" : "Note (optional)"} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={140} style={{ marginBottom: 10, borderColor: pendingChoice === false ? "#A34A38" : undefined }} />
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => saveNote(selectedDay)} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Save note</button>
-                <button onClick={() => { setSelectedDay(null); setPendingSlip(false); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Close</button>
+                <button onClick={() => saveNote(selectedDay)} disabled={saving} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save"}</button>
+                <button onClick={() => { setSelectedDay(null); setPendingChoice(null); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Cancel</button>
               </div>
             </div>
           )}
