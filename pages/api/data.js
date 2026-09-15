@@ -69,6 +69,7 @@ export default async function handler(req, res) {
           title: body.title.trim(), date: body.date, time: body.time, ticketPrice, canteenPrice,
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
+          venueType: body.venueType, venueName: (body.venueName || "").trim(),
         });
         return res.status(201).json({ movie });
       }
@@ -199,6 +200,7 @@ export default async function handler(req, res) {
           title: body.title.trim(), date: body.date, time: body.time, ticketPrice, canteenPrice,
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
+          venueType: body.venueType, venueName: (body.venueName || "").trim(),
         });
         return res.status(200).json({ movie });
       }
