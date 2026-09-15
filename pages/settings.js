@@ -1,0 +1,218 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock } from "lucide-react";
+
+const BASE_CATEGORY_COLORS = ["#B5533C", "#C98A2C", "#3F6E5B", "#5B3A5C", "#2F4858", "#A3763F", "#6B7A3E", "#8A4B6B", "#6B6558"];
+
+export default function SettingsPage() {
+  const [categories, setCategories] = useState([]);
+  const [newCat, setNewCat] = useState("");
+  const [recurring, setRecurring] = useState([]);
+  const [recForm, setRecForm] = useState({ amount: "", category: "Bills", note: "", dayOfMonth: "1" });
+  const [recError, setRecError] = useState("");
+
+  const [hasPin, setHasPin] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
+
+  const [darkMode, setDarkMode] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  async function load() {
+    try {
+      const [catRes, recRes, pinRes] = await Promise.all([
+        fetch("/api/data?type=categories"),
+        fetch("/api/data?type=recurring"),
+        fetch("/api/data?type=pin-status"),
+      ]);
+      if (catRes.ok) setCategories((await catRes.json()).categories || []);
+      if (recRes.ok) setRecurring((await recRes.json()).recurring || []);
+      if (pinRes.ok) setHasPin((await pinRes.json()).hasPin);
+    } catch (e) {
+      // best-effort
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    setDarkMode(localStorage.getItem("darkMode") === "1");
+  }, []);
+
+  function toggleDarkMode() {
+    const next = !darkMode;
+    setDarkMode(next);
+    localStorage.setItem("darkMode", next ? "1" : "0");
+    document.documentElement.setAttribute("data-theme", next ? "dark" : "light");
+  }
+
+  async function addCategory(e) {
+    e.preventDefault();
+    const name = newCat.trim();
+    if (!name) return;
+    const color = BASE_CATEGORY_COLORS[categories.length % BASE_CATEGORY_COLORS.length];
+    const next = [...categories, { name, color }];
+    const res = await fetch("/api/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "categories", categories: next }),
+    });
+    if (res.ok) {
+      setCategories(next);
+      setNewCat("");
+    }
+  }
+
+  async function removeCategory(name) {
+    const next = categories.filter((c) => c.name !== name);
+    const res = await fetch("/api/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "categories", categories: next }),
+    });
+    if (res.ok) setCategories(next);
+  }
+
+  async function addRecurring(e) {
+    e.preventDefault();
+    const amount = parseFloat(recForm.amount);
+    const dayOfMonth = parseInt(recForm.dayOfMonth, 10);
+    if (!amount || amount <= 0) { setRecError("Enter an amount greater than 0"); return; }
+    if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) { setRecError("Day must be between 1 and 28"); return; }
+    setRecError("");
+    const res = await fetch("/api/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "recurring", amount, category: recForm.category, note: recForm.note, dayOfMonth, affectsBalance: true }),
+    });
+    if (res.ok) {
+      setRecForm({ amount: "", category: "Bills", note: "", dayOfMonth: "1" });
+      await load();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setRecError(d.error || "Couldn't save. Try again.");
+    }
+  }
+
+  async function removeRecurring(id) {
+    const prev = recurring;
+    setRecurring(recurring.filter((r) => r.id !== id));
+    const res = await fetch(`/api/data?type=recurring&id=${id}`, { method: "DELETE" });
+    if (!res.ok) setRecurring(prev);
+  }
+
+  async function savePin(e) {
+    e.preventDefault();
+    if (pinInput && !/^\d{4,8}$/.test(pinInput)) { setPinError("PIN must be 4-8 digits"); return; }
+    setPinError("");
+    setPinSaving(true);
+    try {
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "set-pin", pin: pinInput }),
+      });
+      if (!res.ok) throw new Error();
+      setHasPin(!!pinInput);
+      setPinInput("");
+      sessionStorage.setItem("unlocked", "1");
+    } catch {
+      setPinError("Couldn't save. Try again.");
+    } finally {
+      setPinSaving(false);
+    }
+  }
+
+  if (!loaded) {
+    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>Loading…</div>;
+  }
+
+  return (
+    <div className="page-container" style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px 64px" }}>
+      <div style={{ marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
+        <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
+          <ArrowLeft size={12} /> Expense ledger
+        </a>
+        <div className="lora" style={{ fontSize: 24, fontWeight: 600 }}>Settings</div>
+      </div>
+
+      {/* Dark mode */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {darkMode ? <Moon size={16} /> : <Sun size={16} />}
+          <div>
+            <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Dark mode</div>
+            <div style={{ fontSize: 11, color: "#8a8477" }}>Applied as a color filter, not a full redesign — simple, reversible.</div>
+          </div>
+        </div>
+        <button onClick={toggleDarkMode} style={{ background: darkMode ? "#241F1A" : "#EAE5D9", color: darkMode ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 20, padding: "6px 16px", fontSize: 12, cursor: "pointer" }}>
+          {darkMode ? "On" : "Off"}
+        </button>
+      </div>
+
+      {/* PIN lock */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <Lock size={16} />
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>App lock</div>
+        </div>
+        <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 10 }}>
+          {hasPin ? "A PIN is set. Change it below, or clear the field and save to remove it." : "No PIN set — anyone who opens this can see everything. Set one below."}
+        </div>
+        <form onSubmit={savePin} style={{ display: "flex", gap: 8 }}>
+          <input type="password" inputMode="numeric" placeholder={hasPin ? "New PIN (blank to remove)" : "4-8 digit PIN"} value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))} maxLength={8} style={{ width: 180 }} />
+          <button type="submit" disabled={pinSaving} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer" }}>{pinSaving ? "Saving…" : "Save"}</button>
+        </form>
+        {pinError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{pinError}</div>}
+      </div>
+
+      {/* Custom categories */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Custom categories</div>
+        {categories.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {categories.map((c) => (
+              <span key={c.name} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 10px", borderRadius: 20, background: c.color + "1A", color: c.color, fontWeight: 500 }}>
+                {c.name}
+                <button onClick={() => removeCategory(c.name)} style={{ background: "none", border: "none", cursor: "pointer", color: c.color, display: "flex", padding: 0 }}><Trash2 size={11} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+        <form onSubmit={addCategory} style={{ display: "flex", gap: 8 }}>
+          <input type="text" placeholder="e.g. Gym, Gifts" value={newCat} onChange={(e) => setNewCat(e.target.value)} maxLength={30} style={{ width: 200 }} />
+          <button type="submit" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
+        </form>
+      </div>
+
+      {/* Recurring expenses */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px" }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Recurring expenses</div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>Logged automatically each month on the day you set — e.g. rent or an EMI.</div>
+
+        {recurring.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            {recurring.map((r) => (
+              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "8px 0", borderBottom: "1px solid #EAE5D9" }}>
+                <span>{r.note || r.category} · day {r.day_of_month} · ₹{Math.round(parseFloat(r.amount)).toLocaleString("en-IN")}</span>
+                <button onClick={() => removeRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Trash2 size={14} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={addRecurring} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input type="number" placeholder="Amount (₹)" value={recForm.amount} onChange={(e) => setRecForm({ ...recForm, amount: e.target.value })} style={{ width: 110 }} />
+          <input type="text" placeholder="Category" value={recForm.category} onChange={(e) => setRecForm({ ...recForm, category: e.target.value })} style={{ width: 110 }} />
+          <input type="text" placeholder="Note (e.g. Rent)" value={recForm.note} onChange={(e) => setRecForm({ ...recForm, note: e.target.value })} style={{ width: 130 }} />
+          <input type="number" placeholder="Day (1-28)" value={recForm.dayOfMonth} onChange={(e) => setRecForm({ ...recForm, dayOfMonth: e.target.value })} min="1" max="28" style={{ width: 100 }} />
+          <button type="submit" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> Save</button>
+        </form>
+        {recError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{recError}</div>}
+      </div>
+    </div>
+  );
+}
