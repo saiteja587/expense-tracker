@@ -462,8 +462,11 @@ export default function Page() {
           <a href="/pause" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             Pause →
           </a>
-          <a href="/settings" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+          <a href="/settings" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             Settings →
+          </a>
+          <a href="/search" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+            Search →
           </a>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
