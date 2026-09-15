@@ -78,25 +78,35 @@ export default function MoviesPage() {
         const rule = ruleData.rules.find((r) => r.rule_type === "movie_count");
         setMovieCountGuideline(rule ? parseFloat(rule.amount) : null);
       }
-      setMovies(
-        data.movies.map((m) => ({
-          id: m.id,
-          title: m.title,
-          date: m.watched_date.slice(0, 10),
-          time: m.watched_time ? m.watched_time.slice(0, 5) : "",
-          ticketPrice: parseFloat(m.ticket_price),
-          canteenPrice: parseFloat(m.canteen_price),
-          companions: m.companions || "",
-          myTake: m.my_take,
-          publicTake: m.public_take,
-          note: m.note || "",
-          affectsBalance: m.affects_balance !== false,
-          quantity: m.quantity || 1,
-        }))
-      );
+      const mapped = data.movies.map((m) => ({
+        id: m.id,
+        title: m.title,
+        date: m.watched_date.slice(0, 10),
+        time: m.watched_time ? m.watched_time.slice(0, 5) : "",
+        ticketPrice: parseFloat(m.ticket_price),
+        canteenPrice: parseFloat(m.canteen_price),
+        companions: m.companions || "",
+        myTake: m.my_take,
+        publicTake: m.public_take,
+        note: m.note || "",
+        affectsBalance: m.affects_balance !== false,
+        quantity: m.quantity || 1,
+      }));
+      setMovies(mapped);
+      localStorage.setItem("cache_movies", JSON.stringify(mapped));
       setLoadError("");
     } catch (err) {
-      setLoadError("Couldn't load your movies. Check the database connection and refresh.");
+      const cached = localStorage.getItem("cache_movies");
+      if (cached) {
+        try {
+          setMovies(JSON.parse(cached));
+          setLoadError("You're offline — showing what was last saved. New entries will sync once you're back online.");
+        } catch {
+          setLoadError("Couldn't load your movies. Check your connection and refresh.");
+        }
+      } else {
+        setLoadError("You're offline and nothing's cached yet — connect once so this page can save a local copy.");
+      }
     } finally {
       setLoaded(true);
     }
