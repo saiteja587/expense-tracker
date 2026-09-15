@@ -262,6 +262,7 @@ export default function Page() {
   }
 
   async function removeExpense(id) {
+    if (!window.confirm("Delete this expense? This can't be undone.")) return;
     const prev = expenses;
     setExpenses(expenses.filter((x) => x.id !== id));
     try {
@@ -321,6 +322,7 @@ export default function Page() {
   }
 
   async function removeTopup(id) {
+    if (!window.confirm("Delete this top-up? This can't be undone.")) return;
     const prev = topups;
     setTopups(topups.filter((t) => t.id !== id));
     try {
