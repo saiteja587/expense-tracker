@@ -36,6 +36,7 @@ export default function Page() {
   const [movies, setMovies] = useState([]);
   const [topups, setTopups] = useState([]);
   const [budgetRules, setBudgetRules] = useState([]);
+  const [customCategories, setCustomCategories] = useState([]);
   const [challengeMeta, setChallengeMeta] = useState(null);
   const [challengeDays, setChallengeDays] = useState({});
   const [loaded, setLoaded] = useState(false);
@@ -55,12 +56,13 @@ export default function Page() {
 
   async function load() {
     try {
-      const [expRes, movRes, balRes, ruleRes, chalRes] = await Promise.all([
+      const [expRes, movRes, balRes, ruleRes, chalRes, catRes] = await Promise.all([
         fetch("/api/data?type=expenses"),
         fetch("/api/data?type=movies"),
         fetch("/api/data?type=balance"),
         fetch("/api/data?type=budget"),
         fetch("/api/data?type=challenge"),
+        fetch("/api/data?type=categories"),
       ]);
       if (!expRes.ok) throw new Error("Request failed");
       const expData = await expRes.json();
@@ -112,6 +114,10 @@ export default function Page() {
         const map = {};
         for (const d of chalData.days || []) map[d.day_date.slice(0, 10)] = d.completed;
         setChallengeDays(map);
+      }
+      if (catRes.ok) {
+        const catData = await catRes.json();
+        setCustomCategories(catData.categories || []);
       }
       setLoadError("");
     } catch (err) {
@@ -337,13 +343,14 @@ export default function Page() {
   const byCategory = useMemo(() => {
     const map = {};
     for (const c of CATEGORIES) map[c.name] = 0;
+    for (const c of customCategories) map[c.name] = 0;
     map[MOVIE_CATEGORY.name] = 0;
     for (const x of monthItems) map[x.category] = (map[x.category] || 0) + x.amount;
-    return [...CATEGORIES, MOVIE_CATEGORY]
+    return [...CATEGORIES, ...customCategories, MOVIE_CATEGORY]
       .map((c) => ({ name: c.name, value: map[c.name], color: c.color }))
       .filter((c) => c.value > 0)
       .sort((a, b) => b.value - a.value);
-  }, [monthItems]);
+  }, [monthItems, customCategories]);
 
   const overallRule = budgetRules.find((r) => r.ruleType === "overall");
   const lowBalanceRule = budgetRules.find((r) => r.ruleType === "low_balance");
@@ -394,7 +401,7 @@ export default function Page() {
 
   function catColor(name) {
     if (name === MOVIE_CATEGORY.name) return MOVIE_CATEGORY.color;
-    return CATEGORIES.find((c) => c.name === name)?.color || "#6B6558";
+    return CATEGORIES.find((c) => c.name === name)?.color || customCategories.find((c) => c.name === name)?.color || "#6B6558";
   }
 
   if (!loaded) {
@@ -431,8 +438,11 @@ export default function Page() {
           <a href="/sugar-challenge" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             No-sugar challenge →
           </a>
-          <a href="/pause" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+          <a href="/pause" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             Pause →
+          </a>
+          <a href="/settings" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+            Settings →
           </a>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -596,6 +606,9 @@ export default function Page() {
             <input type="number" inputMode="decimal" placeholder="Amount (₹)" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} step="0.01" min="0" />
             <select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>
               {CATEGORIES.map((c) => (
+                <option key={c.name} value={c.name}>{c.name}</option>
+              ))}
+              {customCategories.map((c) => (
                 <option key={c.name} value={c.name}>{c.name}</option>
               ))}
             </select>
