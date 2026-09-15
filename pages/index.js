@@ -67,62 +67,88 @@ export default function Page() {
       ]);
       if (!expRes.ok) throw new Error("Request failed");
       const expData = await expRes.json();
-      setExpenses(
-        expData.expenses.map((x) => ({
-          id: x.id,
-          amount: parseFloat(x.amount),
-          category: x.category,
-          note: x.note || "",
-          date: x.expense_date.slice(0, 10),
-          time: x.expense_time ? x.expense_time.slice(0, 5) : "",
-          affectsBalance: x.affects_balance !== false,
-        }))
-      );
+      const mappedExpenses = expData.expenses.map((x) => ({
+        id: x.id,
+        amount: parseFloat(x.amount),
+        category: x.category,
+        note: x.note || "",
+        date: x.expense_date.slice(0, 10),
+        time: x.expense_time ? x.expense_time.slice(0, 5) : "",
+        affectsBalance: x.affects_balance !== false,
+      }));
+      setExpenses(mappedExpenses);
+      let mappedMovies = [];
       if (movRes.ok) {
         const movData = await movRes.json();
-        setMovies(
-          movData.movies.map((m) => ({
-            id: m.id,
-            title: m.title,
-            date: m.watched_date.slice(0, 10),
-            ticketPrice: parseFloat(m.ticket_price),
-            canteenPrice: parseFloat(m.canteen_price),
-            affectsBalance: m.affects_balance !== false,
-            quantity: m.quantity || 1,
-          }))
-        );
+        mappedMovies = movData.movies.map((m) => ({
+          id: m.id,
+          title: m.title,
+          date: m.watched_date.slice(0, 10),
+          ticketPrice: parseFloat(m.ticket_price),
+          canteenPrice: parseFloat(m.canteen_price),
+          affectsBalance: m.affects_balance !== false,
+          quantity: m.quantity || 1,
+        }));
+        setMovies(mappedMovies);
       }
+      let mappedTopups = [];
       if (balRes.ok) {
         const balData = await balRes.json();
-        setTopups(
-          balData.topups.map((t) => ({
-            id: t.id,
-            amount: parseFloat(t.amount),
-            note: t.note || "",
-            date: t.topup_date.slice(0, 10),
-            mode: t.mode === "set" ? "set" : "add",
-            createdAt: t.created_at,
-          }))
-        );
+        mappedTopups = balData.topups.map((t) => ({
+          id: t.id,
+          amount: parseFloat(t.amount),
+          note: t.note || "",
+          date: t.topup_date.slice(0, 10),
+          mode: t.mode === "set" ? "set" : "add",
+          createdAt: t.created_at,
+        }));
+        setTopups(mappedTopups);
       }
+      let mappedRules = [];
       if (ruleRes.ok) {
         const ruleData = await ruleRes.json();
-        setBudgetRules(ruleData.rules.map((r) => ({ id: r.id, ruleType: r.rule_type, category: r.category, amount: parseFloat(r.amount) })));
+        mappedRules = ruleData.rules.map((r) => ({ id: r.id, ruleType: r.rule_type, category: r.category, amount: parseFloat(r.amount) }));
+        setBudgetRules(mappedRules);
       }
+      let mappedChalMeta = null, mappedChalDays = {};
       if (chalRes.ok) {
         const chalData = await chalRes.json();
+        mappedChalMeta = chalData.meta;
         setChallengeMeta(chalData.meta);
-        const map = {};
-        for (const d of chalData.days || []) map[d.day_date.slice(0, 10)] = d.completed;
-        setChallengeDays(map);
+        for (const d of chalData.days || []) mappedChalDays[d.day_date.slice(0, 10)] = d.completed;
+        setChallengeDays(mappedChalDays);
       }
+      let mappedCategories = [];
       if (catRes.ok) {
         const catData = await catRes.json();
-        setCustomCategories(catData.categories || []);
+        mappedCategories = catData.categories || [];
+        setCustomCategories(mappedCategories);
       }
+      localStorage.setItem("cache_index", JSON.stringify({
+        expenses: mappedExpenses, movies: mappedMovies, topups: mappedTopups,
+        budgetRules: mappedRules, challengeMeta: mappedChalMeta, challengeDays: mappedChalDays,
+        customCategories: mappedCategories,
+      }));
       setLoadError("");
     } catch (err) {
-      setLoadError("Couldn't load your expenses. Check the database connection and refresh.");
+      const cached = localStorage.getItem("cache_index");
+      if (cached) {
+        try {
+          const c = JSON.parse(cached);
+          setExpenses(c.expenses || []);
+          setMovies(c.movies || []);
+          setTopups(c.topups || []);
+          setBudgetRules(c.budgetRules || []);
+          setChallengeMeta(c.challengeMeta || null);
+          setChallengeDays(c.challengeDays || {});
+          setCustomCategories(c.customCategories || []);
+          setLoadError("You're offline — showing what was last saved. New entries will sync once you're back online.");
+        } catch {
+          setLoadError("Couldn't load your expenses. Check your connection and refresh.");
+        }
+      } else {
+        setLoadError("You're offline and nothing's cached yet — connect once so this page can save a local copy.");
+      }
     } finally {
       setLoaded(true);
     }
@@ -465,8 +491,11 @@ export default function Page() {
           <a href="/settings" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             Settings →
           </a>
-          <a href="/search" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+          <a href="/search" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             Search →
+          </a>
+          <a href="/insights" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 500 }}>
+            Patterns →
           </a>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
