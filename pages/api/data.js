@@ -181,6 +181,12 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: false, locked: waitSeconds > 0, waitSeconds, attemptsLeft: Math.max(0, 5 - attempts) });
       }
 
+      if (type === "import-all") {
+        if (!body.data || typeof body.data !== "object") return err(res, "No import data received");
+        const results = await db.importAll(body.data);
+        return res.status(201).json({ ok: true, results });
+      }
+
       if (type === "challenge-archive") {
         if (!body.startDate || !body.lengthDays) return err(res, "Missing challenge info");
         await db.archiveChallenge({
