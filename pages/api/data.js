@@ -24,8 +24,23 @@ export default async function handler(req, res) {
         return res.status(200).json({ categories: raw ? JSON.parse(raw) : [] });
       }
       if (type === "pin-status") {
-        const pin = await db.getSetting("app_pin");
-        return res.status(200).json({ hasPin: !!pin });
+        const hash = await db.getSetting("app_pin_hash");
+        return res.status(200).json({ hasPin: !!hash });
+      }
+      if (type === "export-all") {
+        const [expenses, movies, topups, rules, recurring] = await Promise.all([
+          db.listExpenses(), db.listMovies(), db.listTopups(), db.listBudgetRules(), db.listRecurring(),
+        ]);
+        const challengeMeta = await db.getChallengeMeta();
+        const challengeDays = await db.listChallengeDays();
+        const challengeHistory = await db.listChallengeHistory();
+        const categoriesRaw = await db.getSetting("custom_categories");
+        return res.status(200).json({
+          exportedAt: new Date().toISOString(),
+          expenses, movies, topups, budgetRules: rules, recurring,
+          sugarChallenge: { meta: challengeMeta, days: challengeDays, history: challengeHistory },
+          customCategories: categoriesRaw ? JSON.parse(categoriesRaw) : [],
+        });
       }
       return err(res, "Unknown type");
     }
@@ -110,13 +125,39 @@ export default async function handler(req, res) {
 
       if (type === "set-pin") {
         if (body.pin && !/^[0-9]{4,8}$/.test(body.pin)) return err(res, "PIN must be 4-8 digits");
-        await db.setSetting("app_pin", body.pin || "");
+        const crypto = require("crypto");
+        const hash = body.pin ? crypto.createHash("sha256").update(body.pin).digest("hex") : "";
+        await db.setSetting("app_pin_hash", hash);
+        await db.setSetting("pin_failed_attempts", "0");
+        await db.setSetting("pin_locked_until", "0");
         return res.status(201).json({ ok: true });
       }
 
       if (type === "verify-pin") {
-        const stored = await db.getSetting("app_pin");
-        return res.status(200).json({ ok: !stored || stored === body.pin });
+        const storedHash = await db.getSetting("app_pin_hash");
+        if (!storedHash) return res.status(200).json({ ok: true });
+
+        const lockedUntil = parseInt((await db.getSetting("pin_locked_until")) || "0", 10);
+        if (Date.now() < lockedUntil) {
+          return res.status(200).json({ ok: false, locked: true, waitSeconds: Math.ceil((lockedUntil - Date.now()) / 1000) });
+        }
+
+        const crypto = require("crypto");
+        const inputHash = crypto.createHash("sha256").update(body.pin || "").digest("hex");
+        if (inputHash === storedHash) {
+          await db.setSetting("pin_failed_attempts", "0");
+          await db.setSetting("pin_locked_until", "0");
+          return res.status(200).json({ ok: true });
+        }
+
+        const attempts = parseInt((await db.getSetting("pin_failed_attempts")) || "0", 10) + 1;
+        await db.setSetting("pin_failed_attempts", String(attempts));
+        let waitSeconds = 0;
+        if (attempts >= 5) {
+          waitSeconds = Math.min(300, 15 * Math.pow(2, attempts - 5));
+          await db.setSetting("pin_locked_until", String(Date.now() + waitSeconds * 1000));
+        }
+        return res.status(200).json({ ok: false, locked: waitSeconds > 0, waitSeconds, attemptsLeft: Math.max(0, 5 - attempts) });
       }
 
       if (type === "challenge-archive") {
