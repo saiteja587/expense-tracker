@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download } from "lucide-react";
 
 const BASE_CATEGORY_COLORS = ["#B5533C", "#C98A2C", "#3F6E5B", "#5B3A5C", "#2F4858", "#A3763F", "#6B7A3E", "#8A4B6B", "#6B6558"];
 
@@ -18,6 +18,7 @@ export default function SettingsPage() {
   const [pinSaving, setPinSaving] = useState(false);
 
   const [darkMode, setDarkMode] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   async function load() {
@@ -67,6 +68,7 @@ export default function SettingsPage() {
   }
 
   async function removeCategory(name) {
+    if (!window.confirm("Remove this category? Past entries keep it, but you won't be able to pick it again.")) return;
     const next = categories.filter((c) => c.name !== name);
     const res = await fetch("/api/data", {
       method: "POST",
@@ -98,6 +100,7 @@ export default function SettingsPage() {
   }
 
   async function removeRecurring(id) {
+    if (!window.confirm("Delete this recurring expense? This can't be undone.")) return;
     const prev = recurring;
     setRecurring(recurring.filter((r) => r.id !== id));
     const res = await fetch(`/api/data?type=recurring&id=${id}`, { method: "DELETE" });
@@ -126,6 +129,28 @@ export default function SettingsPage() {
     }
   }
 
+  async function exportData() {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/data?type=export-all");
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `expense-ledger-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Couldn't export your data. Try again.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (!loaded) {
     return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>Loading…</div>;
   }
@@ -137,6 +162,17 @@ export default function SettingsPage() {
           <ArrowLeft size={12} /> Expense ledger
         </a>
         <div className="lora" style={{ fontSize: 24, fontWeight: 600 }}>Settings</div>
+      </div>
+
+      {/* Data backup */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Back up your data</div>
+          <div style={{ fontSize: 11, color: "#8a8477" }}>Downloads everything — expenses, movies, balance, budget rules, challenge history — as one file.</div>
+        </div>
+        <button onClick={exportData} disabled={exporting} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 12, cursor: exporting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+          <Download size={13} /> {exporting ? "Exporting…" : "Export"}
+        </button>
       </div>
 
       {/* Dark mode */}
