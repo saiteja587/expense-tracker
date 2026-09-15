@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 
+const THEATRE_OPTIONS = ["PVR", "INOX", "Cinepolis", "Miraj Cinemas", "Asian Cinemas", "AMB Cinemas", "Sudarshan 35MM", "Other"];
+const OTT_OPTIONS = ["Netflix", "Amazon Prime Video", "Disney+ Hotstar", "SonyLIV", "ZEE5", "JioCinema", "Apple TV+", "MX Player", "Other"];
+
 const TAKES = [
   { value: "loved", label: "Loved it", score: 3, color: "#2F6F5E" },
   { value: "liked", label: "Liked it", score: 2, color: "#3F6E5B" },
@@ -28,6 +31,7 @@ function takeInfo(value) {
 const emptyForm = {
   title: "", date: todayISO(), time: "", ticketPrice: "", canteenPrice: "", companions: "",
   myTake: "liked", publicTake: "liked", note: "", affectsBalance: true, quantity: 1,
+  venueType: "Theatre", venueName: "PVR", venueNameOther: "",
 };
 
 function QuantityStepper({ value, onChange }) {
@@ -91,6 +95,8 @@ export default function MoviesPage() {
         note: m.note || "",
         affectsBalance: m.affects_balance !== false,
         quantity: m.quantity || 1,
+        venueType: m.venue_type || "Theatre",
+        venueName: m.venue_name || "",
       }));
       setMovies(mapped);
       localStorage.setItem("cache_movies", JSON.stringify(mapped));
@@ -118,6 +124,9 @@ export default function MoviesPage() {
 
   function startEdit(m) {
     setEditingId(m.id);
+    const venueType = m.venueType || "Theatre";
+    const options = venueType === "OTT" ? OTT_OPTIONS : THEATRE_OPTIONS;
+    const knownOption = options.includes(m.venueName) ? m.venueName : (m.venueName ? "Other" : options[0]);
     setForm({
       title: m.title,
       date: m.date,
@@ -130,6 +139,9 @@ export default function MoviesPage() {
       note: m.note,
       affectsBalance: m.affectsBalance !== false,
       quantity: m.quantity || 1,
+      venueType,
+      venueName: knownOption,
+      venueNameOther: knownOption === "Other" ? m.venueName : "",
     });
     setFormError("");
   }
@@ -156,6 +168,11 @@ export default function MoviesPage() {
       setFormError("Prices can't be negative");
       return;
     }
+    const resolvedVenueName = form.venueName === "Other" ? form.venueNameOther.trim() : form.venueName;
+    if (form.venueName === "Other" && !resolvedVenueName) {
+      setFormError(`Name the ${form.venueType === "OTT" ? "platform" : "theatre"}`);
+      return;
+    }
     setFormError("");
     setSubmitting(true);
     const isEdit = editingId !== null;
@@ -173,6 +190,8 @@ export default function MoviesPage() {
       note: form.note.trim(),
       affectsBalance: form.affectsBalance,
       quantity: form.quantity,
+      venueType: form.venueType,
+      venueName: resolvedVenueName,
     };
 
     let res;
@@ -333,6 +352,44 @@ export default function MoviesPage() {
           </div>
           <form onSubmit={submitMovie} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <input type="text" placeholder="Movie title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} />
+            <div>
+              <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Watched via</label>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                {["Theatre", "OTT"].map((vt) => (
+                  <button
+                    key={vt}
+                    type="button"
+                    onClick={() => {
+                      const options = vt === "OTT" ? OTT_OPTIONS : THEATRE_OPTIONS;
+                      setForm({ ...form, venueType: vt, venueName: options[0], venueNameOther: "" });
+                    }}
+                    style={{
+                      flex: 1, fontSize: 13, padding: "8px 10px", borderRadius: 3, cursor: "pointer",
+                      border: "1px solid " + (form.venueType === vt ? "#241F1A" : "#D9D2C2"),
+                      background: form.venueType === vt ? "#241F1A" : "transparent",
+                      color: form.venueType === vt ? "#FBF8F2" : "#5f5a4f",
+                    }}
+                  >
+                    {vt === "OTT" ? "OTT / Streaming" : "Theatre"}
+                  </button>
+                ))}
+              </div>
+              <select value={form.venueName} onChange={(e) => setForm({ ...form, venueName: e.target.value, venueNameOther: "" })}>
+                {(form.venueType === "OTT" ? OTT_OPTIONS : THEATRE_OPTIONS).map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+              {form.venueName === "Other" && (
+                <input
+                  type="text"
+                  placeholder={form.venueType === "OTT" ? "Platform name" : "Theatre name"}
+                  value={form.venueNameOther}
+                  onChange={(e) => setForm({ ...form, venueNameOther: e.target.value })}
+                  maxLength={60}
+                  style={{ marginTop: 8 }}
+                />
+              )}
+            </div>
             <div style={{ display: "flex", gap: 8 }}>
               <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} max={todayISO()} style={{ flex: 1 }} />
               <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} style={{ flex: 1 }} />
@@ -420,6 +477,7 @@ export default function MoviesPage() {
                         <div style={{ fontSize: 12, color: "#8a8477", marginTop: 2 }}>
                           {new Date(m.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                           {m.time && <> · {m.time}</>}
+                          {m.venueName && <> · {m.venueName}{m.venueType === "OTT" ? " (OTT)" : ""}</>}
                           {m.companions && <> · with {m.companions}</>}
                           {m.affectsBalance === false && <> · not deducted from balance</>}
                           {m.pending && <> · pending sync</>}
