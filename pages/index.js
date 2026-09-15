@@ -430,6 +430,10 @@ export default function Page() {
 
   const moviesThisMonth = useMemo(() => movies.filter((m) => m.date.slice(0, 7) === `${year}-${String(month + 1).padStart(2, "0")}`).length, [movies, year, month]);
 
+  const loggedToday = useMemo(() => {
+    return expenses.some((x) => x.date === today) || movies.some((m) => m.date === today) || (challengeMeta && today in challengeDays);
+  }, [expenses, movies, challengeMeta, challengeDays, today]);
+
   const grouped = useMemo(() => {
     const sorted = [...monthItems].sort((a, b) => (a.date < b.date ? 1 : -1));
     const map = new Map();
@@ -510,6 +514,12 @@ export default function Page() {
           </button>
         </div>
       </div>
+
+      {!loggedToday && (
+        <div style={{ fontSize: 13, color: "#A3763F", marginBottom: 16, background: "#F7EEDD", borderRadius: 4, padding: "8px 12px" }}>
+          Nothing logged today yet — a quick add now beats trying to remember it tomorrow.
+        </div>
+      )}
 
       {/* Daily snapshot: money, movies, diet in one glance */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
