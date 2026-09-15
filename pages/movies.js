@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3 } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 
 const TAKES = [
@@ -68,6 +68,7 @@ export default function MoviesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [viewDate, setViewDate] = useState(new Date());
   const [movieCountGuideline, setMovieCountGuideline] = useState(null);
+  const [showAllTime, setShowAllTime] = useState(false);
   const [theatreOptions, setTheatreOptions] = useState(["Other"]);
   const [ottOptions, setOttOptions] = useState(["Other"]);
 
@@ -271,6 +272,27 @@ export default function MoviesPage() {
   const matchedCount = monthMovies.filter((x) => takeInfo(x.myTake).score === takeInfo(x.publicTake).score).length;
   const divergedCount = monthMovies.filter((x) => Math.abs(takeInfo(x.myTake).score - takeInfo(x.publicTake).score) >= 2).length;
 
+  const allTimeStats = useMemo(() => {
+    if (movies.length === 0) return null;
+    const totalViewings = movies.reduce((s, m) => s + (m.quantity || 1), 0);
+    const totalSpend = movies.reduce((s, m) => s + (m.ticketPrice + m.canteenPrice) * (m.quantity || 1), 0);
+    const rewatches = movies.filter((m) => (m.quantity || 1) > 1).length;
+    const avgCost = totalViewings > 0 ? totalSpend / totalViewings : 0;
+    const matched = movies.filter((m) => takeInfo(m.myTake).score === takeInfo(m.publicTake).score).length;
+    const agreementRate = Math.round((matched / movies.length) * 100);
+
+    const companionCounts = {};
+    for (const m of movies) {
+      if (!m.companions) continue;
+      for (const name of m.companions.split(",").map((s) => s.trim()).filter(Boolean)) {
+        companionCounts[name] = (companionCounts[name] || 0) + 1;
+      }
+    }
+    const topCompanion = Object.entries(companionCounts).sort((a, b) => b[1] - a[1])[0];
+
+    return { totalTitles: movies.length, totalViewings, totalSpend, rewatches, avgCost, agreementRate, topCompanion };
+  }, [movies]);
+
   const sorted = useMemo(() => {
     return [...monthMovies].sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [monthMovies]);
@@ -356,6 +378,49 @@ export default function MoviesPage() {
           </div>
         )}
       </div>
+
+      {allTimeStats && (
+        <div style={{ marginBottom: 32 }}>
+          <button
+            onClick={() => setShowAllTime((v) => !v)}
+            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "7px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <BarChart3 size={13} /> {showAllTime ? "Hide" : "Show"} all-time stats
+          </button>
+          {showAllTime && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginTop: 14, padding: "16px 18px", background: "#F1ECDF", borderRadius: 6 }}>
+              <div>
+                <div style={{ fontSize: 11, color: "#8a8477" }}>Titles logged</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{allTimeStats.totalTitles}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#8a8477" }}>Total viewings</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{allTimeStats.totalViewings}</div>
+                {allTimeStats.rewatches > 0 && <div style={{ fontSize: 10, color: "#8a8477" }}>{allTimeStats.rewatches} rewatched</div>}
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#8a8477" }}>Spent all-time</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{fmt(allTimeStats.totalSpend)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#8a8477" }}>Avg. per viewing</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{fmt(allTimeStats.avgCost)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: "#8a8477" }}>Agree with public</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{allTimeStats.agreementRate}%</div>
+              </div>
+              {allTimeStats.topCompanion && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#8a8477" }}>Most watched with</div>
+                  <div className="lora" style={{ fontSize: 16, fontWeight: 600 }}>{allTimeStats.topCompanion[0]}</div>
+                  <div style={{ fontSize: 10, color: "#8a8477" }}>{allTimeStats.topCompanion[1]} times</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="responsive-grid">
         <div>
