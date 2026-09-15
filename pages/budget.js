@@ -142,6 +142,7 @@ export default function BudgetPage() {
   }
 
   async function removeRule(id) {
+    if (!window.confirm("Remove this rule? This can't be undone.")) return;
     const prev = rules;
     setRules(rules.filter((r) => r.id !== id));
     try {
