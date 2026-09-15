@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert } from "lucide-react";
+import { queueRequest } from "../lib/offlineQueue";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -213,22 +214,40 @@ export default function Page() {
     }
     setFormError("");
     setSubmitting(true);
+    const isEdit = editingExpenseId !== null;
+    const payload = {
+      type: "expenses",
+      ...(isEdit ? { id: editingExpenseId } : {}),
+      amount: amt,
+      category: expenseForm.category,
+      note: expenseForm.note.trim(),
+      date: expenseForm.date,
+      time: expenseForm.time,
+      affectsBalance: expenseForm.affectsBalance,
+    };
+
+    let res;
     try {
-      const isEdit = editingExpenseId !== null;
-      const res = await fetch("/api/data", {
+      res = await fetch("/api/data", {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "expenses",
-          ...(isEdit ? { id: editingExpenseId } : {}),
-          amount: amt,
-          category: expenseForm.category,
-          note: expenseForm.note.trim(),
-          date: expenseForm.date,
-          time: expenseForm.time,
-          affectsBalance: expenseForm.affectsBalance,
-        }),
+        body: JSON.stringify(payload),
       });
+    } catch (networkErr) {
+      // Genuine network failure (offline) — queue it and show it locally right away.
+      queueRequest({ url: "/api/data", method: isEdit ? "PUT" : "POST", body: payload });
+      if (!isEdit) {
+        setExpenses((prev) => [
+          { id: `pending-${Date.now()}`, amount: amt, category: expenseForm.category, note: expenseForm.note.trim(), date: expenseForm.date, time: expenseForm.time, affectsBalance: expenseForm.affectsBalance !== false, pending: true },
+          ...prev,
+        ]);
+      }
+      cancelEditExpense();
+      setSubmitting(false);
+      return;
+    }
+
+    try {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to save");
@@ -708,13 +727,14 @@ export default function Page() {
                                 {x.note || x.category}
                                 {x.time && <span style={{ fontSize: 10, color: "#8a8477" }}> · {x.time}</span>}
                                 {x.affectsBalance === false && <span style={{ fontSize: 10, color: "#8a8477" }}> · not deducted</span>}
+                                {x.pending && <span style={{ fontSize: 10, color: "#C98A2C" }}> · pending sync</span>}
                               </div>
                               {x.note && <div style={{ fontSize: 12, color: "#8a8477" }}>{x.category}</div>}
                             </div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                             <span className="tabnum" style={{ fontSize: 14, fontWeight: 500 }}>{fmt(x.amount)}</span>
-                            {!isMovie && (
+                            {!isMovie && !x.pending && (
                               <>
                                 <button onClick={() => startEditExpense(x)} aria-label="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#5f5a4f")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
                                   <Pencil size={14} />
@@ -724,6 +744,7 @@ export default function Page() {
                                 </button>
                               </>
                             )}
+                            {x.pending && <span style={{ fontSize: 10, color: "#C98A2C" }}>syncing…</span>}
                             {isMovie && (
                               <a href="/movies" style={{ fontSize: 11, color: "#8a8477", textDecoration: "none" }}>edit on Movies →</a>
                             )}
