@@ -23,6 +23,14 @@ export default async function handler(req, res) {
         const raw = await db.getSetting("custom_categories");
         return res.status(200).json({ categories: raw ? JSON.parse(raw) : [] });
       }
+      if (type === "theatres") {
+        const raw = await db.getSetting("custom_theatres");
+        return res.status(200).json({ theatres: raw ? JSON.parse(raw) : ["PVR", "INOX", "Cinepolis", "Miraj Cinemas", "Asian Cinemas", "AMB Cinemas", "Sudarshan 35MM"] });
+      }
+      if (type === "ott-platforms") {
+        const raw = await db.getSetting("custom_ott_platforms");
+        return res.status(200).json({ ottPlatforms: raw ? JSON.parse(raw) : ["Netflix", "Amazon Prime Video", "Disney+ Hotstar", "SonyLIV", "ZEE5", "JioCinema", "Apple TV+", "MX Player"] });
+      }
       if (type === "pin-status") {
         const hash = await db.getSetting("app_pin_hash");
         return res.status(200).json({ hasPin: !!hash });
@@ -121,6 +129,18 @@ export default async function handler(req, res) {
       if (type === "categories") {
         if (!Array.isArray(body.categories)) return err(res, "Categories must be a list");
         await db.setSetting("custom_categories", JSON.stringify(body.categories));
+        return res.status(201).json({ ok: true });
+      }
+
+      if (type === "theatres") {
+        if (!Array.isArray(body.theatres)) return err(res, "Theatres must be a list");
+        await db.setSetting("custom_theatres", JSON.stringify(body.theatres));
+        return res.status(201).json({ ok: true });
+      }
+
+      if (type === "ott-platforms") {
+        if (!Array.isArray(body.ottPlatforms)) return err(res, "Platforms must be a list");
+        await db.setSetting("custom_ott_platforms", JSON.stringify(body.ottPlatforms));
         return res.status(201).json({ ok: true });
       }
 
