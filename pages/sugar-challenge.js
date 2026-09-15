@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { ArrowLeft, Check, X, Flame, Trophy, RotateCcw } from "lucide-react";
+import { queueRequest } from "../lib/offlineQueue";
 
 function todayISO() {
   const d = new Date();
@@ -106,15 +107,19 @@ export default function SugarChallengePage() {
 
   async function markDay(date, completed) {
     setDays((prev) => ({ ...prev, [date]: { completed, note: prev[date]?.note || "" } }));
+    const payload = { type: "challenge-day", date, completed, note: days[date]?.note || "" };
     try {
       const res = await fetch("/api/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "challenge-day", date, completed, note: days[date]?.note || "" }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
     } catch (err) {
-      setLoadError("Couldn't save that day. Try again.");
+      // Could be a real server error or a network failure — queue it either way
+      // so it isn't silently lost; harmless to resend if it actually did save.
+      queueRequest({ url: "/api/data", method: "POST", body: payload });
+      setLoadError("Saved locally — will sync once you're back online.");
     }
   }
 
@@ -130,22 +135,25 @@ export default function SugarChallengePage() {
     setLoadError("");
     setSaving(true);
     const completed = pendingChoice;
+    const payload = { type: "challenge-day", date, completed, note: noteDraft };
     setDays((prev) => ({ ...prev, [date]: { completed, note: noteDraft } }));
     try {
       const res = await fetch("/api/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "challenge-day", date, completed, note: noteDraft }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
       setSelectedDay(null);
       setPendingChoice(null);
     } catch (err) {
-      setLoadError("Couldn't save that day. Try again.");
+      queueRequest({ url: "/api/data", method: "POST", body: payload });
+      setLoadError("Saved locally — will sync once you're back online.");
+      setSelectedDay(null);
+      setPendingChoice(null);
     } finally {
       setSaving(false);
     }
-    setSelectedDay(null);
   }
 
   const today = todayISO();
