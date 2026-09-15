@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Head from "next/head";
 import "../styles/globals.css";
+import { flushQueue, getQueue } from "../lib/offlineQueue";
 
 function LockScreen({ onUnlock }) {
   const [pin, setPin] = useState("");
@@ -56,23 +57,49 @@ function LockScreen({ onUnlock }) {
 
 export default function App({ Component, pageProps }) {
   const [locked, setLocked] = useState(null); // null = checking, true/false once known
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  function refreshPending() {
+    setPendingCount(getQueue().length);
+  }
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
+
+    setIsOnline(navigator.onLine);
+    refreshPending();
+    flushQueue().then(refreshPending);
+
+    const handleOnline = async () => {
+      setIsOnline(true);
+      await flushQueue();
+      refreshPending();
+    };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    const interval = setInterval(refreshPending, 5000);
     if (document.documentElement.getAttribute("data-theme") === "dark" || localStorage.getItem("darkMode") === "1") {
       document.documentElement.setAttribute("data-theme", "dark");
     }
 
     if (sessionStorage.getItem("unlocked") === "1") {
       setLocked(false);
-      return;
+    } else {
+      fetch("/api/data?type=pin-status")
+        .then((r) => r.json())
+        .then((d) => setLocked(!!d.hasPin))
+        .catch(() => setLocked(false));
     }
-    fetch("/api/data?type=pin-status")
-      .then((r) => r.json())
-      .then((d) => setLocked(!!d.hasPin))
-      .catch(() => setLocked(false));
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      clearInterval(interval);
+    };
   }, []);
 
   return (
@@ -92,7 +119,16 @@ export default function App({ Component, pageProps }) {
       {locked === null ? null : locked ? (
         <LockScreen onUnlock={() => setLocked(false)} />
       ) : (
-        <Component {...pageProps} />
+        <>
+          {(!isOnline || pendingCount > 0) && (
+            <div style={{ position: "sticky", top: 0, zIndex: 50, background: !isOnline ? "#A34A38" : "#C98A2C", color: "#FBF8F2", fontSize: 12, textAlign: "center", padding: "6px 12px" }}>
+              {!isOnline
+                ? `You're offline${pendingCount > 0 ? ` — ${pendingCount} change${pendingCount !== 1 ? "s" : ""} will sync automatically` : ""}`
+                : `Syncing ${pendingCount} change${pendingCount !== 1 ? "s" : ""}…`}
+            </div>
+          )}
+          <Component {...pageProps} />
+        </>
       )}
     </>
   );
