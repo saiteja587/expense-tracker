@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Pencil, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X } from "lucide-react";
 
 const BASE_CATEGORY_COLORS = ["#B5533C", "#C98A2C", "#3F6E5B", "#5B3A5C", "#2F4858", "#A3763F", "#6B7A3E", "#8A4B6B", "#6B6558"];
 
@@ -24,6 +24,9 @@ export default function SettingsPage() {
 
   const [darkMode, setDarkMode] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [importError, setImportError] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   async function load() {
@@ -220,6 +223,33 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    if (!window.confirm("Import will ADD every record from this file to your current data — it does not replace anything. If you already have data, this can create duplicates. Best used to restore into a fresh, empty setup. Continue?")) return;
+    setImporting(true);
+    setImportError("");
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "import-all", data }),
+      });
+      if (!res.ok) throw new Error("Import failed");
+      const result = await res.json();
+      setImportResult(result.results);
+      await load();
+    } catch (err) {
+      setImportError("Couldn't import that file — make sure it's an export from this app.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
   if (!loaded) {
     return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>Loading…</div>;
   }
@@ -242,6 +272,26 @@ export default function SettingsPage() {
         <button onClick={exportData} disabled={exporting} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 12, cursor: exporting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
           <Download size={13} /> {exporting ? "Exporting…" : "Export"}
         </button>
+      </div>
+
+      {/* Data restore */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Restore from a backup</div>
+            <div style={{ fontSize: 11, color: "#8a8477" }}>Adds every record from an exported .json file back into this database. Meant for restoring into a fresh setup, not merging with existing data.</div>
+          </div>
+          <label style={{ background: importing ? "#EAE5D9" : "#241F1A", color: importing ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 12, cursor: importing ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+            <Upload size={13} /> {importing ? "Importing…" : "Import"}
+            <input type="file" accept="application/json" onChange={handleImportFile} disabled={importing} style={{ display: "none" }} />
+          </label>
+        </div>
+        {importResult && (
+          <div style={{ fontSize: 12, color: "#2F6F5E", marginTop: 10 }}>
+            Restored: {importResult.expenses} expenses, {importResult.movies} movies, {importResult.topups} top-ups, {importResult.budgetRules} rules, {importResult.recurring} recurring, {importResult.challengeDays} challenge days.
+          </div>
+        )}
+        {importError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 10 }}>{importError}</div>}
       </div>
 
       {/* Dark mode */}
