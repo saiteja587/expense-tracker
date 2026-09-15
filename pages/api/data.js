@@ -211,6 +211,16 @@ export default async function handler(req, res) {
         return res.status(200).json({ topup });
       }
 
+      if (type === "recurring") {
+        const amount = parseFloat(body.amount);
+        const dayOfMonth = parseInt(body.dayOfMonth, 10);
+        if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
+        if (!body.category) return err(res, "Category is required");
+        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) return err(res, "Day of month must be between 1 and 28");
+        const recurring = await db.updateRecurring(numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance });
+        return res.status(200).json({ recurring });
+      }
+
       return err(res, "Unknown type");
     }
 
