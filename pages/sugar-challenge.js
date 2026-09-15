@@ -45,9 +45,23 @@ export default function SugarChallengePage() {
       }
       setDays(map);
       setHistory(data.history || []);
+      localStorage.setItem("cache_challenge", JSON.stringify({ meta: data.meta, days: map, history: data.history || [] }));
       setLoadError("");
     } catch (err) {
-      setLoadError("Couldn't load your challenge. Check the database connection and refresh.");
+      const cached = localStorage.getItem("cache_challenge");
+      if (cached) {
+        try {
+          const c = JSON.parse(cached);
+          setMeta(c.meta);
+          setDays(c.days);
+          setHistory(c.history || []);
+          setLoadError("You're offline — showing what was last saved. New entries will sync once you're back online.");
+        } catch {
+          setLoadError("Couldn't load your challenge. Check your connection and refresh.");
+        }
+      } else {
+        setLoadError("You're offline and nothing's cached yet — connect once so this page can save a local copy.");
+      }
     } finally {
       setLoaded(true);
     }
