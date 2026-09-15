@@ -182,6 +182,7 @@ export default function MoviesPage() {
   }
 
   async function removeMovie(id) {
+    if (!window.confirm("Delete this movie? This can't be undone.")) return;
     const prev = movies;
     setMovies(movies.filter((x) => x.id !== id));
     try {
