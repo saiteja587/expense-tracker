@@ -8,6 +8,10 @@ const BASE_CATEGORY_COLORS = ["#B5533C", "#C98A2C", "#3F6E5B", "#5B3A5C", "#2F48
 export default function SettingsPage() {
   const [categories, setCategories] = useState([]);
   const [newCat, setNewCat] = useState("");
+  const [theatres, setTheatres] = useState([]);
+  const [newTheatre, setNewTheatre] = useState("");
+  const [ottPlatforms, setOttPlatforms] = useState([]);
+  const [newOtt, setNewOtt] = useState("");
   const [recurring, setRecurring] = useState([]);
   const [recForm, setRecForm] = useState({ amount: "", category: "Bills", note: "", dayOfMonth: "1" });
   const [recError, setRecError] = useState("");
@@ -24,14 +28,18 @@ export default function SettingsPage() {
 
   async function load() {
     try {
-      const [catRes, recRes, pinRes] = await Promise.all([
+      const [catRes, recRes, pinRes, theatreRes, ottRes] = await Promise.all([
         fetch("/api/data?type=categories"),
         fetch("/api/data?type=recurring"),
         fetch("/api/data?type=pin-status"),
+        fetch("/api/data?type=theatres"),
+        fetch("/api/data?type=ott-platforms"),
       ]);
       if (catRes.ok) setCategories((await catRes.json()).categories || []);
       if (recRes.ok) setRecurring((await recRes.json()).recurring || []);
       if (pinRes.ok) setHasPin((await pinRes.json()).hasPin);
+      if (theatreRes.ok) setTheatres((await theatreRes.json()).theatres || []);
+      if (ottRes.ok) setOttPlatforms((await ottRes.json()).ottPlatforms || []);
     } catch (e) {
       // best-effort
     } finally {
@@ -77,6 +85,52 @@ export default function SettingsPage() {
       body: JSON.stringify({ type: "categories", categories: next }),
     });
     if (res.ok) setCategories(next);
+  }
+
+  async function addTheatre(e) {
+    e.preventDefault();
+    const name = newTheatre.trim();
+    if (!name || theatres.includes(name)) return;
+    const next = [...theatres, name];
+    const res = await fetch("/api/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "theatres", theatres: next }),
+    });
+    if (res.ok) { setTheatres(next); setNewTheatre(""); }
+  }
+
+  async function removeTheatre(name) {
+    const next = theatres.filter((t) => t !== name);
+    const res = await fetch("/api/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "theatres", theatres: next }),
+    });
+    if (res.ok) setTheatres(next);
+  }
+
+  async function addOtt(e) {
+    e.preventDefault();
+    const name = newOtt.trim();
+    if (!name || ottPlatforms.includes(name)) return;
+    const next = [...ottPlatforms, name];
+    const res = await fetch("/api/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "ott-platforms", ottPlatforms: next }),
+    });
+    if (res.ok) { setOttPlatforms(next); setNewOtt(""); }
+  }
+
+  async function removeOtt(name) {
+    const next = ottPlatforms.filter((o) => o !== name);
+    const res = await fetch("/api/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "ott-platforms", ottPlatforms: next }),
+    });
+    if (res.ok) setOttPlatforms(next);
   }
 
   async function addRecurring(e) {
@@ -235,6 +289,46 @@ export default function SettingsPage() {
         )}
         <form onSubmit={addCategory} style={{ display: "flex", gap: 8 }}>
           <input type="text" placeholder="e.g. Gym, Gifts" value={newCat} onChange={(e) => setNewCat(e.target.value)} maxLength={30} style={{ width: 200 }} />
+          <button type="submit" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
+        </form>
+      </div>
+
+      {/* Theatres */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Theatres</div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 10 }}>Shows up in the "Watched via: Theatre" dropdown on the Movies page.</div>
+        {theatres.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {theatres.map((t) => (
+              <span key={t} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 10px", borderRadius: 20, background: "#F1ECDF", color: "#5f5a4f", fontWeight: 500 }}>
+                {t}
+                <button onClick={() => removeTheatre(t)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", display: "flex", padding: 0 }}><Trash2 size={11} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+        <form onSubmit={addTheatre} style={{ display: "flex", gap: 8 }}>
+          <input type="text" placeholder="e.g. Prasads IMAX" value={newTheatre} onChange={(e) => setNewTheatre(e.target.value)} maxLength={60} style={{ width: 200 }} />
+          <button type="submit" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
+        </form>
+      </div>
+
+      {/* OTT Platforms */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>OTT platforms</div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 10 }}>Shows up in the "Watched via: OTT" dropdown on the Movies page.</div>
+        {ottPlatforms.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+            {ottPlatforms.map((o) => (
+              <span key={o} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 10px", borderRadius: 20, background: "#F1ECDF", color: "#5f5a4f", fontWeight: 500 }}>
+                {o}
+                <button onClick={() => removeOtt(o)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", display: "flex", padding: 0 }}><Trash2 size={11} /></button>
+              </span>
+            ))}
+          </div>
+        )}
+        <form onSubmit={addOtt} style={{ display: "flex", gap: 8 }}>
+          <input type="text" placeholder="e.g. Aha, Lionsgate Play" value={newOtt} onChange={(e) => setNewOtt(e.target.value)} maxLength={60} style={{ width: 200 }} />
           <button type="submit" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
         </form>
       </div>
