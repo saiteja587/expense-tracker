@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus } from "lucide-react";
+import { queueRequest } from "../lib/offlineQueue";
 
 const TAKES = [
   { value: "loved", label: "Loved it", score: 3, color: "#2F6F5E" },
@@ -147,27 +148,44 @@ export default function MoviesPage() {
     }
     setFormError("");
     setSubmitting(true);
+    const isEdit = editingId !== null;
+    const payload = {
+      type: "movies",
+      ...(isEdit ? { id: editingId } : {}),
+      title: form.title.trim(),
+      date: form.date,
+      time: form.time,
+      ticketPrice: tp,
+      canteenPrice: cp,
+      companions: form.companions.trim(),
+      myTake: form.myTake,
+      publicTake: form.publicTake,
+      note: form.note.trim(),
+      affectsBalance: form.affectsBalance,
+      quantity: form.quantity,
+    };
+
+    let res;
     try {
-      const isEdit = editingId !== null;
-      const res = await fetch("/api/data", {
+      res = await fetch("/api/data", {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "movies",
-          ...(isEdit ? { id: editingId } : {}),
-          title: form.title.trim(),
-          date: form.date,
-          time: form.time,
-          ticketPrice: tp,
-          canteenPrice: cp,
-          companions: form.companions.trim(),
-          myTake: form.myTake,
-          publicTake: form.publicTake,
-          note: form.note.trim(),
-          affectsBalance: form.affectsBalance,
-          quantity: form.quantity,
-        }),
+        body: JSON.stringify(payload),
       });
+    } catch (networkErr) {
+      queueRequest({ url: "/api/data", method: isEdit ? "PUT" : "POST", body: payload });
+      if (!isEdit) {
+        setMovies((prev) => [
+          { id: `pending-${Date.now()}`, title: form.title.trim(), date: form.date, time: form.time, ticketPrice: tp, canteenPrice: cp, companions: form.companions.trim(), myTake: form.myTake, publicTake: form.publicTake, note: form.note.trim(), affectsBalance: form.affectsBalance !== false, quantity: form.quantity, pending: true },
+          ...prev,
+        ]);
+      }
+      cancelEdit();
+      setSubmitting(false);
+      return;
+    }
+
+    try {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to save");
@@ -394,16 +412,21 @@ export default function MoviesPage() {
                           {m.time && <> · {m.time}</>}
                           {m.companions && <> · with {m.companions}</>}
                           {m.affectsBalance === false && <> · not deducted from balance</>}
+                          {m.pending && <> · pending sync</>}
                         </div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                         <span className="tabnum" style={{ fontSize: 15, fontWeight: 500 }}>{fmt(total)}</span>
-                        <button onClick={() => startEdit(m)} aria-label="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#5f5a4f")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
-                          <Pencil size={14} />
-                        </button>
-                        <button onClick={() => removeMovie(m.id)} aria-label="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#A34A38")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
-                          <Trash2 size={14} />
-                        </button>
+                        {!m.pending && (
+                          <>
+                            <button onClick={() => startEdit(m)} aria-label="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#5f5a4f")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
+                              <Pencil size={14} />
+                            </button>
+                            <button onClick={() => removeMovie(m.id)} aria-label="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#A34A38")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div style={{ fontSize: 11, color: "#8a8477", marginTop: 4 }}>
