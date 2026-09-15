@@ -63,3 +63,11 @@ button {
     padding: 28px 16px 48px !important;
   }
 }
+
+/* Dark mode: applied as a filter across the whole page rather than a full
+   color system rewrite (which would mean touching every inline style in
+   every file). Pragmatic, not pixel-perfect, but low-risk and reversible. */
+html[data-theme="dark"] {
+  filter: invert(0.92) hue-rotate(180deg);
+  background: #1a1712;
+}
