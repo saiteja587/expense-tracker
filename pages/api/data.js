@@ -18,6 +18,15 @@ export default async function handler(req, res) {
         const history = await db.listChallengeHistory();
         return res.status(200).json({ meta, days, history });
       }
+      if (type === "recurring") return res.status(200).json({ recurring: await db.listRecurring() });
+      if (type === "categories") {
+        const raw = await db.getSetting("custom_categories");
+        return res.status(200).json({ categories: raw ? JSON.parse(raw) : [] });
+      }
+      if (type === "pin-status") {
+        const pin = await db.getSetting("app_pin");
+        return res.status(200).json({ hasPin: !!pin });
+      }
       return err(res, "Unknown type");
     }
 
@@ -70,7 +79,9 @@ export default async function handler(req, res) {
         const lengthDays = parseInt(body.lengthDays, 10) || 41;
         if (!body.startDate) return err(res, "Pick a start date");
         if (lengthDays < 1 || lengthDays > 365) return err(res, "Length must be between 1 and 365 days");
-        const meta = await db.setChallengeMeta(body.startDate, lengthDays);
+        const sugarPerDay = parseFloat(body.sugarPerDay) || 0;
+        const savingsPerDay = parseFloat(body.savingsPerDay) || 0;
+        const meta = await db.setChallengeMeta(body.startDate, lengthDays, sugarPerDay, savingsPerDay);
         return res.status(201).json({ meta });
       }
 
@@ -79,6 +90,33 @@ export default async function handler(req, res) {
         if (typeof body.completed !== "boolean") return err(res, "Completed must be true or false");
         const day = await db.upsertChallengeDay(body.date, body.completed, body.note);
         return res.status(201).json({ day });
+      }
+
+      if (type === "recurring") {
+        const amount = parseFloat(body.amount);
+        const dayOfMonth = parseInt(body.dayOfMonth, 10);
+        if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
+        if (!body.category) return err(res, "Category is required");
+        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) return err(res, "Day of month must be between 1 and 28");
+        const recurring = await db.createRecurring({ amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance });
+        return res.status(201).json({ recurring });
+      }
+
+      if (type === "categories") {
+        if (!Array.isArray(body.categories)) return err(res, "Categories must be a list");
+        await db.setSetting("custom_categories", JSON.stringify(body.categories));
+        return res.status(201).json({ ok: true });
+      }
+
+      if (type === "set-pin") {
+        if (body.pin && !/^[0-9]{4,8}$/.test(body.pin)) return err(res, "PIN must be 4-8 digits");
+        await db.setSetting("app_pin", body.pin || "");
+        return res.status(201).json({ ok: true });
+      }
+
+      if (type === "verify-pin") {
+        const stored = await db.getSetting("app_pin");
+        return res.status(200).json({ ok: !stored || stored === body.pin });
       }
 
       if (type === "challenge-archive") {
@@ -143,6 +181,7 @@ export default async function handler(req, res) {
       else if (type === "movies") await db.deleteMovie(numId);
       else if (type === "balance") await db.deleteTopup(numId);
       else if (type === "budget") await db.deleteBudgetRule(numId);
+      else if (type === "recurring") await db.deleteRecurring(numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }
