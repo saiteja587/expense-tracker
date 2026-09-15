@@ -98,10 +98,36 @@ export default function App({ Component, pageProps }) {
         .catch(() => setLocked(false));
     }
 
+    // Auto re-lock after 5 minutes of no touch/click/key activity, so an
+    // unlocked session doesn't stay open indefinitely if the phone is set down.
+    const RELOCK_MS = 5 * 60 * 1000;
+    let relockTimer = null;
+    function scheduleRelock() {
+      if (relockTimer) clearTimeout(relockTimer);
+      relockTimer = setTimeout(() => {
+        if (sessionStorage.getItem("unlocked") === "1") {
+          fetch("/api/data?type=pin-status")
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.hasPin) {
+                sessionStorage.removeItem("unlocked");
+                setLocked(true);
+              }
+            })
+            .catch(() => {});
+        }
+      }, RELOCK_MS);
+    }
+    const activityEvents = ["mousedown", "touchstart", "keydown"];
+    activityEvents.forEach((ev) => window.addEventListener(ev, scheduleRelock));
+    scheduleRelock();
+
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       clearInterval(interval);
+      activityEvents.forEach((ev) => window.removeEventListener(ev, scheduleRelock));
+      if (relockTimer) clearTimeout(relockTimer);
     };
   }, []);
 
