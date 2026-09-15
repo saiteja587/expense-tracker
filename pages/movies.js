@@ -2,9 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 
-const THEATRE_OPTIONS = ["PVR", "INOX", "Cinepolis", "Miraj Cinemas", "Asian Cinemas", "AMB Cinemas", "Sudarshan 35MM", "Other"];
-const OTT_OPTIONS = ["Netflix", "Amazon Prime Video", "Disney+ Hotstar", "SonyLIV", "ZEE5", "JioCinema", "Apple TV+", "MX Player", "Other"];
-
 const TAKES = [
   { value: "loved", label: "Loved it", score: 3, color: "#2F6F5E" },
   { value: "liked", label: "Liked it", score: 2, color: "#3F6E5B" },
@@ -31,7 +28,7 @@ function takeInfo(value) {
 const emptyForm = {
   title: "", date: todayISO(), time: "", ticketPrice: "", canteenPrice: "", companions: "",
   myTake: "liked", publicTake: "liked", note: "", affectsBalance: true, quantity: 1,
-  venueType: "Theatre", venueName: "PVR", venueNameOther: "",
+  venueType: "Theatre", venueName: "", venueNameOther: "",
 };
 
 function QuantityStepper({ value, onChange }) {
@@ -71,10 +68,17 @@ export default function MoviesPage() {
   const [submitting, setSubmitting] = useState(false);
   const [viewDate, setViewDate] = useState(new Date());
   const [movieCountGuideline, setMovieCountGuideline] = useState(null);
+  const [theatreOptions, setTheatreOptions] = useState(["Other"]);
+  const [ottOptions, setOttOptions] = useState(["Other"]);
 
   async function load() {
     try {
-      const [res, ruleRes] = await Promise.all([fetch("/api/data?type=movies"), fetch("/api/data?type=budget")]);
+      const [res, ruleRes, theatreRes, ottRes] = await Promise.all([
+        fetch("/api/data?type=movies"),
+        fetch("/api/data?type=budget"),
+        fetch("/api/data?type=theatres"),
+        fetch("/api/data?type=ott-platforms"),
+      ]);
       if (!res.ok) throw new Error("Request failed");
       const data = await res.json();
       if (ruleRes.ok) {
@@ -82,6 +86,8 @@ export default function MoviesPage() {
         const rule = ruleData.rules.find((r) => r.rule_type === "movie_count");
         setMovieCountGuideline(rule ? parseFloat(rule.amount) : null);
       }
+      if (theatreRes.ok) setTheatreOptions([...(await theatreRes.json()).theatres, "Other"]);
+      if (ottRes.ok) setOttOptions([...(await ottRes.json()).ottPlatforms, "Other"]);
       const mapped = data.movies.map((m) => ({
         id: m.id,
         title: m.title,
@@ -122,10 +128,16 @@ export default function MoviesPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    if (editingId === null && !form.venueName && theatreOptions.length > 0) {
+      setForm((f) => ({ ...f, venueName: theatreOptions[0] }));
+    }
+  }, [theatreOptions, editingId]);
+
   function startEdit(m) {
     setEditingId(m.id);
     const venueType = m.venueType || "Theatre";
-    const options = venueType === "OTT" ? OTT_OPTIONS : THEATRE_OPTIONS;
+    const options = venueType === "OTT" ? ottOptions : theatreOptions;
     const knownOption = options.includes(m.venueName) ? m.venueName : (m.venueName ? "Other" : options[0]);
     setForm({
       title: m.title,
@@ -360,7 +372,7 @@ export default function MoviesPage() {
                     key={vt}
                     type="button"
                     onClick={() => {
-                      const options = vt === "OTT" ? OTT_OPTIONS : THEATRE_OPTIONS;
+                      const options = vt === "OTT" ? ottOptions : theatreOptions;
                       setForm({ ...form, venueType: vt, venueName: options[0], venueNameOther: "" });
                     }}
                     style={{
@@ -375,7 +387,7 @@ export default function MoviesPage() {
                 ))}
               </div>
               <select value={form.venueName} onChange={(e) => setForm({ ...form, venueName: e.target.value, venueNameOther: "" })}>
-                {(form.venueType === "OTT" ? OTT_OPTIONS : THEATRE_OPTIONS).map((opt) => (
+                {(form.venueType === "OTT" ? ottOptions : theatreOptions).map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
