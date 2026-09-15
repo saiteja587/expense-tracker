@@ -22,8 +22,11 @@ function LockScreen({ onUnlock }) {
       if (data.ok) {
         sessionStorage.setItem("unlocked", "1");
         onUnlock();
+      } else if (data.locked) {
+        setError(`Too many wrong attempts — wait ${data.waitSeconds}s and try again.`);
+        setPin("");
       } else {
-        setError("Wrong PIN");
+        setError(data.attemptsLeft !== undefined ? `Wrong PIN — ${data.attemptsLeft} attempt${data.attemptsLeft !== 1 ? "s" : ""} left before a cooldown.` : "Wrong PIN");
         setPin("");
       }
     } catch {
