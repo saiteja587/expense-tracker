@@ -29,7 +29,14 @@ function todayISO() {
   return new Date(d - off).toISOString().slice(0, 10);
 }
 
-const emptyExpenseForm = { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), time: "", affectsBalance: true };
+function nowTimeHHMM() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function getEmptyExpenseForm() {
+  return { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), time: nowTimeHHMM(), affectsBalance: true };
+}
 const emptyTopupForm = { amount: "", note: "", date: todayISO(), mode: "add" };
 
 export default function Page() {
@@ -44,7 +51,7 @@ export default function Page() {
   const [loadError, setLoadError] = useState("");
   const [viewDate, setViewDate] = useState(new Date());
 
-  const [expenseForm, setExpenseForm] = useState(emptyExpenseForm);
+  const [expenseForm, setExpenseForm] = useState(getEmptyExpenseForm);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -219,7 +226,7 @@ export default function Page() {
 
   function cancelEditExpense() {
     setEditingExpenseId(null);
-    setExpenseForm(emptyExpenseForm);
+    setExpenseForm(getEmptyExpenseForm());
     setFormError("");
   }
 
