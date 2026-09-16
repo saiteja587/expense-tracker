@@ -21,15 +21,22 @@ function todayISO() {
   return new Date(d - off).toISOString().slice(0, 10);
 }
 
+function nowTimeHHMM() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 function takeInfo(value) {
   return TAKES.find((t) => t.value === value) || TAKES[TAKES.length - 1];
 }
 
-const emptyForm = {
-  title: "", date: todayISO(), time: "", ticketPrice: "", canteenPrice: "", companions: "",
-  myTake: "liked", publicTake: "liked", note: "", affectsBalance: true, quantity: 1,
-  venueType: "Theatre", venueName: "", venueNameOther: "",
-};
+function getEmptyForm() {
+  return {
+    title: "", date: todayISO(), time: nowTimeHHMM(), ticketPrice: "", canteenPrice: "", companions: "",
+    myTake: "liked", publicTake: "liked", note: "", affectsBalance: true, quantity: 1,
+    venueType: "Theatre", venueName: "", venueNameOther: "",
+  };
+}
 
 function QuantityStepper({ value, onChange }) {
   return (
@@ -62,7 +69,7 @@ export default function MoviesPage() {
   const [movies, setMovies] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(getEmptyForm);
   const [editingId, setEditingId] = useState(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -161,7 +168,7 @@ export default function MoviesPage() {
 
   function cancelEdit() {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm(getEmptyForm());
     setFormError("");
   }
 
