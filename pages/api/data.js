@@ -31,6 +31,9 @@ export default async function handler(req, res) {
         const raw = await db.getSetting("custom_ott_platforms");
         return res.status(200).json({ ottPlatforms: raw ? JSON.parse(raw) : ["Netflix", "Amazon Prime Video", "Disney+ Hotstar", "SonyLIV", "ZEE5", "JioCinema", "Apple TV+", "MX Player"] });
       }
+      if (type === "vapid-public-key") {
+        return res.status(200).json({ key: process.env.VAPID_PUBLIC_KEY || null });
+      }
       if (type === "pin-status") {
         const hash = await db.getSetting("app_pin_hash");
         return res.status(200).json({ hasPin: !!hash });
@@ -142,6 +145,19 @@ export default async function handler(req, res) {
         if (!Array.isArray(body.ottPlatforms)) return err(res, "Platforms must be a list");
         await db.setSetting("custom_ott_platforms", JSON.stringify(body.ottPlatforms));
         return res.status(201).json({ ok: true });
+      }
+
+      if (type === "save-subscription") {
+        const sub = body.subscription;
+        if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return err(res, "Invalid subscription");
+        await db.saveSubscription({ endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth });
+        return res.status(201).json({ ok: true });
+      }
+
+      if (type === "remove-subscription") {
+        if (!body.endpoint) return err(res, "Missing endpoint");
+        await db.deleteSubscription(body.endpoint);
+        return res.status(200).json({ ok: true });
       }
 
       if (type === "set-pin") {
