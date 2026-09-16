@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy } from "lucide-react";
 
 const BASE_CATEGORY_COLORS = ["#B5533C", "#C98A2C", "#3F6E5B", "#5B3A5C", "#2F4858", "#A3763F", "#6B7A3E", "#8A4B6B", "#6B6558"];
 
@@ -27,6 +27,10 @@ export default function SettingsPage() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [importError, setImportError] = useState("");
+  const [notifStatus, setNotifStatus] = useState("checking"); // checking | unsupported | denied | off | on
+  const [notifBusy, setNotifBusy] = useState(false);
+  const [notifError, setNotifError] = useState("");
+  const [copied, setCopied] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   async function load() {
@@ -53,7 +57,96 @@ export default function SettingsPage() {
   useEffect(() => {
     load();
     setDarkMode(localStorage.getItem("darkMode") === "1");
+    checkNotifStatus();
   }, []);
+
+  async function checkNotifStatus() {
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setNotifStatus("unsupported");
+      return;
+    }
+    if (Notification.permission === "denied") {
+      setNotifStatus("denied");
+      return;
+    }
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      setNotifStatus(sub ? "on" : "off");
+    } catch {
+      setNotifStatus("off");
+    }
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  }
+
+  async function enableNotifications() {
+    setNotifBusy(true);
+    setNotifError("");
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setNotifStatus(permission === "denied" ? "denied" : "off");
+        setNotifBusy(false);
+        return;
+      }
+      const keyRes = await fetch("/api/data?type=vapid-public-key");
+      const { key } = await keyRes.json();
+      if (!key) {
+        setNotifError("Notifications aren't set up on the server yet — the VAPID keys need to be added as environment variables first.");
+        setNotifBusy(false);
+        return;
+      }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      });
+      await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "save-subscription", subscription: sub.toJSON() }),
+      });
+      setNotifStatus("on");
+    } catch (e) {
+      setNotifError("Couldn't enable notifications on this device. Try again.");
+    } finally {
+      setNotifBusy(false);
+    }
+  }
+
+  async function disableNotifications() {
+    setNotifBusy(true);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "remove-subscription", endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setNotifStatus("off");
+    } catch {
+      setNotifError("Couldn't turn off notifications. Try again.");
+    } finally {
+      setNotifBusy(false);
+    }
+  }
+
+  function copyWaterUrl() {
+    const url = `${window.location.origin}/api/notify-water?secret=YOUR_WATER_NOTIFY_SECRET`;
+    navigator.clipboard?.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   function toggleDarkMode() {
     const next = !darkMode;
@@ -292,6 +385,52 @@ export default function SettingsPage() {
           </div>
         )}
         {importError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 10 }}>{importError}</div>}
+      </div>
+
+      {/* Notifications */}
+      <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Bell size={16} />
+            <div>
+              <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Notifications</div>
+              <div style={{ fontSize: 11, color: "#8a8477" }}>
+                {notifStatus === "unsupported" && "Not supported in this browser."}
+                {notifStatus === "denied" && "Blocked — allow notifications for this site in your browser settings to turn this on."}
+                {notifStatus === "off" && "Off. Turn on to get real device notifications, even with the app closed."}
+                {notifStatus === "on" && "On for this device. Movie-day and recurring-expense reminders will arrive automatically."}
+                {notifStatus === "checking" && "Checking…"}
+              </div>
+            </div>
+          </div>
+          {(notifStatus === "off" || notifStatus === "on") && (
+            <button
+              onClick={notifStatus === "on" ? disableNotifications : enableNotifications}
+              disabled={notifBusy}
+              style={{ background: notifStatus === "on" ? "#EAE5D9" : "#241F1A", color: notifStatus === "on" ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 12, cursor: notifBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
+            >
+              {notifBusy ? "Working…" : notifStatus === "on" ? "Turn off" : "Turn on"}
+            </button>
+          )}
+        </div>
+        {notifError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 10 }}>{notifError}</div>}
+
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #EAE5D9" }}>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Water reminder every 1.5 hours</div>
+          <div style={{ fontSize: 11, color: "#8a8477", lineHeight: 1.6, marginBottom: 10 }}>
+            Vercel's free plan can only run scheduled checks once a day — not frequently enough for a water reminder. To get one every 90 minutes at no cost, use a free external scheduler (e.g. cron-job.org): create an account, add a new cron job set to run every 90 minutes, and point it at the URL below. Replace YOUR_WATER_NOTIFY_SECRET with the actual value of the WATER_NOTIFY_SECRET environment variable you set on Vercel.
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <code style={{ fontSize: 11, background: "#F1ECDF", padding: "8px 10px", borderRadius: 3, flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
+              {typeof window !== "undefined" ? window.location.origin : ""}/api/notify-water?secret=YOUR_WATER_NOTIFY_SECRET
+            </code>
+            <button onClick={copyWaterUrl} style={{ background: "#EAE5D9", border: "none", borderRadius: 3, padding: "8px 10px", cursor: "pointer", display: "flex" }}>
+              <Copy size={13} />
+            </button>
+          </div>
+          {copied && <div style={{ fontSize: 11, color: "#2F6F5E", marginTop: 6 }}>Copied</div>}
+          <div style={{ fontSize: 10, color: "#8a8477", marginTop: 8 }}>This same schedule also nudges you about the sugar challenge if it's past 8pm and today isn't marked yet.</div>
+        </div>
       </div>
 
       {/* Dark mode */}
