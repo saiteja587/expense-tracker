@@ -45,6 +45,7 @@ export default function Page() {
   const [topups, setTopups] = useState([]);
   const [budgetRules, setBudgetRules] = useState([]);
   const [customCategories, setCustomCategories] = useState([]);
+  const [recurring, setRecurring] = useState([]);
   const [challengeMeta, setChallengeMeta] = useState(null);
   const [challengeDays, setChallengeDays] = useState({});
   const [loaded, setLoaded] = useState(false);
@@ -64,13 +65,14 @@ export default function Page() {
 
   async function load() {
     try {
-      const [expRes, movRes, balRes, ruleRes, chalRes, catRes] = await Promise.all([
+      const [expRes, movRes, balRes, ruleRes, chalRes, catRes, recRes] = await Promise.all([
         fetch("/api/data?type=expenses"),
         fetch("/api/data?type=movies"),
         fetch("/api/data?type=balance"),
         fetch("/api/data?type=budget"),
         fetch("/api/data?type=challenge"),
         fetch("/api/data?type=categories"),
+        fetch("/api/data?type=recurring"),
       ]);
       if (!expRes.ok) throw new Error("Request failed");
       const expData = await expRes.json();
@@ -131,10 +133,16 @@ export default function Page() {
         mappedCategories = catData.categories || [];
         setCustomCategories(mappedCategories);
       }
+      let mappedRecurring = [];
+      if (recRes.ok) {
+        const recData = await recRes.json();
+        mappedRecurring = recData.recurring || [];
+        setRecurring(mappedRecurring);
+      }
       localStorage.setItem("cache_index", JSON.stringify({
         expenses: mappedExpenses, movies: mappedMovies, topups: mappedTopups,
         budgetRules: mappedRules, challengeMeta: mappedChalMeta, challengeDays: mappedChalDays,
-        customCategories: mappedCategories,
+        customCategories: mappedCategories, recurring: mappedRecurring,
       }));
       setLoadError("");
     } catch (err) {
@@ -149,6 +157,7 @@ export default function Page() {
           setChallengeMeta(c.challengeMeta || null);
           setChallengeDays(c.challengeDays || {});
           setCustomCategories(c.customCategories || []);
+          setRecurring(c.recurring || []);
           setLoadError("You're offline — showing what was last saved. New entries will sync once you're back online.");
         } catch {
           setLoadError("Couldn't load your expenses. Check your connection and refresh.");
@@ -180,7 +189,29 @@ export default function Page() {
     return items;
   }, [movies]);
 
-  const allItems = useMemo(() => [...expenses, ...movieItems], [expenses, movieItems]);
+  // Recurring templates not yet auto-generated for the current month show up
+  // as a preview here — same date they'll actually land on — so you can see
+  // the commitment coming instead of only after the cron job creates it.
+  const recurringPendingItems = useMemo(() => {
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    return recurring
+      .filter((r) => r.last_generated_month !== ym)
+      .map((r) => ({
+        id: `recurring-${r.id}`,
+        amount: parseFloat(r.amount),
+        category: r.category,
+        note: r.note || "(recurring)",
+        date: `${ym}-${String(r.day_of_month).padStart(2, "0")}`,
+        affectsBalance: r.affects_balance !== false,
+        isRecurringPending: true,
+      }));
+  }, [recurring]);
+
+  const allItems = useMemo(() => [...expenses, ...movieItems, ...recurringPendingItems], [expenses, movieItems, recurringPendingItems]);
+
+  const totalRecurringPerMonth = useMemo(() => recurring.reduce((s, r) => s + parseFloat(r.amount), 0), [recurring]);
+
 
   // Balance: expenses/movies dated in the future (e.g. an EMI you logged ahead of
   // time) don't reduce the balance until their date actually arrives. They still
@@ -779,13 +810,14 @@ export default function Page() {
                                 {x.time && <span style={{ fontSize: 10, color: "#8a8477" }}> · {x.time}</span>}
                                 {x.affectsBalance === false && <span style={{ fontSize: 10, color: "#8a8477" }}> · not deducted</span>}
                                 {x.pending && <span style={{ fontSize: 10, color: "#C98A2C" }}> · pending sync</span>}
+                                {x.isRecurringPending && <span style={{ fontSize: 10, color: "#A3763F" }}> · recurring, not yet posted</span>}
                               </div>
                               {x.note && <div style={{ fontSize: 12, color: "#8a8477" }}>{x.category}</div>}
                             </div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                             <span className="tabnum" style={{ fontSize: 14, fontWeight: 500 }}>{fmt(x.amount)}</span>
-                            {!isMovie && !x.pending && (
+                            {!isMovie && !x.pending && !x.isRecurringPending && (
                               <>
                                 <button onClick={() => startEditExpense(x)} aria-label="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#5f5a4f")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
                                   <Pencil size={14} />
@@ -796,6 +828,7 @@ export default function Page() {
                               </>
                             )}
                             {x.pending && <span style={{ fontSize: 10, color: "#C98A2C" }}>syncing…</span>}
+                            {x.isRecurringPending && <a href="/settings" style={{ fontSize: 11, color: "#8a8477", textDecoration: "none" }}>edit in Settings →</a>}
                             {isMovie && (
                               <a href="/movies" style={{ fontSize: 11, color: "#8a8477", textDecoration: "none" }}>edit on Movies →</a>
                             )}
