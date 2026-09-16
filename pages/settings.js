@@ -385,8 +385,18 @@ export default function SettingsPage() {
 
       {/* Recurring expenses */}
       <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px" }}>
-        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Recurring expenses</div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>Logged automatically each month on the day you set — e.g. rent or an EMI.</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Recurring expenses</div>
+          {recurring.length > 0 && (
+            <div style={{ textAlign: "right" }}>
+              <div className="tabnum" style={{ fontSize: 16, fontWeight: 600 }}>
+                ₹{recurring.reduce((s, r) => s + parseFloat(r.amount), 0).toLocaleString("en-IN")}/mo
+              </div>
+              <div style={{ fontSize: 10, color: "#8a8477" }}>total committed</div>
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>Logged automatically each month on the day you set — e.g. rent or an EMI. Shows on your Expense Ledger as "scheduled" before the actual day arrives.</div>
 
         {recurring.length > 0 && (
           <div style={{ marginBottom: 14 }}>
