@@ -1,7 +1,30 @@
 import { useEffect, useState } from "react";
 import Head from "next/head";
+import { useRouter } from "next/router";
 import "../styles/globals.css";
 import { flushQueue, getQueue } from "../lib/offlineQueue";
+import { Home, Clapperboard, PiggyBank, Flame, Settings as SettingsIcon } from "lucide-react";
+
+const NAV_ITEMS = [
+  { href: "/", label: "Ledger", Icon: Home },
+  { href: "/movies", label: "Movies", Icon: Clapperboard },
+  { href: "/budget", label: "Rules", Icon: PiggyBank },
+  { href: "/sugar-challenge", label: "Diet", Icon: Flame },
+  { href: "/settings", label: "Settings", Icon: SettingsIcon },
+];
+
+function BottomNav({ currentPath }) {
+  return (
+    <nav className="bottom-nav">
+      {NAV_ITEMS.map(({ href, label, Icon }) => (
+        <a key={href} href={href} className={currentPath === href ? "active" : ""}>
+          <Icon size={20} strokeWidth={currentPath === href ? 2.4 : 1.8} />
+          {label}
+        </a>
+      ))}
+    </nav>
+  );
+}
 
 function LockScreen({ onUnlock }) {
   const [pin, setPin] = useState("");
@@ -59,6 +82,7 @@ function LockScreen({ onUnlock }) {
 }
 
 export default function App({ Component, pageProps }) {
+  const router = useRouter();
   const [locked, setLocked] = useState(null); // null = checking, true/false once known
   const [isOnline, setIsOnline] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
@@ -157,6 +181,7 @@ export default function App({ Component, pageProps }) {
             </div>
           )}
           <Component {...pageProps} />
+          <BottomNav currentPath={router.pathname} />
         </>
       )}
     </>
