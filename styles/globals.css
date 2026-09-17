@@ -184,28 +184,53 @@ input, select {
   display: flex;
   justify-content: space-around;
   align-items: center;
-  background: #FBF8F2;
-  border-top: 1px solid #D9D2C2;
-  padding: 8px 4px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: rgba(251, 248, 242, 0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(217, 210, 194, 0.6);
+  padding: 10px 4px calc(10px + env(safe-area-inset-bottom, 0px));
   z-index: 40;
 }
 :root[data-theme="dark"] .bottom-nav {
-  background: #FBF8F2; /* the page-wide invert filter handles dark mode here too */
+  background: rgba(251, 248, 242, 0.94);
 }
 .bottom-nav a {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  font-size: 10px;
-  color: #8a8477;
+  justify-content: center;
+  gap: 4px;
+  color: #a8a192;
   text-decoration: none;
-  padding: 4px 8px;
-  border-radius: 8px;
+  padding: 6px 14px;
+  border-radius: 14px;
   flex: 1;
-  max-width: 84px;
+  max-width: 76px;
 }
 .bottom-nav a.active {
   color: #241F1A;
-  font-weight: 600;
+}
+.bottom-nav a .nav-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: transparent;
+}
+.bottom-nav a.active .nav-dot {
+  background: #A34A38;
+}
+
+/* ---- Classy pass: soft-shadow cards, pill buttons, refined nav ---- */
+.card {
+  border: none !important;
+  border-radius: 18px !important;
+  box-shadow: 0 1px 2px rgba(36, 31, 26, 0.04), 0 8px 24px rgba(36, 31, 26, 0.06) !important;
+  background: #fff !important;
+}
+.panel-soft {
+  border-radius: 18px !important;
+  box-shadow: 0 1px 2px rgba(36, 31, 26, 0.03), 0 6px 18px rgba(36, 31, 26, 0.05) !important;
+}
+.pill {
+  border-radius: 999px !important;
 }
