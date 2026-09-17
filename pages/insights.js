@@ -11,7 +11,7 @@ function InsightRow({ label, aVal, aLabel, bVal, bLabel, direction }) {
   const diff = aVal - bVal;
   const meaningful = Math.abs(diff) >= 8; // ignore noise under 8 percentage points
   return (
-    <div style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 12 }}>
+    <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 12 }}>
       <div style={{ fontSize: 14, marginBottom: 10, lineHeight: 1.5 }}>{label}</div>
       <div style={{ display: "flex", gap: 24, alignItems: "flex-end" }}>
         <div>
