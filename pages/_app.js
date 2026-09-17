@@ -16,12 +16,15 @@ const NAV_ITEMS = [
 function BottomNav({ currentPath }) {
   return (
     <nav className="bottom-nav">
-      {NAV_ITEMS.map(({ href, label, Icon }) => (
-        <a key={href} href={href} className={currentPath === href ? "active" : ""}>
-          <Icon size={20} strokeWidth={currentPath === href ? 2.4 : 1.8} />
-          {label}
-        </a>
-      ))}
+      {NAV_ITEMS.map(({ href, label, Icon }) => {
+        const active = currentPath === href;
+        return (
+          <a key={href} href={href} className={active ? "active" : ""} aria-label={label}>
+            <Icon size={22} strokeWidth={active ? 2.3 : 1.7} />
+            <span className="nav-dot" />
+          </a>
+        );
+      })}
     </nav>
   );
 }
