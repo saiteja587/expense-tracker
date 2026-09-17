@@ -71,3 +71,141 @@ html[data-theme="dark"] {
   filter: invert(0.92) hue-rotate(180deg);
   background: #1a1712;
 }
+
+/* ---------- Smoothness pass ---------- */
+
+/* Remove the ugly gray flash on tap (Android/older browsers), and the
+   ~300ms tap delay that makes web apps feel laggier than native ones. */
+html {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  scroll-behavior: smooth;
+}
+
+/* Smooth color/border/opacity transitions everywhere, without animating
+   layout properties (which would feel janky, not smooth). */
+button, a, input, select, .tabnum, [role="button"] {
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+              color 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Real tap feedback — every button gets a gentle press-down effect instead
+   of feeling static. */
+button:not(:disabled):active {
+  transform: scale(0.97);
+  transition: transform 0.08s ease;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* Inputs get a soft focus glow instead of the default hard outline. */
+input:focus, select:focus {
+  box-shadow: 0 0 0 3px rgba(163, 74, 56, 0.12);
+}
+
+/* Gentle fade-in whenever a page's main content mounts. */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-container {
+  animation: fadeIn 0.25s ease;
+}
+
+/* A calmer, more premium loading state than plain text. */
+.app-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid #D9D2C2;
+  border-top-color: #A34A38;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.loading-screen {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #8a8477;
+  animation: fadeIn 0.2s ease;
+}
+
+/* Cards and rows get a subtle lift on hover (desktop) without affecting
+   touch devices, where hover doesn't apply anyway. */
+@media (hover: hover) {
+  .hover-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(36, 31, 26, 0.06);
+  }
+}
+
+/* ---- Smoothness pass: transitions, tap feedback, page-load fade ---- */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+button, a {
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, transform 0.08s ease;
+}
+button:active {
+  transform: scale(0.97);
+}
+input, select {
+  transition: border-color 0.15s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-container {
+  animation: fadeIn 0.22s ease;
+  padding-bottom: 84px !important; /* room for the fixed bottom nav */
+}
+
+/* ---- Bottom navigation bar ---- */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background: #FBF8F2;
+  border-top: 1px solid #D9D2C2;
+  padding: 8px 4px calc(8px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+}
+:root[data-theme="dark"] .bottom-nav {
+  background: #FBF8F2; /* the page-wide invert filter handles dark mode here too */
+}
+.bottom-nav a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: #8a8477;
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 8px;
+  flex: 1;
+  max-width: 84px;
+}
+.bottom-nav a.active {
+  color: #241F1A;
+  font-weight: 600;
+}
