@@ -576,7 +576,7 @@ export default function Page() {
       </div>
 
       {/* Balance */}
-      <div style={{ background: balancePanelBg, borderRadius: 6, padding: "18px 20px", marginBottom: 28 }}>
+      <div className="panel-soft" style={{ background: balancePanelBg, borderRadius: 6, padding: "18px 20px", marginBottom: 28 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>Balance available</div>
@@ -625,7 +625,7 @@ export default function Page() {
               <input type="number" inputMode="decimal" placeholder="Amount (₹)" value={topupForm.amount} onChange={(e) => setTopupForm({ ...topupForm, amount: e.target.value })} step="0.01" min="0" style={{ width: 140 }} />
               <input type="text" placeholder="Source (optional)" value={topupForm.note} onChange={(e) => setTopupForm({ ...topupForm, note: e.target.value })} maxLength={60} style={{ width: 160 }} />
               <input type="date" value={topupForm.date} onChange={(e) => setTopupForm({ ...topupForm, date: e.target.value })} max={todayISO()} style={{ width: 150 }} />
-              <button type="submit" disabled={topupSubmitting} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: topupSubmitting ? "default" : "pointer", opacity: topupSubmitting ? 0.6 : 1 }}>
+              <button type="submit" disabled={topupSubmitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: topupSubmitting ? "default" : "pointer", opacity: topupSubmitting ? 0.6 : 1 }}>
                 {topupSubmitting ? "Saving…" : editingTopupId ? "Save changes" : "Add"}
               </button>
             </div>
