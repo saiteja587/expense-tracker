@@ -395,7 +395,7 @@ export default function MoviesPage() {
             <BarChart3 size={13} /> {showAllTime ? "Hide" : "Show"} all-time stats
           </button>
           {showAllTime && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginTop: 14, padding: "16px 18px", background: "#F1ECDF", borderRadius: 6 }}>
+            <div className="panel-soft" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginTop: 14, padding: "16px 18px", background: "#F1ECDF", borderRadius: 6 }}>
               <div>
                 <div style={{ fontSize: 11, color: "#8a8477" }}>Titles logged</div>
                 <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{allTimeStats.totalTitles}</div>
@@ -547,7 +547,7 @@ export default function MoviesPage() {
                 const total = (m.ticketPrice + m.canteenPrice) * m.quantity;
                 const mismatch = diverges(m);
                 return (
-                  <div key={m.id} style={{ border: "1px solid #EAE5D9", borderRadius: 4, padding: "14px 16px" }}>
+                  <div key={m.id} className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 4, padding: "14px 16px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                       <div style={{ minWidth: 0 }}>
                         <div className="lora" style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
