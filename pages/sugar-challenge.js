@@ -255,7 +255,7 @@ export default function SugarChallengePage() {
       </div>
 
       {!meta ? (
-        <form onSubmit={startChallenge} style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: 20 }}>
+        <form onSubmit={startChallenge} className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: 20 }}>
           <div className="lora" style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Start your challenge</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div>
@@ -276,7 +276,7 @@ export default function SugarChallengePage() {
               <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Money saved per clean day (₹, optional)</label>
               <input type="number" value={savingsPerDay} onChange={(e) => setSavingsPerDay(e.target.value)} min="0" style={{ width: 140 }} />
             </div>
-            <button type="submit" disabled={setupSubmitting} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "10px 16px", fontSize: 14, fontWeight: 500, cursor: setupSubmitting ? "default" : "pointer" }}>
+            <button type="submit" disabled={setupSubmitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "10px 16px", fontSize: 14, fontWeight: 500, cursor: setupSubmitting ? "default" : "pointer" }}>
               {setupSubmitting ? "Starting…" : "Start"}
             </button>
           </div>
@@ -309,7 +309,7 @@ export default function SugarChallengePage() {
           </div>
 
           {(sugarPerDayVal > 0 || savingsPerDayVal > 0) && (
-            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 24, padding: "14px 16px", background: "#F1ECDF", borderRadius: 6 }}>
+            <div className="panel-soft" style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 24, padding: "14px 16px", background: "#F1ECDF", borderRadius: 6 }}>
               {sugarPerDayVal > 0 && (
                 <div>
                   <div style={{ fontSize: 11, color: "#8a8477" }}>Sugar avoided</div>
@@ -357,7 +357,7 @@ export default function SugarChallengePage() {
 
           {/* Today's quick action */}
           {todayEntry && (
-            <div style={{ background: "#F1ECDF", borderRadius: 6, padding: "16px 18px", marginBottom: 28, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+            <div className="panel-soft" style={{ background: "#F1ECDF", borderRadius: 6, padding: "16px 18px", marginBottom: 28, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 500 }}>Day {todayEntry.dayNumber} — today</div>
                 <div style={{ fontSize: 12, color: "#8a8477" }}>
@@ -400,7 +400,7 @@ export default function SugarChallengePage() {
           </div>
 
           {selectedDay && (
-            <div style={{ marginTop: 20, border: "1px solid #EAE5D9", borderRadius: 6, padding: 16 }}>
+            <div className="card" style={{ marginTop: 20, border: "1px solid #EAE5D9", borderRadius: 6, padding: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>
                 {new Date(selectedDay + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })}
               </div>
