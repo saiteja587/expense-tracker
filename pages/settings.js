@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy, Fingerprint } from "lucide-react";
 
 const BASE_CATEGORY_COLORS = ["#B5533C", "#C98A2C", "#3F6E5B", "#5B3A5C", "#2F4858", "#A3763F", "#6B7A3E", "#8A4B6B", "#6B6558"];
 
@@ -31,6 +31,10 @@ export default function SettingsPage() {
   const [notifBusy, setNotifBusy] = useState(false);
   const [notifError, setNotifError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [bioSupported, setBioSupported] = useState(false);
+  const [bioEnabled, setBioEnabled] = useState(false);
+  const [bioBusy, setBioBusy] = useState(false);
+  const [bioError, setBioError] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   async function load() {
@@ -58,7 +62,63 @@ export default function SettingsPage() {
     load();
     setDarkMode(localStorage.getItem("darkMode") === "1");
     checkNotifStatus();
+    checkBiometricSupport();
   }, []);
+
+  async function checkBiometricSupport() {
+    setBioEnabled(localStorage.getItem("biometricEnabled") === "1" && !!localStorage.getItem("biometricCredentialId"));
+    if (!window.PublicKeyCredential || !PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
+      setBioSupported(false);
+      return;
+    }
+    try {
+      const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+      setBioSupported(available);
+    } catch {
+      setBioSupported(false);
+    }
+  }
+
+  function toBase64url(buf) {
+    return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function fromBase64url(str) {
+    const base64 = str.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (str.length % 4)) % 4);
+    return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  }
+
+  async function enableBiometric() {
+    setBioBusy(true);
+    setBioError("");
+    try {
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const userId = crypto.getRandomValues(new Uint8Array(16));
+      const credential = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: "Expense Ledger" },
+          user: { id: userId, name: "device-owner", displayName: "Device owner" },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+          authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+          timeout: 60000,
+        },
+      });
+      if (!credential) throw new Error("No credential returned");
+      localStorage.setItem("biometricCredentialId", toBase64url(credential.rawId));
+      localStorage.setItem("biometricEnabled", "1");
+      setBioEnabled(true);
+    } catch (e) {
+      setBioError("Couldn't set up biometric unlock on this device. Your phone may have declined the request.");
+    } finally {
+      setBioBusy(false);
+    }
+  }
+
+  function disableBiometric() {
+    localStorage.removeItem("biometricCredentialId");
+    localStorage.removeItem("biometricEnabled");
+    setBioEnabled(false);
+  }
 
   async function checkNotifStatus() {
     if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
@@ -461,6 +521,36 @@ export default function SettingsPage() {
           <button type="submit" disabled={pinSaving} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer" }}>{pinSaving ? "Saving…" : "Save"}</button>
         </form>
         {pinError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{pinError}</div>}
+
+        {bioSupported && hasPin && (
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #EAE5D9" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Fingerprint size={16} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>Fingerprint / Face unlock</div>
+                  <div style={{ fontSize: 11, color: "#8a8477" }}>
+                    {bioEnabled ? "On for this device — checked locally, nothing is sent to a server." : "Skip typing your PIN on this device."}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={bioEnabled ? disableBiometric : enableBiometric}
+                disabled={bioBusy}
+                className="pill"
+                style={{ background: bioEnabled ? "#EAE5D9" : "#241F1A", color: bioEnabled ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 12, cursor: bioBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
+              >
+                {bioBusy ? "Working…" : bioEnabled ? "Turn off" : "Set up"}
+              </button>
+            </div>
+            {bioError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{bioError}</div>}
+          </div>
+        )}
+        {!bioSupported && hasPin && (
+          <div style={{ fontSize: 11, color: "#8a8477", marginTop: 12, paddingTop: 12, borderTop: "1px solid #EAE5D9" }}>
+            Fingerprint/Face unlock isn't available on this device or browser.
+          </div>
+        )}
       </div>
 
       {/* Custom categories */}
