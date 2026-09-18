@@ -29,10 +29,46 @@ function BottomNav({ currentPath }) {
   );
 }
 
+function fromBase64url(str) {
+  const base64 = str.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (str.length % 4)) % 4);
+  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+}
+
 function LockScreen({ onUnlock }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioTrying, setBioTrying] = useState(false);
+
+  useEffect(() => {
+    setBioAvailable(localStorage.getItem("biometricEnabled") === "1" && !!localStorage.getItem("biometricCredentialId"));
+  }, []);
+
+  async function tryBiometric() {
+    setBioTrying(true);
+    setError("");
+    try {
+      const credentialId = localStorage.getItem("biometricCredentialId");
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge,
+          allowCredentials: [{ id: fromBase64url(credentialId), type: "public-key" }],
+          userVerification: "required",
+          timeout: 60000,
+        },
+      });
+      if (assertion) {
+        sessionStorage.setItem("unlocked", "1");
+        onUnlock();
+      }
+    } catch (e) {
+      setError("Biometric check didn't succeed — use your PIN instead.");
+    } finally {
+      setBioTrying(false);
+    }
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -66,6 +102,16 @@ function LockScreen({ onUnlock }) {
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#FBF8F2", fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
       <form onSubmit={submit} style={{ textAlign: "center" }}>
         <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 20, fontWeight: 600, marginBottom: 16, color: "#241F1A" }}>Enter PIN</div>
+        {bioAvailable && (
+          <button
+            type="button"
+            onClick={tryBiometric}
+            disabled={bioTrying}
+            style={{ display: "block", margin: "0 auto 16px", background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 999, padding: "10px 20px", fontSize: 13, cursor: bioTrying ? "default" : "pointer" }}
+          >
+            {bioTrying ? "Checking…" : "🔓 Unlock with fingerprint / face"}
+          </button>
+        )}
         <input
           type="password"
           inputMode="numeric"
