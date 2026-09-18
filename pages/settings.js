@@ -654,6 +654,19 @@ export default function SettingsPage() {
         </form>
         {recError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{recError}</div>}
       </div>
+
+      {/* About */}
+      <div style={{ textAlign: "center", marginTop: 32, paddingTop: 24, borderTop: "1px solid #EAE5D9" }}>
+        <div
+          style={{
+            width: 44, height: 44, borderRadius: 12, margin: "0 auto 10px",
+            background: "linear-gradient(135deg, #A34A38 0%, #8C4470 50%, #2F6F5E 100%)",
+          }}
+        />
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Expense Ledger</div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginTop: 2 }}>Version 2.0 · Money, Movies & Diet, together</div>
+        <div style={{ fontSize: 10, color: "#C4BDAC", marginTop: 8 }}>Built for one person. No ads, no accounts, your own database.</div>
+      </div>
     </div>
   );
 }
