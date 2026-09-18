@@ -6,6 +6,24 @@ function toISODate(v) {
   return String(v).slice(0, 10);
 }
 
+const WATER_MESSAGES = [
+  "Quick reminder to hydrate.",
+  "A glass of water takes 10 seconds. Go on.",
+  "Your body's been asking. Drink up.",
+  "Small habit, real difference — have some water.",
+  "Pause, drink, continue.",
+];
+
+const SUGAR_MESSAGES = [
+  "You haven't logged today yet — don't lose your streak.",
+  "One tap keeps the streak alive. Go mark today.",
+  "Today's not marked yet. A slip only counts if you don't log it either way.",
+];
+
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 // Not driven by Vercel Cron — Hobby's cron only fires once a day, too
 // infrequent for "every 90 minutes." Instead, an external free scheduler
 // (e.g. cron-job.org) hits this URL directly on whatever interval you want,
@@ -17,7 +35,8 @@ export default async function handler(req, res) {
   try {
     const result = await sendToAllDevices({
       title: "💧 Drink some water",
-      body: "Quick reminder to hydrate.",
+      body: pick(WATER_MESSAGES),
+      icon: "/icon-water.png",
       url: "/",
     });
 
@@ -37,8 +56,9 @@ export default async function handler(req, res) {
           const markedToday = days.some((d) => toISODate(d.day_date) === todayIST);
           if (!markedToday) {
             await sendToAllDevices({
-              title: "🍬 Mark today's sugar challenge",
-              body: "You haven't logged today yet — don't lose your streak.",
+              title: "🔥 Mark today's sugar challenge",
+              body: pick(SUGAR_MESSAGES),
+              icon: "/icon-sugar.png",
               url: "/sugar-challenge",
             });
           }
