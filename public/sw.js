@@ -49,8 +49,8 @@ self.addEventListener("push", (event) => {
   const title = data.title || "Expense Ledger";
   const options = {
     body: data.body || "",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    icon: data.icon || "/icon-192.png",
+    badge: data.icon || "/icon-192.png",
     data: { url: data.url || "/" },
   };
   event.waitUntil(self.registration.showNotification(title, options));
