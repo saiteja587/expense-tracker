@@ -536,8 +536,11 @@ export default function Page() {
           <a href="/search" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             Search →
           </a>
-          <a href="/insights" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 500 }}>
+          <a href="/insights" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 500, marginRight: 14 }}>
             Patterns →
+          </a>
+          <a href="/report" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+            Monthly report →
           </a>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
