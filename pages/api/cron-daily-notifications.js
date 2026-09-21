@@ -39,6 +39,19 @@ export default async function handler(req, res) {
       }
     }
 
+    // On the 1st of each month, last month is fully closed out — nudge to
+    // go read the report instead of it just sitting there unopened.
+    if (day === 1) {
+      const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lastMonthName = lastMonthDate.toLocaleDateString("en-US", { month: "long" });
+      await sendToAllDevices({
+        title: "📊 Your monthly report is ready",
+        body: `${lastMonthName}'s money, movies, and diet — all in one place.`,
+        url: "/report",
+      });
+      sentItems.push("monthly-report");
+    }
+
     return res.status(200).json({ ok: true, sentItems });
   } catch (e) {
     console.error(e);
