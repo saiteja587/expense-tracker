@@ -17,6 +17,11 @@ export default function SettingsPage() {
   const [recError, setRecError] = useState("");
   const [editingRecId, setEditingRecId] = useState(null);
 
+  const [recurringIncome, setRecurringIncome] = useState([]);
+  const [incForm, setIncForm] = useState({ amount: "", note: "", dayOfMonth: "1" });
+  const [incError, setIncError] = useState("");
+  const [editingIncId, setEditingIncId] = useState(null);
+
   const [hasPin, setHasPin] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
@@ -39,15 +44,17 @@ export default function SettingsPage() {
 
   async function load() {
     try {
-      const [catRes, recRes, pinRes, theatreRes, ottRes] = await Promise.all([
+      const [catRes, recRes, incRes, pinRes, theatreRes, ottRes] = await Promise.all([
         fetch("/api/data?type=categories"),
         fetch("/api/data?type=recurring"),
+        fetch("/api/data?type=recurring-income"),
         fetch("/api/data?type=pin-status"),
         fetch("/api/data?type=theatres"),
         fetch("/api/data?type=ott-platforms"),
       ]);
       if (catRes.ok) setCategories((await catRes.json()).categories || []);
       if (recRes.ok) setRecurring((await recRes.json()).recurring || []);
+      if (incRes.ok) setRecurringIncome((await incRes.json()).recurringIncome || []);
       if (pinRes.ok) setHasPin((await pinRes.json()).hasPin);
       if (theatreRes.ok) setTheatres((await theatreRes.json()).theatres || []);
       if (ottRes.ok) setOttPlatforms((await ottRes.json()).ottPlatforms || []);
@@ -330,6 +337,49 @@ export default function SettingsPage() {
     setRecurring(recurring.filter((r) => r.id !== id));
     const res = await fetch(`/api/data?type=recurring&id=${id}`, { method: "DELETE" });
     if (!res.ok) setRecurring(prev);
+  }
+
+  async function addRecurringIncome(e) {
+    e.preventDefault();
+    const amount = parseFloat(incForm.amount);
+    const dayOfMonth = parseInt(incForm.dayOfMonth, 10);
+    if (!amount || amount <= 0) { setIncError("Enter an amount greater than 0"); return; }
+    if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) { setIncError("Day must be between 1 and 28"); return; }
+    setIncError("");
+    const isEdit = editingIncId !== null;
+    const res = await fetch("/api/data", {
+      method: isEdit ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "recurring-income", ...(isEdit ? { id: editingIncId } : {}), amount, note: incForm.note, dayOfMonth }),
+    });
+    if (res.ok) {
+      setIncForm({ amount: "", note: "", dayOfMonth: "1" });
+      setEditingIncId(null);
+      await load();
+    } else {
+      const d = await res.json().catch(() => ({}));
+      setIncError(d.error || "Couldn't save. Try again.");
+    }
+  }
+
+  function startEditRecurringIncome(r) {
+    setEditingIncId(r.id);
+    setIncForm({ amount: String(r.amount), note: r.note || "", dayOfMonth: String(r.day_of_month) });
+    setIncError("");
+  }
+
+  function cancelEditRecurringIncome() {
+    setEditingIncId(null);
+    setIncForm({ amount: "", note: "", dayOfMonth: "1" });
+    setIncError("");
+  }
+
+  async function removeRecurringIncome(id) {
+    if (!window.confirm("Delete this recurring income? This can't be undone.")) return;
+    const prev = recurringIncome;
+    setRecurringIncome(recurringIncome.filter((r) => r.id !== id));
+    const res = await fetch(`/api/data?type=recurring-income&id=${id}`, { method: "DELETE" });
+    if (!res.ok) setRecurringIncome(prev);
   }
 
   async function savePin(e) {
@@ -653,6 +703,48 @@ export default function SettingsPage() {
           )}
         </form>
         {recError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{recError}</div>}
+      </div>
+
+      {/* Recurring income */}
+      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Recurring income</div>
+          {recurringIncome.length > 0 && (
+            <div style={{ textAlign: "right" }}>
+              <div className="tabnum" style={{ fontSize: 16, fontWeight: 600, color: "#2F6F5E" }}>
+                ₹{recurringIncome.reduce((s, r) => s + parseFloat(r.amount), 0).toLocaleString("en-IN")}/mo
+              </div>
+              <div style={{ fontSize: 10, color: "#8a8477" }}>total expected</div>
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>Added automatically to your balance each month on the day you set — e.g. salary or a regular payout.</div>
+
+        {recurringIncome.length > 0 && (
+          <div style={{ marginBottom: 14 }}>
+            {recurringIncome.map((r) => (
+              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "8px 0", borderBottom: "1px solid #EAE5D9" }}>
+                <span>{r.note || "Income"} · day {r.day_of_month} · ₹{Math.round(parseFloat(r.amount)).toLocaleString("en-IN")}</span>
+                <span style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => startEditRecurringIncome(r)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Pencil size={13} /></button>
+                  <button onClick={() => removeRecurringIncome(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Trash2 size={14} /></button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {editingIncId && <div style={{ fontSize: 11, color: "#A3763F", marginBottom: 8 }}>Editing — change values below and Save, or Cancel.</div>}
+        <form onSubmit={addRecurringIncome} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input type="number" placeholder="Amount (₹)" value={incForm.amount} onChange={(e) => setIncForm({ ...incForm, amount: e.target.value })} style={{ width: 110 }} />
+          <input type="text" placeholder="Note (e.g. Salary)" value={incForm.note} onChange={(e) => setIncForm({ ...incForm, note: e.target.value })} style={{ width: 150 }} />
+          <input type="number" placeholder="Day (1-28)" value={incForm.dayOfMonth} onChange={(e) => setIncForm({ ...incForm, dayOfMonth: e.target.value })} min="1" max="28" style={{ width: 100 }} />
+          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingIncId ? "Save changes" : "Save"}</button>
+          {editingIncId && (
+            <button type="button" onClick={cancelEditRecurringIncome} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
+          )}
+        </form>
+        {incError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{incError}</div>}
       </div>
 
       {/* About */}
