@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3 } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 
@@ -141,6 +141,18 @@ export default function MoviesPage() {
       setForm((f) => ({ ...f, venueName: theatreOptions[0] }));
     }
   }, [theatreOptions, editingId]);
+
+  const titleInputRef = useRef(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("quickadd") === "1") {
+      setTimeout(() => {
+        titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        titleInputRef.current?.focus();
+      }, 300);
+    }
+  }, [loaded]);
 
   function startEdit(m) {
     setEditingId(m.id);
@@ -435,7 +447,7 @@ export default function MoviesPage() {
             {editingId ? "Edit movie" : "Log a movie"}
           </div>
           <form onSubmit={submitMovie} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <input type="text" placeholder="Movie title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} />
+            <input ref={titleInputRef} type="text" placeholder="Movie title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} />
             <div>
               <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Watched via</label>
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
