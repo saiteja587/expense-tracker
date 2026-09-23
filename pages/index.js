@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert, Mic } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 
 const CATEGORIES = [
@@ -56,6 +56,9 @@ export default function Page() {
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceError, setVoiceError] = useState("");
 
   const [showTopup, setShowTopup] = useState(false);
   const [topupForm, setTopupForm] = useState(emptyTopupForm);
@@ -174,6 +177,18 @@ export default function Page() {
     load();
   }, []);
 
+  const amountInputRef = useRef(null);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("quickadd") === "expense") {
+      setTimeout(() => {
+        amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        amountInputRef.current?.focus();
+      }, 300);
+    }
+  }, [loaded]);
+
   const movieItems = useMemo(() => {
     const items = [];
     for (const m of movies) {
@@ -259,6 +274,49 @@ export default function Page() {
     setEditingExpenseId(null);
     setExpenseForm(getEmptyExpenseForm());
     setFormError("");
+  }
+
+  function parseVoiceExpense(transcript) {
+    const text = transcript.toLowerCase();
+    const numMatch = text.match(/\d+(\.\d+)?/);
+    const amount = numMatch ? numMatch[0] : "";
+    const allCatNames = [...CATEGORIES.map((c) => c.name), ...customCategories.map((c) => c.name)];
+    let matchedCategory = null;
+    for (const name of allCatNames) {
+      if (text.includes(name.toLowerCase())) { matchedCategory = name; break; }
+    }
+    let note = transcript;
+    if (numMatch) note = note.replace(numMatch[0], "");
+    if (matchedCategory) note = note.replace(new RegExp(matchedCategory, "i"), "");
+    note = note.replace(/\b(rupees?|rs\.?|for|on|spent|paid|bucks)\b/gi, "").trim().replace(/\s+/g, " ");
+    return { amount, category: matchedCategory, note };
+  }
+
+  function startVoiceAdd() {
+    const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
+    if (!SR) {
+      setVoiceError("Voice input isn't supported in this browser.");
+      return;
+    }
+    setVoiceError("");
+    const recognition = new SR();
+    recognition.lang = "en-IN";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setVoiceListening(true);
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      const parsed = parseVoiceExpense(transcript);
+      setExpenseForm((f) => ({
+        ...f,
+        amount: parsed.amount || f.amount,
+        category: parsed.category || f.category,
+        note: parsed.note || f.note,
+      }));
+    };
+    recognition.onerror = () => setVoiceError("Didn't catch that — try again or type it in.");
+    recognition.onend = () => setVoiceListening(false);
+    recognition.start();
   }
 
   async function submitExpense(e) {
@@ -539,8 +597,14 @@ export default function Page() {
           <a href="/insights" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 500, marginRight: 14 }}>
             Patterns →
           </a>
-          <a href="/report" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+          <a href="/report" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
             Monthly report →
+          </a>
+          <a href="/year" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
+            Year view →
+          </a>
+          <a href="/ious" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
+            Who owes what →
           </a>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -703,11 +767,25 @@ export default function Page() {
 
       <div className="responsive-grid">
         <div>
-          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-            {editingExpenseId ? "Edit expense" : "Add an expense"}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>
+              {editingExpenseId ? "Edit expense" : "Add an expense"}
+            </div>
+            {!editingExpenseId && (
+              <button
+                type="button"
+                onClick={startVoiceAdd}
+                disabled={voiceListening}
+                title="Speak an expense, e.g. '250 for food swiggy'"
+                style={{ display: "flex", alignItems: "center", gap: 5, background: voiceListening ? "#A34A38" : "#F1ECDF", color: voiceListening ? "#FBF8F2" : "#5f5a4f", border: "none", borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: voiceListening ? "default" : "pointer" }}
+              >
+                <Mic size={13} /> {voiceListening ? "Listening…" : "Speak to add"}
+              </button>
+            )}
           </div>
+          {voiceError && <div style={{ fontSize: 11, color: "#A34A38", marginTop: -6, marginBottom: 10 }}>{voiceError}</div>}
           <form onSubmit={submitExpense} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <input type="number" inputMode="decimal" placeholder="Amount (₹)" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} step="0.01" min="0" />
+            <input ref={amountInputRef} type="number" inputMode="decimal" placeholder="Amount (₹)" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} step="0.01" min="0" />
             <select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>
               {CATEGORIES.map((c) => (
                 <option key={c.name} value={c.name}>{c.name}</option>
