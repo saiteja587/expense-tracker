@@ -19,6 +19,8 @@ export default async function handler(req, res) {
         return res.status(200).json({ meta, days, history });
       }
       if (type === "recurring") return res.status(200).json({ recurring: await db.listRecurring() });
+      if (type === "recurring-income") return res.status(200).json({ recurringIncome: await db.listRecurringIncome() });
+      if (type === "ious") return res.status(200).json({ ious: await db.listIous() });
       if (type === "categories") {
         const raw = await db.getSetting("custom_categories");
         return res.status(200).json({ categories: raw ? JSON.parse(raw) : [] });
@@ -39,8 +41,9 @@ export default async function handler(req, res) {
         return res.status(200).json({ hasPin: !!hash });
       }
       if (type === "export-all") {
-        const [expenses, movies, topups, rules, recurring] = await Promise.all([
+        const [expenses, movies, topups, rules, recurring, recurringIncome, ious] = await Promise.all([
           db.listExpenses(), db.listMovies(), db.listTopups(), db.listBudgetRules(), db.listRecurring(),
+          db.listRecurringIncome(), db.listIous(),
         ]);
         const challengeMeta = await db.getChallengeMeta();
         const challengeDays = await db.listChallengeDays();
@@ -48,7 +51,7 @@ export default async function handler(req, res) {
         const categoriesRaw = await db.getSetting("custom_categories");
         return res.status(200).json({
           exportedAt: new Date().toISOString(),
-          expenses, movies, topups, budgetRules: rules, recurring,
+          expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious,
           sugarChallenge: { meta: challengeMeta, days: challengeDays, history: challengeHistory },
           customCategories: categoriesRaw ? JSON.parse(categoriesRaw) : [],
         });
@@ -127,6 +130,27 @@ export default async function handler(req, res) {
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) return err(res, "Day of month must be between 1 and 28");
         const recurring = await db.createRecurring({ amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance });
         return res.status(201).json({ recurring });
+      }
+
+      if (type === "recurring-income") {
+        const amount = parseFloat(body.amount);
+        const dayOfMonth = parseInt(body.dayOfMonth, 10);
+        if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
+        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) return err(res, "Day of month must be between 1 and 28");
+        const recurringIncome = await db.createRecurringIncome({ amount, note: body.note, dayOfMonth });
+        return res.status(201).json({ recurringIncome });
+      }
+
+      if (type === "ious") {
+        const amount = parseFloat(body.amount);
+        if (!body.personName?.trim()) return err(res, "Name is required");
+        if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
+        if (!["owed_to_me", "i_owe"].includes(body.direction)) return err(res, "Invalid direction");
+        const iou = await db.createIou({
+          personName: body.personName.trim(), amount, direction: body.direction,
+          note: (body.note || "").trim(), dueDate: body.dueDate || null,
+        });
+        return res.status(201).json({ iou });
       }
 
       if (type === "categories") {
@@ -265,6 +289,27 @@ export default async function handler(req, res) {
         return res.status(200).json({ recurring });
       }
 
+      if (type === "recurring-income") {
+        const amount = parseFloat(body.amount);
+        const dayOfMonth = parseInt(body.dayOfMonth, 10);
+        if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
+        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) return err(res, "Day of month must be between 1 and 28");
+        const recurringIncome = await db.updateRecurringIncome(numId, { amount, note: body.note, dayOfMonth });
+        return res.status(200).json({ recurringIncome });
+      }
+
+      if (type === "ious") {
+        const amount = parseFloat(body.amount);
+        if (!body.personName?.trim()) return err(res, "Name is required");
+        if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
+        if (!["owed_to_me", "i_owe"].includes(body.direction)) return err(res, "Invalid direction");
+        const iou = await db.updateIou(numId, {
+          personName: body.personName.trim(), amount, direction: body.direction,
+          note: (body.note || "").trim(), dueDate: body.dueDate || null, settled: !!body.settled,
+        });
+        return res.status(200).json({ iou });
+      }
+
       return err(res, "Unknown type");
     }
 
@@ -277,6 +322,8 @@ export default async function handler(req, res) {
       else if (type === "balance") await db.deleteTopup(numId);
       else if (type === "budget") await db.deleteBudgetRule(numId);
       else if (type === "recurring") await db.deleteRecurring(numId);
+      else if (type === "recurring-income") await db.deleteRecurringIncome(numId);
+      else if (type === "ious") await db.deleteIou(numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }
