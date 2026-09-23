@@ -13,5 +13,35 @@
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add expense",
+      "short_name": "Expense",
+      "description": "Quickly log a new expense",
+      "url": "/?quickadd=expense",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Add movie",
+      "short_name": "Movie",
+      "description": "Log a movie you just watched",
+      "url": "/movies?quickadd=1",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Who owes what",
+      "short_name": "IOUs",
+      "description": "Track money owed to you and by you",
+      "url": "/ious",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Pause",
+      "short_name": "Pause",
+      "description": "Impulse-control tool",
+      "url": "/pause",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
   ]
 }
