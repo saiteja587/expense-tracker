@@ -22,6 +22,8 @@ export default function SettingsPage() {
   const [incError, setIncError] = useState("");
   const [editingIncId, setEditingIncId] = useState(null);
 
+  const [recurringConfirmations, setRecurringConfirmations] = useState({});
+
   const [hasPin, setHasPin] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
@@ -44,10 +46,11 @@ export default function SettingsPage() {
 
   async function load() {
     try {
-      const [catRes, recRes, incRes, pinRes, theatreRes, ottRes] = await Promise.all([
+      const [catRes, recRes, incRes, confRes, pinRes, theatreRes, ottRes] = await Promise.all([
         fetch("/api/data?type=categories"),
         fetch("/api/data?type=recurring"),
         fetch("/api/data?type=recurring-income"),
+        fetch("/api/data?type=recurring-confirmations"),
         fetch("/api/data?type=pin-status"),
         fetch("/api/data?type=theatres"),
         fetch("/api/data?type=ott-platforms"),
@@ -55,6 +58,7 @@ export default function SettingsPage() {
       if (catRes.ok) setCategories((await catRes.json()).categories || []);
       if (recRes.ok) setRecurring((await recRes.json()).recurring || []);
       if (incRes.ok) setRecurringIncome((await incRes.json()).recurringIncome || []);
+      if (confRes.ok) setRecurringConfirmations((await confRes.json()).confirmations || {});
       if (pinRes.ok) setHasPin((await pinRes.json()).hasPin);
       if (theatreRes.ok) setTheatres((await theatreRes.json()).theatres || []);
       if (ottRes.ok) setOttPlatforms((await ottRes.json()).ottPlatforms || []);
@@ -337,6 +341,28 @@ export default function SettingsPage() {
     setRecurring(recurring.filter((r) => r.id !== id));
     const res = await fetch(`/api/data?type=recurring&id=${id}`, { method: "DELETE" });
     if (!res.ok) setRecurring(prev);
+  }
+
+  const QUIET_DAYS = 90;
+  function daysSince(dateStr) {
+    return Math.floor((Date.now() - new Date(dateStr + "T00:00:00").getTime()) / 86400000);
+  }
+  function isQuietRecurring(r) {
+    const lastConfirmed = recurringConfirmations[r.id] || (r.created_at || "").slice(0, 10);
+    if (!lastConfirmed) return false;
+    return daysSince(lastConfirmed) >= QUIET_DAYS;
+  }
+
+  async function confirmStillUsingRecurring(id) {
+    const res = await fetch("/api/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "confirm-recurring", id }),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      setRecurringConfirmations(d.confirmations || {});
+    }
   }
 
   async function addRecurringIncome(e) {
@@ -680,12 +706,23 @@ export default function SettingsPage() {
         {recurring.length > 0 && (
           <div style={{ marginBottom: 14 }}>
             {recurring.map((r) => (
-              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "8px 0", borderBottom: "1px solid #EAE5D9" }}>
-                <span>{r.note || r.category} · day {r.day_of_month} · ₹{Math.round(parseFloat(r.amount)).toLocaleString("en-IN")}</span>
-                <span style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => startEditRecurring(r)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Pencil size={13} /></button>
-                  <button onClick={() => removeRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Trash2 size={14} /></button>
-                </span>
+              <div key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid #EAE5D9" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
+                  <span>{r.note || r.category} · day {r.day_of_month} · ₹{Math.round(parseFloat(r.amount)).toLocaleString("en-IN")}</span>
+                  <span style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => startEditRecurring(r)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Pencil size={13} /></button>
+                    <button onClick={() => removeRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Trash2 size={14} /></button>
+                  </span>
+                </div>
+                {isQuietRecurring(r) && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F7EEDD", borderRadius: 4, padding: "6px 10px", marginTop: 6, fontSize: 11, color: "#A3763F" }}>
+                    <span>It's been {daysSince(recurringConfirmations[r.id] || (r.created_at || "").slice(0, 10))} days — still using this?</span>
+                    <span style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => confirmStillUsingRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#2F6F5E", fontSize: 11, fontWeight: 600 }}>Yes, keep it</button>
+                      <button onClick={() => removeRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#A34A38", fontSize: 11, fontWeight: 600 }}>No, remove it</button>
+                    </span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
