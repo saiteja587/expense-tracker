@@ -21,6 +21,7 @@ export default async function handler(req, res) {
       if (type === "recurring") return res.status(200).json({ recurring: await db.listRecurring() });
       if (type === "recurring-income") return res.status(200).json({ recurringIncome: await db.listRecurringIncome() });
       if (type === "ious") return res.status(200).json({ ious: await db.listIous() });
+      if (type === "recurring-confirmations") return res.status(200).json({ confirmations: await db.getRecurringConfirmations() });
       if (type === "categories") {
         const raw = await db.getSetting("custom_categories");
         return res.status(200).json({ categories: raw ? JSON.parse(raw) : [] });
@@ -83,7 +84,7 @@ export default async function handler(req, res) {
           title: body.title.trim(), date: body.date, time: body.time, ticketPrice, canteenPrice,
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
-          venueType: body.venueType, venueName: (body.venueName || "").trim(),
+          venueType: body.venueType, venueName: (body.venueName || "").trim(), genre: (body.genre || "").trim(),
         });
         return res.status(201).json({ movie });
       }
@@ -118,8 +119,14 @@ export default async function handler(req, res) {
       if (type === "challenge-day") {
         if (!body.date) return err(res, "Date is required");
         if (typeof body.completed !== "boolean") return err(res, "Completed must be true or false");
-        const day = await db.upsertChallengeDay(body.date, body.completed, body.note);
+        const day = await db.upsertChallengeDay(body.date, body.completed, body.note, body.reason, body.naturalSugar);
         return res.status(201).json({ day });
+      }
+
+      if (type === "confirm-recurring") {
+        if (!body.id) return err(res, "Missing id");
+        const confirmations = await db.confirmRecurring(body.id);
+        return res.status(201).json({ ok: true, confirmations });
       }
 
       if (type === "recurring") {
@@ -266,7 +273,7 @@ export default async function handler(req, res) {
           title: body.title.trim(), date: body.date, time: body.time, ticketPrice, canteenPrice,
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
-          venueType: body.venueType, venueName: (body.venueName || "").trim(),
+          venueType: body.venueType, venueName: (body.venueName || "").trim(), genre: (body.genre || "").trim(),
         });
         return res.status(200).json({ movie });
       }
