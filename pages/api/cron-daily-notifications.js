@@ -1,4 +1,4 @@
-import { listMovies, listRecurring } from "../../lib/db";
+import { listMovies, listRecurring, listExpenses, listChallengeDays } from "../../lib/db";
 import { sendToAllDevices } from "../../lib/push";
 
 function toISODate(v) {
@@ -50,6 +50,36 @@ export default async function handler(req, res) {
         url: "/report",
       });
       sentItems.push("monthly-report");
+    }
+
+    // Once a week (Sunday), send a single digest instead of only daily pings —
+    // a short recap of money, movies, and diet for the week just finished.
+    if (now.getDay() === 0) {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const weekAgoStr = weekAgo.toISOString().slice(0, 10);
+
+      const allExpenses = await listExpenses();
+      const weekSpend = allExpenses
+        .filter((x) => toISODate(x.expense_date) > weekAgoStr && toISODate(x.expense_date) <= today)
+        .reduce((s, x) => s + parseFloat(x.amount), 0);
+
+      const weekMovies = movies.filter((m) => toISODate(m.watched_date) > weekAgoStr && toISODate(m.watched_date) <= today).length;
+
+      const days = await listChallengeDays();
+      let streak = 0;
+      const sorted = [...days].sort((a, b) => (toISODate(a.day_date) < toISODate(b.day_date) ? 1 : -1));
+      for (const d of sorted) {
+        if (d.completed) streak++;
+        else break;
+      }
+
+      await sendToAllDevices({
+        title: "🗓️ Your week in review",
+        body: `₹${Math.round(weekSpend).toLocaleString("en-IN")} spent · ${weekMovies} movie${weekMovies !== 1 ? "s" : ""} · ${streak}-day sugar-free streak`,
+        url: "/year",
+      });
+      sentItems.push("weekly-digest");
     }
 
     return res.status(200).json({ ok: true, sentItems });
