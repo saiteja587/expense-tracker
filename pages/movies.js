@@ -30,12 +30,20 @@ function takeInfo(value) {
   return TAKES.find((t) => t.value === value) || TAKES[TAKES.length - 1];
 }
 
+const GENRES = ["Action", "Comedy", "Drama", "Thriller", "Romance", "Horror", "Sci-Fi", "Animation", "Documentary", "Other"];
+
 function getEmptyForm() {
   return {
     title: "", date: todayISO(), time: nowTimeHHMM(), ticketPrice: "", canteenPrice: "", companions: "",
     myTake: "liked", publicTake: "liked", note: "", affectsBalance: true, quantity: 1,
-    venueType: "Theatre", venueName: "", venueNameOther: "",
+    venueType: "Theatre", venueName: "", venueNameOther: "", genre: "",
   };
+}
+
+// A generic "find where to watch" link — JustWatch covers Indian availability
+// across theatres/OTT without needing per-platform API keys.
+function whereToWatchUrl(title) {
+  return `https://www.justwatch.com/in/search?q=${encodeURIComponent(title)}`;
 }
 
 function QuantityStepper({ value, onChange }) {
@@ -111,6 +119,7 @@ export default function MoviesPage() {
         quantity: m.quantity || 1,
         venueType: m.venue_type || "Theatre",
         venueName: m.venue_name || "",
+        genre: m.genre || "",
       }));
       setMovies(mapped);
       localStorage.setItem("cache_movies", JSON.stringify(mapped));
@@ -174,6 +183,7 @@ export default function MoviesPage() {
       venueType,
       venueName: knownOption,
       venueNameOther: knownOption === "Other" ? m.venueName : "",
+      genre: m.genre || "",
     });
     setFormError("");
   }
@@ -224,6 +234,7 @@ export default function MoviesPage() {
       quantity: form.quantity,
       venueType: form.venueType,
       venueName: resolvedVenueName,
+      genre: form.genre,
     };
 
     let res;
@@ -309,7 +320,15 @@ export default function MoviesPage() {
     }
     const topCompanion = Object.entries(companionCounts).sort((a, b) => b[1] - a[1])[0];
 
-    return { totalTitles: movies.length, totalViewings, totalSpend, rewatches, avgCost, agreementRate, topCompanion };
+    const genreCounts = {};
+    for (const m of movies) {
+      if (!m.genre) continue;
+      genreCounts[m.genre] = (genreCounts[m.genre] || 0) + 1;
+    }
+    const topGenres = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const rewatchRate = Math.round((rewatches / movies.length) * 100);
+
+    return { totalTitles: movies.length, totalViewings, totalSpend, rewatches, rewatchRate, avgCost, agreementRate, topCompanion, topGenres };
   }, [movies]);
 
   const sorted = useMemo(() => {
@@ -436,6 +455,18 @@ export default function MoviesPage() {
                   <div style={{ fontSize: 10, color: "#8a8477" }}>{allTimeStats.topCompanion[1]} times</div>
                 </div>
               )}
+              <div>
+                <div style={{ fontSize: 11, color: "#8a8477" }}>Rewatch rate</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{allTimeStats.rewatchRate}%</div>
+              </div>
+              {allTimeStats.topGenres.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: "#8a8477" }}>Top genres</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>
+                    {allTimeStats.topGenres.map(([g, c]) => `${g} (${c})`).join(", ")}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -502,6 +533,13 @@ export default function MoviesPage() {
               </div>
             )}
             <input type="text" placeholder="Who you went with (optional)" value={form.companions} onChange={(e) => setForm({ ...form, companions: e.target.value })} maxLength={120} />
+            <div>
+              <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Genre (optional)</label>
+              <select value={form.genre} onChange={(e) => setForm({ ...form, genre: e.target.value })}>
+                <option value="">Not set</option>
+                {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
             <div>
               <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Your take</label>
               <select value={form.myTake} onChange={(e) => setForm({ ...form, myTake: e.target.value })}>
@@ -574,9 +612,13 @@ export default function MoviesPage() {
                           {new Date(m.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                           {m.time && <> · {m.time}</>}
                           {m.venueName && <> · {m.venueName}{m.venueType === "OTT" ? " (OTT)" : ""}</>}
+                          {m.genre && <> · {m.genre}</>}
                           {m.companions && <> · with {m.companions}</>}
                           {m.affectsBalance === false && <> · not deducted from balance</>}
                           {m.pending && <> · pending sync</>}
+                          {!m.pending && (
+                            <> · <a href={whereToWatchUrl(m.title)} target="_blank" rel="noopener noreferrer" style={{ color: "#A34A38", textDecoration: "none" }}>where to watch →</a></>
+                          )}
                         </div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
