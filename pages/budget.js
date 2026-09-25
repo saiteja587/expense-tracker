@@ -58,14 +58,21 @@ export default function BudgetPage() {
   const [editCatAmount, setEditCatAmount] = useState("");
   const [saveError, setSaveError] = useState("");
 
+  const [recurringIncome, setRecurringIncome] = useState([]);
+
   async function load() {
     try {
-      const [expRes, movRes, balRes, ruleRes] = await Promise.all([
+      const [expRes, movRes, balRes, ruleRes, incRes] = await Promise.all([
         fetch("/api/data?type=expenses"),
         fetch("/api/data?type=movies"),
         fetch("/api/data?type=balance"),
         fetch("/api/data?type=budget"),
+        fetch("/api/data?type=recurring-income"),
       ]);
+      if (incRes.ok) {
+        const d = await incRes.json();
+        setRecurringIncome((d.recurringIncome || []).map((r) => ({ amount: parseFloat(r.amount), note: r.note, dayOfMonth: r.day_of_month })));
+      }
       if (expRes.ok) {
         const d = await expRes.json();
         setExpenses(d.expenses.map((x) => ({ amount: parseFloat(x.amount), category: x.category, date: x.expense_date.slice(0, 10) })));
@@ -120,6 +127,43 @@ export default function BudgetPage() {
   const lowBalanceRule = rules.find((r) => r.ruleType === "low_balance");
   const movieCountRule = rules.find((r) => r.ruleType === "movie_count");
   const categoryRules = rules.filter((r) => r.ruleType === "category");
+
+  // Zero-based budgeting: expected income this month vs. what's been assigned
+  // to category limits, so nothing is left unaccounted for.
+  const expectedIncome = useMemo(() => {
+    const recurringTotal = recurringIncome.reduce((s, r) => s + r.amount, 0);
+    return recurringTotal + monthAdded;
+  }, [recurringIncome, monthAdded]);
+  const totalAssigned = useMemo(() => categoryRules.reduce((s, r) => s + r.amount, 0), [categoryRules]);
+  const unassigned = expectedIncome - totalAssigned;
+
+  // Flag categories whose spend this month is running >15% above their
+  // trailing 3-month average — a quick "did a bill just jump?" check.
+  const categoryJumps = useMemo(() => {
+    const monthsBack = [1, 2, 3].map((n) => {
+      const d = new Date(today + "T00:00:00");
+      d.setMonth(d.getMonth() - n);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    });
+    const totalsByMonthCat = {};
+    for (const x of expenses) {
+      const ym = x.date.slice(0, 7);
+      if (!monthsBack.includes(ym)) continue;
+      totalsByMonthCat[ym] = totalsByMonthCat[ym] || {};
+      totalsByMonthCat[ym][x.category] = (totalsByMonthCat[ym][x.category] || 0) + x.amount;
+    }
+    const jumps = [];
+    for (const [category, spend] of Object.entries(spentByCategory)) {
+      if (category === "Movies") continue;
+      const priorValues = monthsBack.map((ym) => (totalsByMonthCat[ym] || {})[category] || 0).filter((v) => v > 0);
+      if (priorValues.length === 0) continue;
+      const avg = priorValues.reduce((s, v) => s + v, 0) / priorValues.length;
+      if (avg > 0 && spend > avg * 1.15) {
+        jumps.push({ category, spend, avg, pct: Math.round(((spend - avg) / avg) * 100) });
+      }
+    }
+    return jumps;
+  }, [expenses, spentByCategory, today]);
 
   async function saveRule(ruleType, category, amount) {
     setSaveError("");
@@ -241,6 +285,38 @@ export default function BudgetPage() {
       </div>
 
       {saveError && <div style={{ fontSize: 12, color: "#A34A38", marginBottom: 16 }}>{saveError}</div>}
+
+      {categoryJumps.length > 0 && (
+        <div style={{ background: "#FAECE7", border: "1px solid #D85A30", color: "#712B13", padding: "10px 14px", borderRadius: 4, fontSize: 13, marginBottom: 16 }}>
+          {categoryJumps.map((j, i) => (
+            <div key={j.category} style={{ marginBottom: i < categoryJumps.length - 1 ? 4 : 0 }}>
+              <strong>{j.category}</strong> is up {j.pct}% this month ({fmt(j.spend)} vs. a usual {fmt(j.avg)}) — worth a look.
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Zero-based budgeting: assign every rupee of expected income somewhere */}
+      {(expectedIncome > 0 || categoryRules.length > 0) && (
+        <div className="card panel-soft" style={{ borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>This month's plan</div>
+          <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 10 }}>Expected income (recurring income + balance added this month) vs. what your category limits below add up to.</div>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 11, color: "#8a8477" }}>Expected income</div>
+              <div className="tabnum" style={{ fontSize: 18, fontWeight: 600 }}>{fmt(expectedIncome)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "#8a8477" }}>Assigned to limits</div>
+              <div className="tabnum" style={{ fontSize: 18, fontWeight: 600 }}>{fmt(totalAssigned)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: "#8a8477" }}>{unassigned >= 0 ? "Left to assign" : "Over-assigned by"}</div>
+              <div className="tabnum" style={{ fontSize: 18, fontWeight: 600, color: unassigned >= 0 ? "#2F6F5E" : "#A34A38" }}>{fmt(Math.abs(unassigned))}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Overall limit */}
       <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
