@@ -14,6 +14,7 @@ export default function YearPage() {
   const [expenses, setExpenses] = useState([]);
   const [movies, setMovies] = useState([]);
   const [challengeDays, setChallengeDays] = useState([]);
+  const [topups, setTopups] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear());
 
@@ -22,14 +23,44 @@ export default function YearPage() {
       fetch("/api/data?type=expenses"),
       fetch("/api/data?type=movies"),
       fetch("/api/data?type=challenge"),
+      fetch("/api/data?type=balance"),
     ])
-      .then(async ([e, m, c]) => {
+      .then(async ([e, m, c, b]) => {
         if (e.ok) setExpenses((await e.json()).expenses || []);
         if (m.ok) setMovies((await m.json()).movies || []);
         if (c.ok) setChallengeDays((await c.json()).days || []);
+        if (b.ok) setTopups((await b.json()).topups || []);
       })
       .finally(() => setLoaded(true));
   }, []);
+
+  // Net worth / savings trend: approximate balance as of the end of each
+  // month, using the latest "set current balance" entry (if any) as a
+  // baseline and adding/subtracting everything after it.
+  const balanceAsOf = useMemo(() => {
+    const spendItems = [
+      ...expenses.filter((x) => x.affects_balance !== false).map((x) => ({ date: x.expense_date.slice(0, 10), amount: parseFloat(x.amount) })),
+      ...movies.filter((m) => m.affects_balance !== false).map((m) => ({
+        date: m.watched_date.slice(0, 10),
+        amount: (parseFloat(m.ticket_price) + parseFloat(m.canteen_price)) * (m.quantity || 1),
+      })),
+    ];
+    return (dateStr) => {
+      const setTopups = topups.filter((t) => t.mode === "set" && t.topup_date.slice(0, 10) <= dateStr);
+      const baseline = setTopups.length > 0
+        ? [...setTopups].sort((a, b) => (a.topup_date < b.topup_date ? 1 : -1))[0]
+        : null;
+      const startDate = baseline ? baseline.topup_date.slice(0, 10) : null;
+      const addTotal = topups
+        .filter((t) => t.mode === "add" && t.topup_date.slice(0, 10) <= dateStr && (!startDate || t.topup_date.slice(0, 10) > startDate))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      const spendTotal = spendItems
+        .filter((x) => x.date <= dateStr && (!startDate || x.date > startDate))
+        .reduce((s, x) => s + x.amount, 0);
+      const base = baseline ? parseFloat(baseline.amount) : 0;
+      return base + addTotal - spendTotal;
+    };
+  }, [expenses, movies, topups]);
 
   const monthly = useMemo(() => {
     const rows = MONTH_SHORT.map((label, idx) => ({
@@ -60,8 +91,13 @@ export default function YearPage() {
       if (d.completed) rows[dt.getMonth()].sugarFreeDays++;
       else rows[dt.getMonth()].slipDays++;
     }
+    for (let m = 0; m < 12; m++) {
+      const lastDay = new Date(year, m + 1, 0).getDate();
+      const monthEnd = `${year}-${String(m + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+      rows[m].balance = Math.round(balanceAsOf(monthEnd));
+    }
     return rows;
-  }, [expenses, movies, challengeDays, year]);
+  }, [expenses, movies, challengeDays, year, balanceAsOf]);
 
   const totals = useMemo(() => {
     return monthly.reduce(
@@ -127,6 +163,22 @@ export default function YearPage() {
               <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
               <Line type="monotone" dataKey="spend" name="Total spend" stroke="#A34A38" strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="movieSpend" name="Movie spend" stroke="#8C4470" strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Balance over the year</div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 10 }}>Approximate balance at the end of each month — a rough net-worth trend, not exact for months before a "set current balance" entry.</div>
+        <div style={{ height: 200 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={monthly} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
+              <CartesianGrid stroke="#EAE5D9" vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={60} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
+              <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
+              <Line type="monotone" dataKey="balance" name="Balance" stroke="#2F6F5E" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
