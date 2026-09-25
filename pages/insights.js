@@ -87,6 +87,12 @@ export default function InsightsPage() {
 
     const slipRate = (arr) => (arr.length === 0 ? null : Math.round((arr.filter((d) => d.completed === false).length / arr.length) * 100));
 
+    // "Cost of a slip": average same-day spend on days you slipped vs. days
+    // you stayed sugar-free — do slips tend to come with extra spending?
+    const slipDays = challengeDays.filter((d) => d.completed === false);
+    const cleanDays = challengeDays.filter((d) => d.completed === true);
+    const avgSpend = (arr) => (arr.length === 0 ? null : arr.reduce((s, d) => s + (dailySpend[d.date] || 0), 0) / arr.length);
+
     return {
       movieSlipRate: slipRate(movieDays),
       nonMovieSlipRate: slipRate(nonMovieDays),
@@ -96,8 +102,12 @@ export default function InsightsPage() {
       normalSpendSlipRate: slipRate(normalSpendDays),
       highSpendDaysCount: highSpendDays.length,
       normalSpendDaysCount: normalSpendDays.length,
+      avgSpendSlipDays: avgSpend(slipDays),
+      avgSpendCleanDays: avgSpend(cleanDays),
+      slipDaysCount: slipDays.length,
+      cleanDaysCount: cleanDays.length,
     };
-  }, [challengeDays, movieDates, highSpendDates]);
+  }, [challengeDays, movieDates, highSpendDates, dailySpend]);
 
   if (!loaded) {
     return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>Loading…</div>;
@@ -141,6 +151,23 @@ export default function InsightsPage() {
               bLabel={`slip rate on normal days (${stats.normalSpendDaysCount})`}
               direction="bad"
             />
+          )}
+
+          {stats.avgSpendSlipDays !== null && stats.avgSpendCleanDays !== null && stats.slipDaysCount >= 3 && (
+            <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 12 }}>
+              <div style={{ fontSize: 14, marginBottom: 10, lineHeight: 1.5 }}>The cost of a slip — average spend on days you slipped vs. days you stayed sugar-free.</div>
+              <div style={{ display: "flex", gap: 24, alignItems: "flex-end" }}>
+                <div>
+                  <div className="tabnum" style={{ fontSize: 22, fontWeight: 600, color: stats.avgSpendSlipDays > stats.avgSpendCleanDays ? "#A34A38" : "#241F1A" }}>{fmt(stats.avgSpendSlipDays)}</div>
+                  <div style={{ fontSize: 11, color: "#8a8477" }}>avg. spend on slip days ({stats.slipDaysCount})</div>
+                </div>
+                <div style={{ fontSize: 18, color: "#C4BDAC" }}>vs</div>
+                <div>
+                  <div className="tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{fmt(stats.avgSpendCleanDays)}</div>
+                  <div style={{ fontSize: 11, color: "#8a8477" }}>avg. spend on sugar-free days ({stats.cleanDaysCount})</div>
+                </div>
+              </div>
+            </div>
           )}
 
           <div style={{ fontSize: 11, color: "#8a8477", marginTop: 20, lineHeight: 1.6 }}>
