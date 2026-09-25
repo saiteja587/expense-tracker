@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, Check, X, Flame, Trophy, RotateCcw } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { ArrowLeft, Check, X, Flame, Trophy, RotateCcw, Share2 } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
+
+const SLIP_REASONS = ["Stress", "Social occasion", "Craving", "Travel", "Tiredness", "Other"];
 
 function todayISO() {
   const d = new Date();
@@ -30,8 +32,11 @@ export default function SugarChallengePage() {
 
   const [selectedDay, setSelectedDay] = useState(null);
   const [noteDraft, setNoteDraft] = useState("");
+  const [reasonDraft, setReasonDraft] = useState("");
+  const [naturalSugarDraft, setNaturalSugarDraft] = useState(false);
   const [pendingChoice, setPendingChoice] = useState(null); // null = nothing picked yet, true = sugar-free, false = slipped
   const [saving, setSaving] = useState(false);
+  const shareCanvasRef = useRef(null);
 
   async function load() {
     try {
@@ -41,7 +46,7 @@ export default function SugarChallengePage() {
       setMeta(data.meta);
       const map = {};
       for (const d of data.days) {
-        map[d.day_date.slice(0, 10)] = { completed: d.completed, note: d.note || "" };
+        map[d.day_date.slice(0, 10)] = { completed: d.completed, note: d.note || "", reason: d.reason || "", naturalSugar: !!d.natural_sugar };
       }
       setDays(map);
       setHistory(data.history || []);
@@ -142,15 +147,17 @@ export default function SugarChallengePage() {
       setLoadError("Pick Sugar-free or Slipped first, then Save.");
       return;
     }
-    if (pendingChoice === false && !noteDraft.trim()) {
+    // "Natural sugar" (fruit) doesn't count as a slip — it still logs the day
+    // as sugar-free so the streak isn't broken, but is tracked separately.
+    const completed = naturalSugarDraft ? true : pendingChoice;
+    if (pendingChoice === false && !naturalSugarDraft && !noteDraft.trim()) {
       setLoadError("Add a quick reason before logging a slip — it's worth knowing your own pattern.");
       return;
     }
     setLoadError("");
     setSaving(true);
-    const completed = pendingChoice;
-    const payload = { type: "challenge-day", date, completed, note: noteDraft };
-    setDays((prev) => ({ ...prev, [date]: { completed, note: noteDraft } }));
+    const payload = { type: "challenge-day", date, completed, note: noteDraft, reason: pendingChoice === false && !naturalSugarDraft ? reasonDraft : "", naturalSugar: naturalSugarDraft };
+    setDays((prev) => ({ ...prev, [date]: { completed, note: noteDraft, reason: payload.reason, naturalSugar: naturalSugarDraft } }));
     try {
       const res = await fetch("/api/data", {
         method: "POST",
@@ -160,11 +167,15 @@ export default function SugarChallengePage() {
       if (!res.ok) throw new Error();
       setSelectedDay(null);
       setPendingChoice(null);
+      setReasonDraft("");
+      setNaturalSugarDraft(false);
     } catch (err) {
       queueRequest({ url: "/api/data", method: "POST", body: payload });
       setLoadError("Saved locally — will sync once you're back online.");
       setSelectedDay(null);
       setPendingChoice(null);
+      setReasonDraft("");
+      setNaturalSugarDraft(false);
     } finally {
       setSaving(false);
     }
@@ -216,6 +227,53 @@ export default function SugarChallengePage() {
   }, [dayList]);
 
   const todayEntry = dayList.find((d) => d.isToday);
+
+  // Tally why slips happened, so a pattern (e.g. "mostly stress") shows up
+  // instead of getting buried in individual day notes.
+  const reasonTally = useMemo(() => {
+    const map = {};
+    for (const d of dayList) {
+      if (d.completed === false) {
+        const r = days[d.date]?.reason || "Unspecified";
+        map[r] = (map[r] || 0) + 1;
+      }
+    }
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [dayList, days]);
+
+  const naturalSugarDays = useMemo(() => dayList.filter((d) => d.completed === true && days[d.date]?.naturalSugar).length, [dayList, days]);
+
+  function shareStreak() {
+    const canvas = shareCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = 800, H = 800;
+    canvas.width = W; canvas.height = H;
+    const grad = ctx.createLinearGradient(0, 0, W, H);
+    grad.addColorStop(0, "#A34A38"); grad.addColorStop(0.5, "#8C4470"); grad.addColorStop(1, "#2F6F5E");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#FBF8F2";
+    ctx.font = "600 42px Georgia, serif";
+    ctx.fillText("No-Sugar Challenge", W / 2, 220);
+    ctx.font = "700 160px Georgia, serif";
+    ctx.fillText(String(currentStreak), W / 2, 420);
+    ctx.font = "500 32px sans-serif";
+    ctx.fillText(currentStreak === 1 ? "day sugar-free" : "days sugar-free", W / 2, 480);
+    ctx.font = "400 22px sans-serif";
+    ctx.fillText(`Longest streak: ${longestStreak} days`, W / 2, 560);
+    canvas.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sugar-streak-${currentStreak}-days.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, "image/png");
+  }
 
   const sugarPerDayVal = meta ? parseFloat(meta.sugar_per_day) || 0 : 0;
   const savingsPerDayVal = meta ? parseFloat(meta.savings_per_day) || 0 : 0;
@@ -347,13 +405,43 @@ export default function SugarChallengePage() {
             </div>
           )}
 
-          <button
-            onClick={restartChallenge}
-            disabled={restarting}
-            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "8px 14px", fontSize: 12, color: "#5f5a4f", cursor: restarting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, marginBottom: 28 }}
-          >
-            <RotateCcw size={13} /> {restarting ? "Archiving…" : "End this challenge & start a new one"}
-          </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 28 }}>
+            <button
+              onClick={restartChallenge}
+              disabled={restarting}
+              style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "8px 14px", fontSize: 12, color: "#5f5a4f", cursor: restarting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              <RotateCcw size={13} /> {restarting ? "Archiving…" : "End this challenge & start a new one"}
+            </button>
+            {currentStreak > 0 && (
+              <button
+                onClick={shareStreak}
+                style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "8px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+              >
+                <Share2 size={13} /> Share your streak
+              </button>
+            )}
+          </div>
+          <canvas ref={shareCanvasRef} style={{ display: "none" }} />
+
+          {reasonTally.length > 0 && (
+            <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "14px 16px", marginBottom: 24 }}>
+              <div className="lora" style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Why slips happen</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {reasonTally.map(([reason, count]) => (
+                  <div key={reason} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#5f5a4f" }}>
+                    <span>{reason}</span>
+                    <span className="tabnum" style={{ color: "#A34A38", fontWeight: 500 }}>{count}×</span>
+                  </div>
+                ))}
+              </div>
+              {naturalSugarDays > 0 && (
+                <div style={{ fontSize: 11, color: "#8a8477", marginTop: 8, paddingTop: 8, borderTop: "1px solid #EAE5D9" }}>
+                  {naturalSugarDays} day{naturalSugarDays !== 1 ? "s" : ""} logged as fruit-only — not counted as slips.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Today's quick action */}
           {todayEntry && (
@@ -368,7 +456,7 @@ export default function SugarChallengePage() {
                 <button onClick={() => markDay(today, true)} style={{ background: todayEntry.completed === true ? "#2F6F5E" : "#EAE5D9", color: todayEntry.completed === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                   <Check size={14} /> Sugar-free
                 </button>
-                <button onClick={() => { setSelectedDay(today); setNoteDraft(""); setPendingSlip(true); }} style={{ background: todayEntry.completed === false ? "#A34A38" : "#EAE5D9", color: todayEntry.completed === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => { setSelectedDay(today); setNoteDraft(""); setReasonDraft(""); setNaturalSugarDraft(false); setPendingChoice(false); }} style={{ background: todayEntry.completed === false ? "#A34A38" : "#EAE5D9", color: todayEntry.completed === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                   <X size={14} /> I slipped
                 </button>
               </div>
@@ -388,7 +476,7 @@ export default function SugarChallengePage() {
                 <button
                   key={d.date}
                   disabled={d.isFuture}
-                  onClick={() => { setSelectedDay(d.date); setNoteDraft(d.note); setPendingChoice(d.completed ?? null); }}
+                  onClick={() => { setSelectedDay(d.date); setNoteDraft(d.note); setReasonDraft(days[d.date]?.reason || ""); setNaturalSugarDraft(!!days[d.date]?.naturalSugar); setPendingChoice(d.completed ?? null); }}
                   title={d.note || undefined}
                   style={{ aspectRatio: "1", background: bg, color, border, borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: d.isFuture ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                   className="tabnum"
@@ -409,7 +497,19 @@ export default function SugarChallengePage() {
                 <button onClick={() => setPendingChoice(true)} style={{ background: pendingChoice === true ? "#2F6F5E" : "#EAE5D9", color: pendingChoice === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Sugar-free</button>
                 <button onClick={() => setPendingChoice(false)} style={{ background: pendingChoice === false ? "#A34A38" : "#EAE5D9", color: pendingChoice === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Slipped</button>
               </div>
-              <input type="text" placeholder={pendingChoice === false ? "What happened? (required)" : "Note (optional)"} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={140} style={{ marginBottom: 10, borderColor: pendingChoice === false ? "#A34A38" : undefined }} />
+              {pendingChoice === false && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#5f5a4f", marginBottom: 10, cursor: "pointer" }}>
+                  <input type="checkbox" checked={naturalSugarDraft} onChange={(e) => setNaturalSugarDraft(e.target.checked)} style={{ width: "auto" }} />
+                  It was just fruit (natural sugar) — don't break my streak
+                </label>
+              )}
+              {pendingChoice === false && !naturalSugarDraft && (
+                <select value={reasonDraft} onChange={(e) => setReasonDraft(e.target.value)} style={{ marginBottom: 10, borderColor: "#A34A38" }}>
+                  <option value="">Reason — pick one</option>
+                  {SLIP_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              )}
+              <input type="text" placeholder={pendingChoice === false && !naturalSugarDraft ? "What happened? (required)" : "Note (optional)"} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={140} style={{ marginBottom: 10, borderColor: pendingChoice === false && !naturalSugarDraft ? "#A34A38" : undefined }} />
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => saveNote(selectedDay)} disabled={saving} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save"}</button>
                 <button onClick={() => { setSelectedDay(null); setPendingChoice(null); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Cancel</button>
