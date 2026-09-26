@@ -13,6 +13,37 @@ const NAV_ITEMS = [
   { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
+function ToastHost() {
+  const [toasts, setToasts] = useState([]);
+
+  useEffect(() => {
+    function handleToast(e) {
+      const toast = { ...e.detail, leaving: false };
+      setToasts((prev) => [...prev, toast]);
+      setTimeout(() => {
+        setToasts((prev) => prev.map((t) => (t.id === toast.id ? { ...t, leaving: true } : t)));
+      }, 1800);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+      }, 2100);
+    }
+    window.addEventListener("app:toast", handleToast);
+    return () => window.removeEventListener("app:toast", handleToast);
+  }, []);
+
+  if (toasts.length === 0) return null;
+  return (
+    <div className="toast-host">
+      {toasts.map((t) => (
+        <div key={t.id} className={`toast-bubble${t.leaving ? " leaving" : ""}`}>
+          {t.emoji && <span>{t.emoji}</span>}
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function BottomNav({ currentPath }) {
   return (
     <nav className="bottom-nav">
@@ -230,6 +261,7 @@ export default function App({ Component, pageProps }) {
             </div>
           )}
           <Component {...pageProps} />
+          <ToastHost />
           <BottomNav currentPath={router.pathname} />
         </>
       )}
