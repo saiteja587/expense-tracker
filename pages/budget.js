@@ -137,6 +137,31 @@ export default function BudgetPage() {
   const totalAssigned = useMemo(() => categoryRules.reduce((s, r) => s + r.amount, 0), [categoryRules]);
   const unassigned = expectedIncome - totalAssigned;
 
+  // Category rollover: unused budget from last month carries into this
+  // month's effective limit. Assumes the same limit applied last month
+  // (rules don't keep history) — a reasonable approximation for a
+  // personal budget, not an exact ledger.
+  const lastMonth = useMemo(() => {
+    const d = new Date(today + "T00:00:00");
+    d.setMonth(d.getMonth() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, [today]);
+  const lastMonthSpentByCategory = useMemo(() => {
+    const map = {};
+    for (const x of expenses) {
+      if (x.date.slice(0, 7) !== lastMonth) continue;
+      map[x.category] = (map[x.category] || 0) + x.amount;
+    }
+    const lastMonthMovieSpend = movies.filter((m) => m.date.slice(0, 7) === lastMonth).reduce((s, m) => s + m.amount, 0);
+    if (lastMonthMovieSpend > 0) map["Movies"] = (map["Movies"] || 0) + lastMonthMovieSpend;
+    return map;
+  }, [expenses, movies, lastMonth]);
+  function rolloverFor(category, limit) {
+    const spentLast = lastMonthSpentByCategory[category];
+    if (spentLast === undefined) return 0; // no data last month — nothing to roll over
+    return Math.max(0, limit - spentLast);
+  }
+
   // Flag categories whose spend this month is running >15% above their
   // trailing 3-month average — a quick "did a bill just jump?" check.
   const categoryJumps = useMemo(() => {
@@ -485,6 +510,8 @@ export default function BudgetPage() {
           const spent = spentByCategory[r.category] || 0;
           const catColor = CATEGORIES.find((c) => c.name === r.category)?.color || "#6B6558";
           const isEditing = editingCategory === r.category;
+          const rollover = rolloverFor(r.category, r.amount);
+          const effectiveLimit = r.amount + rollover;
           return (
             <div key={r.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid #EAE5D9" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -493,13 +520,14 @@ export default function BudgetPage() {
                   <span style={{ fontSize: 14, fontWeight: 500 }}>{r.category}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tabnum" style={{ fontSize: 13, color: "#5f5a4f" }}>{fmt(spent)} / {fmt(r.amount)}</span>
+                  <span className="tabnum" style={{ fontSize: 13, color: "#5f5a4f" }}>{fmt(spent)} / {fmt(effectiveLimit)}</span>
                   <button onClick={() => { setEditingCategory(r.category); setEditCatAmount(String(r.amount)); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}><Pencil size={13} /></button>
                   <button onClick={() => removeRule(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}><Trash2 size={13} /></button>
                 </div>
               </div>
-              {spent > r.amount && <div style={{ fontSize: 11, color: "#A34A38", marginTop: 2 }}>Over by {fmt(spent - r.amount)}</div>}
-              <ProgressBar spent={spent} limit={r.amount} />
+              {rollover > 0 && <div style={{ fontSize: 10, color: "#2F6F5E", marginTop: 2 }}>+{fmt(rollover)} rolled over from last month (limit {fmt(r.amount)})</div>}
+              {spent > effectiveLimit && <div style={{ fontSize: 11, color: "#A34A38", marginTop: 2 }}>Over by {fmt(spent - effectiveLimit)}</div>}
+              <ProgressBar spent={spent} limit={effectiveLimit} />
               {isEditing && (
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <input type="number" inputMode="decimal" value={editCatAmount} onChange={(e) => setEditCatAmount(e.target.value)} style={{ width: 140 }} />
