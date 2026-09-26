@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert, Mic } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert, Mic, MoreHorizontal } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 
 const CATEGORIES = [
@@ -59,6 +59,17 @@ export default function Page() {
 
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceError, setVoiceError] = useState("");
+
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreMenuRef = useRef(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    function handleClickOutside(e) {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) setMoreOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [moreOpen]);
 
   const [showTopup, setShowTopup] = useState(false);
   const [topupForm, setTopupForm] = useState(emptyTopupForm);
@@ -568,7 +579,7 @@ export default function Page() {
       )}
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, gap: 12 }}>
         <div>
           <div className="lora" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
             Expense Ledger
@@ -576,36 +587,37 @@ export default function Page() {
           <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
             Track where your money goes, one entry at a time.
           </div>
-          <a href="/movies" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
-            Movie nights →
-          </a>
-          <a href="/budget" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
-            Money rules →
-          </a>
-          <a href="/sugar-challenge" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
-            No-sugar challenge →
-          </a>
-          <a href="/pause" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
-            Pause →
-          </a>
-          <a href="/settings" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
-            Settings →
-          </a>
-          <a href="/search" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
-            Search →
-          </a>
-          <a href="/insights" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 500, marginRight: 14 }}>
+          <a href="/insights" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 500 }}>
             Patterns →
           </a>
-          <a href="/report" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
-            Monthly report →
-          </a>
-          <a href="/year" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6, marginRight: 14 }}>
-            Year view →
-          </a>
-          <a href="/ious" style={{ fontSize: 12, color: "#8a8477", textDecoration: "none", display: "inline-block", marginTop: 6 }}>
-            Who owes what →
-          </a>
+        </div>
+        <div ref={moreMenuRef} style={{ position: "relative", flexShrink: 0 }}>
+          <button
+            onClick={() => setMoreOpen((v) => !v)}
+            aria-label="More pages"
+            style={{ background: moreOpen ? "#EAE5D9" : "none", border: "1px solid #D9D2C2", borderRadius: 20, padding: "7px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: "#5f5a4f", fontSize: 12 }}
+          >
+            <MoreHorizontal size={15} /> More
+          </button>
+          {moreOpen && (
+            <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", background: "#FFFEFB", border: "1px solid #EAE5D9", borderRadius: 6, boxShadow: "0 6px 20px rgba(0,0,0,0.08)", minWidth: 170, zIndex: 20, overflow: "hidden" }}>
+              {[
+                { href: "/search", label: "Search" },
+                { href: "/year", label: "Year view" },
+                { href: "/report", label: "Monthly report" },
+                { href: "/ious", label: "Who owes what" },
+                { href: "/pause", label: "Pause" },
+              ].map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  style={{ display: "block", padding: "10px 14px", fontSize: 13, color: "#241F1A", textDecoration: "none", borderBottom: "1px solid #F1ECDF" }}
+                >
+                  {item.label}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button onClick={() => setViewDate(new Date(year, month - 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }} aria-label="Previous month">
