@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert, Mic, MoreHorizontal } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
+import { showToast } from "../lib/toast";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -39,6 +40,39 @@ function getEmptyExpenseForm() {
 }
 const emptyTopupForm = { amount: "", note: "", date: todayISO(), mode: "add" };
 
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 5) return "Still up?";
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  if (h < 21) return "Good evening";
+  return "Good night";
+}
+
+// A number that counts up/down to its target instead of snapping — makes the
+// balance feel alive rather than a static database read.
+function useCountUp(target, durationMs = 500) {
+  const [display, setDisplay] = useState(target);
+  const fromRef = useRef(target);
+  useEffect(() => {
+    const from = fromRef.current;
+    const to = target;
+    if (from === to) return;
+    let raf;
+    const start = performance.now();
+    function tick(now) {
+      const t = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplay(from + (to - from) * eased);
+      if (t < 1) raf = requestAnimationFrame(tick);
+      else fromRef.current = to;
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, durationMs]);
+  return display;
+}
+
 export default function Page() {
   const [expenses, setExpenses] = useState([]);
   const [movies, setMovies] = useState([]);
@@ -54,6 +88,10 @@ export default function Page() {
 
   const [expenseForm, setExpenseForm] = useState(getEmptyExpenseForm);
   const [editingExpenseId, setEditingExpenseId] = useState(null);
+  // Most expenses are logged today, right now, deducted normally — so the
+  // date/time/deduct-toggle fields start tucked away and only need a tap
+  // when today's entry is the unusual one (backdated, future, or excluded).
+  const [expenseMoreOpen, setExpenseMoreOpen] = useState(false);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -278,12 +316,16 @@ export default function Page() {
   function startEditExpense(x) {
     setEditingExpenseId(x.id);
     setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false });
+    // Editing always shows the full form — the person may specifically be
+    // here to fix the date or the deduct toggle.
+    setExpenseMoreOpen(true);
     setFormError("");
   }
 
   function cancelEditExpense() {
     setEditingExpenseId(null);
     setExpenseForm(getEmptyExpenseForm());
+    setExpenseMoreOpen(false);
     setFormError("");
   }
 
@@ -377,6 +419,7 @@ export default function Page() {
       }
       cancelEditExpense();
       setSubmitting(false);
+      showToast("Saved — will sync once you're back online", "📥");
       return;
     }
 
@@ -387,6 +430,7 @@ export default function Page() {
       }
       cancelEditExpense();
       await load();
+      showToast(isEdit ? "Expense updated" : "Expense logged", isEdit ? "✏️" : "✅");
     } catch (err) {
       setFormError(err.message || "Couldn't save that expense. Try again.");
     } finally {
@@ -445,8 +489,10 @@ export default function Page() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to save");
       }
+      const wasEdit = editingTopupId !== null;
       cancelEditTopup();
       await load();
+      showToast(wasEdit ? "Balance entry updated" : "Balance updated", "💰");
     } catch (err) {
       setTopupError(err.message || "Couldn't save that. Try again.");
     } finally {
@@ -511,6 +557,7 @@ export default function Page() {
   const balanceStatus = balanceCalc.balance < 0 ? "negative" : (lowBalanceRule && balanceCalc.balance < lowBalanceRule.amount) ? "low" : "ok";
   const balanceColor = balanceStatus === "negative" ? "#A34A38" : balanceStatus === "low" ? "#C98A2C" : "#241F1A";
   const balancePanelBg = balanceStatus === "negative" ? "#FAECE7" : balanceStatus === "low" ? "#F7EEDD" : "#F1ECDF";
+  const animatedBalance = useCountUp(balanceCalc.balance);
   const categoryRuleMap = useMemo(() => {
     const map = {};
     for (const r of budgetRules) if (r.ruleType === "category") map[r.category] = r.amount;
@@ -632,16 +679,23 @@ export default function Page() {
         </div>
       </div>
 
-      {!loggedToday && (
-        <div style={{ fontSize: 13, color: "#A3763F", marginBottom: 16, background: "#F7EEDD", borderRadius: 4, padding: "8px 12px" }}>
-          Nothing logged today yet — a quick add now beats trying to remember it tomorrow.
-        </div>
-      )}
+      <div style={{ fontSize: 13, color: "#8a8477", marginBottom: 12 }}>
+        {greeting()}
+        {!loggedToday && ", "}
+        {!loggedToday && (
+          <button
+            onClick={() => amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }) || amountInputRef.current?.focus()}
+            style={{ background: "none", border: "none", padding: 0, color: "#A34A38", fontWeight: 600, cursor: "pointer", fontSize: 13, textDecoration: "underline" }}
+          >
+            nothing logged yet today — add one now →
+          </button>
+        )}
+      </div>
 
       {/* Daily snapshot: money, movies, diet in one glance */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
         <a href="/sugar-challenge" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
-          <Flame size={13} color={currentStreak > 0 ? "#C98A2C" : "#C4BDAC"} />
+          <Flame size={13} color={currentStreak > 0 ? "#C98A2C" : "#C4BDAC"} className={currentStreak > 0 ? "pulse-flame" : ""} />
           {challengeMeta ? `${currentStreak}-day streak` : "No challenge running"}
         </a>
         <a href="/movies" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
@@ -659,8 +713,8 @@ export default function Page() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>Balance available</div>
-            <div className="lora tabnum" style={{ fontSize: "clamp(24px, 7vw, 32px)", fontWeight: 600, lineHeight: 1, color: balanceColor }}>
-              {fmt(balanceCalc.balance)}
+            <div className="lora tabnum count-up" style={{ fontSize: "clamp(24px, 7vw, 32px)", fontWeight: 600, lineHeight: 1, color: balanceColor }}>
+              {fmt(animatedBalance)}
             </div>
             {balanceStatus === "low" && (
               <div style={{ fontSize: 11, color: "#C98A2C", marginTop: 4 }}>Below your {fmt(lowBalanceRule.amount)} alert threshold</div>
@@ -814,17 +868,30 @@ export default function Page() {
               maxLength={80}
               style={expenseForm.category === "Other" ? { borderColor: "#A34A38" } : undefined}
             />
-            <div style={{ display: "flex", gap: 8 }}>
-              <input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} style={{ flex: 1 }} />
-              <input type="time" value={expenseForm.time} onChange={(e) => setExpenseForm({ ...expenseForm, time: e.target.value })} style={{ flex: 1 }} />
-            </div>
-            {expenseForm.date > todayISO() && (
-              <div style={{ fontSize: 11, color: "#A3763F", marginTop: -6 }}>Future date — won't reduce your balance until this day arrives</div>
+            {expenseMoreOpen ? (
+              <>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} style={{ flex: 1 }} />
+                  <input type="time" value={expenseForm.time} onChange={(e) => setExpenseForm({ ...expenseForm, time: e.target.value })} style={{ flex: 1 }} />
+                </div>
+                {expenseForm.date > todayISO() && (
+                  <div style={{ fontSize: 11, color: "#A3763F", marginTop: -6 }}>Future date — won't reduce your balance until this day arrives</div>
+                )}
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#5f5a4f", cursor: "pointer" }}>
+                  <input type="checkbox" checked={expenseForm.affectsBalance} onChange={(e) => setExpenseForm({ ...expenseForm, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
+                  Deduct from balance
+                </label>
+                {!editingExpenseId && (
+                  <button type="button" onClick={() => setExpenseMoreOpen(false)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "#8a8477", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
+                    Hide date &amp; time options
+                  </button>
+                )}
+              </>
+            ) : (
+              <button type="button" onClick={() => setExpenseMoreOpen(true)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "#8a8477", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
+                Backdate, schedule, or exclude from balance →
+              </button>
             )}
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#5f5a4f", cursor: "pointer" }}>
-              <input type="checkbox" checked={expenseForm.affectsBalance} onChange={(e) => setExpenseForm({ ...expenseForm, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
-              Deduct from balance
-            </label>
             {formError && <div style={{ fontSize: 12, color: "#A34A38" }}>{formError}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button
