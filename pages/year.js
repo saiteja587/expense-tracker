@@ -99,6 +99,49 @@ export default function YearPage() {
     return rows;
   }, [expenses, movies, challengeDays, year, balanceAsOf]);
 
+  // Spending heatmap: a GitHub-style intensity calendar, one mini-month at
+  // a time so it never needs to scroll sideways on a phone.
+  const dailySpend = useMemo(() => {
+    const map = {};
+    for (const x of expenses) {
+      const d = x.expense_date.slice(0, 10);
+      if (d.slice(0, 4) !== String(year)) continue;
+      if (x.affects_balance === false) continue;
+      map[d] = (map[d] || 0) + parseFloat(x.amount);
+    }
+    for (const m of movies) {
+      const d = m.watched_date.slice(0, 10);
+      if (d.slice(0, 4) !== String(year)) continue;
+      if (m.affects_balance === false) continue;
+      map[d] = (map[d] || 0) + (parseFloat(m.ticket_price) + parseFloat(m.canteen_price)) * (m.quantity || 1);
+    }
+    return map;
+  }, [expenses, movies, year]);
+
+  const maxDailySpend = useMemo(() => Math.max(1, ...Object.values(dailySpend)), [dailySpend]);
+
+  function heatColor(amount) {
+    if (!amount) return "#EAE5D9";
+    const ratio = amount / maxDailySpend;
+    if (ratio > 0.75) return "#712B13";
+    if (ratio > 0.5) return "#A34A38";
+    if (ratio > 0.25) return "#C98A2C";
+    return "#E3C99A";
+  }
+
+  const heatmapMonths = useMemo(() => {
+    return MONTH_SHORT.map((label, m) => {
+      const daysInMonth = new Date(year, m + 1, 0).getDate();
+      const firstWeekday = new Date(year, m, 1).getDay();
+      const cells = Array(firstWeekday).fill(null);
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(m + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        cells.push({ day, amount: dailySpend[dateStr] || 0, dateStr });
+      }
+      return { label, cells };
+    });
+  }, [year, dailySpend]);
+
   const totals = useMemo(() => {
     return monthly.reduce(
       (acc, r) => ({
@@ -165,6 +208,27 @@ export default function YearPage() {
               <Line type="monotone" dataKey="movieSpend" name="Movie spend" stroke="#8C4470" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Spending heatmap</div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 14 }}>Darker means a heavier spending day this year.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 16 }}>
+          {heatmapMonths.map((hm) => (
+            <div key={hm.label}>
+              <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 4 }}>{hm.label}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+                {hm.cells.map((c, i) =>
+                  c === null ? (
+                    <div key={`blank-${i}`} />
+                  ) : (
+                    <div key={c.dateStr} title={`${c.dateStr}: ${fmt(c.amount)}`} style={{ aspectRatio: "1", background: heatColor(c.amount), borderRadius: 2 }} />
+                  )
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
