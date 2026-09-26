@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3 } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
+import { showToast } from "../lib/toast";
 
 const TAKES = [
   { value: "loved", label: "Loved it", score: 3, color: "#2F6F5E" },
@@ -78,6 +79,10 @@ export default function MoviesPage() {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [form, setForm] = useState(getEmptyForm);
+  // Title, venue, date/time and price cover most log entries — companions,
+  // genre, ratings and the balance toggle are real but occasional, so they
+  // start tucked behind one tap instead of six fields nobody asked for.
+  const [moreDetailsOpen, setMoreDetailsOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -185,12 +190,14 @@ export default function MoviesPage() {
       venueNameOther: knownOption === "Other" ? m.venueName : "",
       genre: m.genre || "",
     });
+    setMoreDetailsOpen(true);
     setFormError("");
   }
 
   function cancelEdit() {
     setEditingId(null);
     setForm(getEmptyForm());
+    setMoreDetailsOpen(false);
     setFormError("");
   }
 
@@ -262,8 +269,10 @@ export default function MoviesPage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to save");
       }
+      const wasEdit = isEdit;
       cancelEdit();
       await load();
+      showToast(wasEdit ? "Movie updated" : "Movie logged", "🎬");
     } catch (err) {
       setFormError(err.message || "Couldn't save that. Try again.");
     } finally {
@@ -532,35 +541,48 @@ export default function MoviesPage() {
                 Total for this entry: {fmt((parseFloat(form.ticketPrice) || 0) * form.quantity + (parseFloat(form.canteenPrice) || 0) * form.quantity)}
               </div>
             )}
-            <input type="text" placeholder="Who you went with (optional)" value={form.companions} onChange={(e) => setForm({ ...form, companions: e.target.value })} maxLength={120} />
-            <div>
-              <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Genre (optional)</label>
-              <select value={form.genre} onChange={(e) => setForm({ ...form, genre: e.target.value })}>
-                <option value="">Not set</option>
-                {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Your take</label>
-              <select value={form.myTake} onChange={(e) => setForm({ ...form, myTake: e.target.value })}>
-                {TAKES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>How the public/critics received it</label>
-              <select value={form.publicTake} onChange={(e) => setForm({ ...form, publicTake: e.target.value })}>
-                {TAKES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-            <input type="text" placeholder="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} maxLength={140} />
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#5f5a4f", cursor: "pointer" }}>
-              <input type="checkbox" checked={form.affectsBalance} onChange={(e) => setForm({ ...form, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
-              Deduct from balance
-            </label>
+            {moreDetailsOpen ? (
+              <>
+                <input type="text" placeholder="Who you went with (optional)" value={form.companions} onChange={(e) => setForm({ ...form, companions: e.target.value })} maxLength={120} />
+                <div>
+                  <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Genre (optional)</label>
+                  <select value={form.genre} onChange={(e) => setForm({ ...form, genre: e.target.value })}>
+                    <option value="">Not set</option>
+                    {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Your take</label>
+                  <select value={form.myTake} onChange={(e) => setForm({ ...form, myTake: e.target.value })}>
+                    {TAKES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>How the public/critics received it</label>
+                  <select value={form.publicTake} onChange={(e) => setForm({ ...form, publicTake: e.target.value })}>
+                    {TAKES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <input type="text" placeholder="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} maxLength={140} />
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#5f5a4f", cursor: "pointer" }}>
+                  <input type="checkbox" checked={form.affectsBalance} onChange={(e) => setForm({ ...form, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
+                  Deduct from balance
+                </label>
+                {!editingId && (
+                  <button type="button" onClick={() => setMoreDetailsOpen(false)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "#8a8477", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
+                    Hide extra details
+                  </button>
+                )}
+              </>
+            ) : (
+              <button type="button" onClick={() => setMoreDetailsOpen(true)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "#8a8477", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
+                Who with, genre, ratings, note →
+              </button>
+            )}
             {formError && <div style={{ fontSize: 12, color: "#A34A38" }}>{formError}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button
