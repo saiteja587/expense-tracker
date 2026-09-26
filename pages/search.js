@@ -10,6 +10,7 @@ function fmt(n) {
 export default function SearchPage() {
   const [expenses, setExpenses] = useState([]);
   const [movies, setMovies] = useState([]);
+  const [dietDays, setDietDays] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
@@ -17,8 +18,8 @@ export default function SearchPage() {
   const [toDate, setToDate] = useState("");
 
   useEffect(() => {
-    Promise.all([fetch("/api/data?type=expenses"), fetch("/api/data?type=movies")])
-      .then(async ([e, m]) => {
+    Promise.all([fetch("/api/data?type=expenses"), fetch("/api/data?type=movies"), fetch("/api/data?type=challenge")])
+      .then(async ([e, m, c]) => {
         if (e.ok) setExpenses((await e.json()).expenses.map((x) => ({
           id: x.id, type: "expense", amount: parseFloat(x.amount), category: x.category,
           note: x.note || "", date: x.expense_date.slice(0, 10),
@@ -27,17 +28,29 @@ export default function SearchPage() {
           id: m2.id, type: "movie", amount: (parseFloat(m2.ticket_price) + parseFloat(m2.canteen_price)) * (m2.quantity || 1),
           category: "Movies", note: m2.title, date: m2.watched_date.slice(0, 10),
         })));
+        if (c.ok) {
+          const days = (await c.json()).days || [];
+          setDietDays(
+            days
+              .filter((d) => (d.note && d.note.trim()) || (d.reason && d.reason.trim()))
+              .map((d) => ({
+                id: d.day_date, type: "diet", amount: 0, category: "Diet",
+                note: [d.completed === false ? "Slipped" : "Sugar-free", d.reason, d.note].filter(Boolean).join(" — "),
+                date: d.day_date.slice(0, 10),
+              }))
+          );
+        }
       })
       .finally(() => setLoaded(true));
   }, []);
 
   const allCategories = useMemo(() => {
-    const set = new Set([...expenses.map((x) => x.category), ...movies.length ? ["Movies"] : []]);
+    const set = new Set([...expenses.map((x) => x.category), ...(movies.length ? ["Movies"] : []), ...(dietDays.length ? ["Diet"] : [])]);
     return Array.from(set).sort();
-  }, [expenses, movies]);
+  }, [expenses, movies, dietDays]);
 
   const results = useMemo(() => {
-    const all = [...expenses, ...movies];
+    const all = [...expenses, ...movies, ...dietDays];
     const q = query.trim().toLowerCase();
     return all
       .filter((x) => !q || x.note.toLowerCase().includes(q) || x.category.toLowerCase().includes(q))
@@ -45,7 +58,7 @@ export default function SearchPage() {
       .filter((x) => !fromDate || x.date >= fromDate)
       .filter((x) => !toDate || x.date <= toDate)
       .sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [expenses, movies, query, category, fromDate, toDate]);
+  }, [expenses, movies, dietDays, query, category, fromDate, toDate]);
 
   const total = results.reduce((s, x) => s + x.amount, 0);
 
@@ -60,7 +73,7 @@ export default function SearchPage() {
           <ArrowLeft size={12} /> Expense ledger
         </a>
         <div className="lora" style={{ fontSize: 24, fontWeight: 600 }}>Search</div>
-        <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Across every expense and movie you've logged.</div>
+        <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Across every expense, movie, and diet note you've logged.</div>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, border: "1px solid #D9D2C2", borderRadius: 4, padding: "8px 12px" }}>
@@ -89,7 +102,7 @@ export default function SearchPage() {
       </div>
 
       <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 12 }}>
-        {results.length} result{results.length !== 1 ? "s" : ""} · <span className="tabnum">{fmt(total)}</span> total
+        {results.length} result{results.length !== 1 ? "s" : ""} · <span className="tabnum">{fmt(total)}</span> total (money entries only)
       </div>
 
       {results.length === 0 ? (
@@ -105,9 +118,12 @@ export default function SearchPage() {
                 <div style={{ fontSize: 11, color: "#8a8477" }}>
                   {new Date(x.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · {x.category}
                   {x.type === "movie" && " · movie"}
+                  {x.type === "diet" && " · diet"}
                 </div>
               </div>
-              <span className="tabnum" style={{ fontSize: 14, fontWeight: 500, flexShrink: 0 }}>{fmt(x.amount)}</span>
+              {x.type !== "diet" && (
+                <span className="tabnum" style={{ fontSize: 14, fontWeight: 500, flexShrink: 0 }}>{fmt(x.amount)}</span>
+              )}
             </div>
           ))}
         </div>
