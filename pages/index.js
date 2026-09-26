@@ -626,9 +626,9 @@ export default function Page() {
       )}
 
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, gap: 12 }}>
-        <div>
-          <div className="lora" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="lora" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em", whiteSpace: "nowrap" }}>
             Expense Ledger
           </div>
           <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
