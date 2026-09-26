@@ -22,6 +22,9 @@ export default async function handler(req, res) {
       if (type === "recurring-income") return res.status(200).json({ recurringIncome: await db.listRecurringIncome() });
       if (type === "ious") return res.status(200).json({ ious: await db.listIous() });
       if (type === "recurring-confirmations") return res.status(200).json({ confirmations: await db.getRecurringConfirmations() });
+      if (type === "watchlist") return res.status(200).json({ watchlist: await db.listWatchlist() });
+      if (type === "savings-goal") return res.status(200).json({ goal: await db.getSavingsGoal() });
+      if (type === "milestone-rewards") return res.status(200).json({ rewards: await db.getMilestoneRewards() });
       if (type === "categories") {
         const raw = await db.getSetting("custom_categories");
         return res.status(200).json({ categories: raw ? JSON.parse(raw) : [] });
@@ -42,9 +45,9 @@ export default async function handler(req, res) {
         return res.status(200).json({ hasPin: !!hash });
       }
       if (type === "export-all") {
-        const [expenses, movies, topups, rules, recurring, recurringIncome, ious] = await Promise.all([
+        const [expenses, movies, topups, rules, recurring, recurringIncome, ious, watchlist] = await Promise.all([
           db.listExpenses(), db.listMovies(), db.listTopups(), db.listBudgetRules(), db.listRecurring(),
-          db.listRecurringIncome(), db.listIous(),
+          db.listRecurringIncome(), db.listIous(), db.listWatchlist(),
         ]);
         const challengeMeta = await db.getChallengeMeta();
         const challengeDays = await db.listChallengeDays();
@@ -52,7 +55,7 @@ export default async function handler(req, res) {
         const categoriesRaw = await db.getSetting("custom_categories");
         return res.status(200).json({
           exportedAt: new Date().toISOString(),
-          expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious,
+          expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious, watchlist,
           sugarChallenge: { meta: challengeMeta, days: challengeDays, history: challengeHistory },
           customCategories: categoriesRaw ? JSON.parse(categoriesRaw) : [],
         });
@@ -158,6 +161,29 @@ export default async function handler(req, res) {
           note: (body.note || "").trim(), dueDate: body.dueDate || null,
         });
         return res.status(201).json({ iou });
+      }
+
+      if (type === "watchlist") {
+        if (!body.title?.trim()) return err(res, "Title is required");
+        const item = await db.createWatchlistItem({ title: body.title.trim(), note: (body.note || "").trim() });
+        return res.status(201).json({ item });
+      }
+
+      if (type === "savings-goal") {
+        if (body.clear) {
+          await db.setSavingsGoal(null);
+          return res.status(201).json({ goal: null });
+        }
+        const targetAmount = parseFloat(body.targetAmount);
+        if (!targetAmount || targetAmount <= 0) return err(res, "Enter a target amount greater than 0");
+        const goal = await db.setSavingsGoal({ targetAmount, targetDate: body.targetDate || null, label: (body.label || "").trim() });
+        return res.status(201).json({ goal });
+      }
+
+      if (type === "milestone-rewards") {
+        if (!body.rewards || typeof body.rewards !== "object") return err(res, "Rewards must be an object");
+        const rewards = await db.setMilestoneRewards(body.rewards);
+        return res.status(201).json({ rewards });
       }
 
       if (type === "categories") {
@@ -331,6 +357,7 @@ export default async function handler(req, res) {
       else if (type === "recurring") await db.deleteRecurring(numId);
       else if (type === "recurring-income") await db.deleteRecurringIncome(numId);
       else if (type === "ious") await db.deleteIou(numId);
+      else if (type === "watchlist") await db.deleteWatchlistItem(numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }
