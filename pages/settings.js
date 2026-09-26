@@ -24,6 +24,15 @@ export default function SettingsPage() {
 
   const [recurringConfirmations, setRecurringConfirmations] = useState({});
 
+  const [savingsGoal, setSavingsGoalState] = useState(null);
+  const [goalForm, setGoalForm] = useState({ label: "", targetAmount: "", targetDate: "" });
+  const [goalError, setGoalError] = useState("");
+  const [goalSaving, setGoalSaving] = useState(false);
+
+  const MILESTONE_DAYS = [7, 14, 21, 30, 41];
+  const [milestoneRewards, setMilestoneRewardsState] = useState({});
+  const [rewardSaving, setRewardSaving] = useState(false);
+
   const [hasPin, setHasPin] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
@@ -46,7 +55,7 @@ export default function SettingsPage() {
 
   async function load() {
     try {
-      const [catRes, recRes, incRes, confRes, pinRes, theatreRes, ottRes] = await Promise.all([
+      const [catRes, recRes, incRes, confRes, pinRes, theatreRes, ottRes, goalRes, rewardRes] = await Promise.all([
         fetch("/api/data?type=categories"),
         fetch("/api/data?type=recurring"),
         fetch("/api/data?type=recurring-income"),
@@ -54,6 +63,8 @@ export default function SettingsPage() {
         fetch("/api/data?type=pin-status"),
         fetch("/api/data?type=theatres"),
         fetch("/api/data?type=ott-platforms"),
+        fetch("/api/data?type=savings-goal"),
+        fetch("/api/data?type=milestone-rewards"),
       ]);
       if (catRes.ok) setCategories((await catRes.json()).categories || []);
       if (recRes.ok) setRecurring((await recRes.json()).recurring || []);
@@ -62,6 +73,12 @@ export default function SettingsPage() {
       if (pinRes.ok) setHasPin((await pinRes.json()).hasPin);
       if (theatreRes.ok) setTheatres((await theatreRes.json()).theatres || []);
       if (ottRes.ok) setOttPlatforms((await ottRes.json()).ottPlatforms || []);
+      if (goalRes.ok) {
+        const g = (await goalRes.json()).goal;
+        setSavingsGoalState(g);
+        if (g) setGoalForm({ label: g.label || "", targetAmount: String(g.targetAmount), targetDate: g.targetDate || "" });
+      }
+      if (rewardRes.ok) setMilestoneRewardsState((await rewardRes.json()).rewards || {});
     } catch (e) {
       // best-effort
     } finally {
@@ -362,6 +379,61 @@ export default function SettingsPage() {
     if (res.ok) {
       const d = await res.json();
       setRecurringConfirmations(d.confirmations || {});
+    }
+  }
+
+  async function saveGoal(e) {
+    e.preventDefault();
+    const targetAmount = parseFloat(goalForm.targetAmount);
+    if (!targetAmount || targetAmount <= 0) {
+      setGoalError("Enter a target amount greater than 0");
+      return;
+    }
+    setGoalError("");
+    setGoalSaving(true);
+    try {
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "savings-goal", label: goalForm.label.trim(), targetAmount, targetDate: goalForm.targetDate || null }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Couldn't save");
+      }
+      const d = await res.json();
+      setSavingsGoalState(d.goal);
+    } catch (err) {
+      setGoalError(err.message || "Couldn't save. Try again.");
+    } finally {
+      setGoalSaving(false);
+    }
+  }
+
+  async function clearGoal() {
+    if (!window.confirm("Remove this savings goal?")) return;
+    setGoalForm({ label: "", targetAmount: "", targetDate: "" });
+    setSavingsGoalState(null);
+    await fetch("/api/data", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "savings-goal", clear: true }),
+    }).catch(() => {});
+  }
+
+  async function saveMilestoneReward(day, text) {
+    const next = { ...milestoneRewards, [day]: text };
+    if (!text.trim()) delete next[day];
+    setMilestoneRewardsState(next);
+    setRewardSaving(true);
+    try {
+      await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "milestone-rewards", rewards: next }),
+      });
+    } finally {
+      setRewardSaving(false);
     }
   }
 
@@ -782,6 +854,48 @@ export default function SettingsPage() {
           )}
         </form>
         {incError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{incError}</div>}
+      </div>
+
+      {/* Savings goal — a long-term target with a date, separate from the
+          monthly savings rule under Money Rules. */}
+      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginTop: 16 }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Savings goal</div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>A bigger target with a date — e.g. "₹50,000 by December." Tracked against your current balance on the home screen.</div>
+        <form onSubmit={saveGoal} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input type="text" placeholder="What for? (optional)" value={goalForm.label} onChange={(e) => setGoalForm({ ...goalForm, label: e.target.value })} maxLength={60} style={{ width: 160 }} />
+          <input type="number" placeholder="Target (₹)" value={goalForm.targetAmount} onChange={(e) => setGoalForm({ ...goalForm, targetAmount: e.target.value })} style={{ width: 130 }} />
+          <input type="date" value={goalForm.targetDate} onChange={(e) => setGoalForm({ ...goalForm, targetDate: e.target.value })} style={{ width: 150 }} />
+          <button type="submit" disabled={goalSaving} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <Check size={13} /> {goalSaving ? "Saving…" : "Save"}
+          </button>
+          {savingsGoal && (
+            <button type="button" onClick={clearGoal} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove goal</button>
+          )}
+        </form>
+        {goalError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{goalError}</div>}
+      </div>
+
+      {/* Custom milestone rewards — what you promise yourself for hitting a
+          sugar-free streak, shown on the No-Sugar Challenge page. */}
+      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginTop: 16 }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Milestone rewards</div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>What you'll get yourself for hitting each sugar-free streak milestone. Leave blank to skip one.</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {MILESTONE_DAYS.map((day) => (
+            <div key={day} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="tabnum" style={{ fontSize: 12, color: "#8a8477", width: 56, flexShrink: 0 }}>{day} days</span>
+              <input
+                type="text"
+                placeholder="e.g. New shoes, a movie night…"
+                defaultValue={milestoneRewards[day] || ""}
+                onBlur={(e) => { if (e.target.value !== (milestoneRewards[day] || "")) saveMilestoneReward(day, e.target.value); }}
+                maxLength={80}
+                style={{ flex: 1 }}
+              />
+            </div>
+          ))}
+        </div>
+        {rewardSaving && <div style={{ fontSize: 11, color: "#8a8477", marginTop: 8 }}>Saving…</div>}
       </div>
 
       {/* About */}
