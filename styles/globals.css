@@ -10,6 +10,17 @@ html, body {
   background: #FCFAF6;
   color: #241F1A;
   font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  /* Guards against any one element (a wide row, a fixed-width input, a long
+     unbroken word) quietly stretching the page and creating a left-right
+     scrollbar on phones — nothing should ever need to scroll sideways. */
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
+}
+
+#__next {
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .lora {
