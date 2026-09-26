@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Check, X, Flame, Trophy, RotateCcw, Share2 } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
+import { showToast } from "../lib/toast";
 
 const SLIP_REASONS = ["Stress", "Social occasion", "Craving", "Travel", "Tiredness", "Other"];
 
@@ -169,6 +170,7 @@ export default function SugarChallengePage() {
       setPendingChoice(null);
       setReasonDraft("");
       setNaturalSugarDraft(false);
+      showToast(completed ? "Marked sugar-free" : "Slip logged — noted", completed ? "🌿" : "📝");
     } catch (err) {
       queueRequest({ url: "/api/data", method: "POST", body: payload });
       setLoadError("Saved locally — will sync once you're back online.");
@@ -216,6 +218,17 @@ export default function SugarChallengePage() {
     }
     return streak;
   }, [dayList]);
+
+  // Celebrate the moment a streak actually crosses a milestone, not every
+  // render where it happens to already be past one.
+  const prevStreakRef = useRef(null);
+  useEffect(() => {
+    const milestoneSet = [7, 14, 21, 30, 41];
+    if (prevStreakRef.current !== null && milestoneSet.includes(currentStreak) && currentStreak > prevStreakRef.current) {
+      showToast(`${currentStreak}-day streak! 🎉`, "🔥");
+    }
+    prevStreakRef.current = currentStreak;
+  }, [currentStreak]);
 
   const longestStreak = useMemo(() => {
     let longest = 0, cur = 0;
