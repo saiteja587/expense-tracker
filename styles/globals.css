@@ -15,7 +15,6 @@ html, body {
      scrollbar on phones — nothing should ever need to scroll sideways. */
   max-width: 100%;
   overflow-x: hidden;
-  overflow-wrap: anywhere;
 }
 
 #__next {
