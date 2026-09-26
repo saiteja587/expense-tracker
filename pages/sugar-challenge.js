@@ -38,10 +38,14 @@ export default function SugarChallengePage() {
   const [pendingChoice, setPendingChoice] = useState(null); // null = nothing picked yet, true = sugar-free, false = slipped
   const [saving, setSaving] = useState(false);
   const shareCanvasRef = useRef(null);
+  const [milestoneRewards, setMilestoneRewards] = useState({});
+  const [cravingSeconds, setCravingSeconds] = useState(null);
+  const cravingTimerRef = useRef(null);
 
   async function load() {
     try {
       const res = await fetch("/api/data?type=challenge");
+      fetch("/api/data?type=milestone-rewards").then((r) => r.ok && r.json()).then((d) => d && setMilestoneRewards(d.rewards || {})).catch(() => {});
       if (!res.ok) throw new Error("Request failed");
       const data = await res.json();
       setMeta(data.meta);
@@ -225,10 +229,33 @@ export default function SugarChallengePage() {
   useEffect(() => {
     const milestoneSet = [7, 14, 21, 30, 41];
     if (prevStreakRef.current !== null && milestoneSet.includes(currentStreak) && currentStreak > prevStreakRef.current) {
-      showToast(`${currentStreak}-day streak! 🎉`, "🔥");
+      const reward = milestoneRewards[currentStreak];
+      showToast(reward ? `${currentStreak}-day streak! You earned: ${reward}` : `${currentStreak}-day streak! 🎉`, "🔥");
     }
     prevStreakRef.current = currentStreak;
-  }, [currentStreak]);
+  }, [currentStreak, milestoneRewards]);
+
+  // Craving timer: a "wait it out" countdown in the same spirit as the
+  // Pause page — no logging, just a short delay to let an urge pass.
+  useEffect(() => {
+    if (cravingSeconds === null) return;
+    if (cravingSeconds <= 0) {
+      clearInterval(cravingTimerRef.current);
+      showToast("You waited it out — nice work", "💪");
+      setTimeout(() => setCravingSeconds(null), 2500);
+      return;
+    }
+    cravingTimerRef.current = setTimeout(() => setCravingSeconds((s) => (s === null ? null : s - 1)), 1000);
+    return () => clearTimeout(cravingTimerRef.current);
+  }, [cravingSeconds]);
+
+  function startCravingTimer() {
+    setCravingSeconds(10 * 60);
+  }
+  function stopCravingTimer() {
+    clearTimeout(cravingTimerRef.current);
+    setCravingSeconds(null);
+  }
 
   const longestStreak = useMemo(() => {
     let longest = 0, cur = 0;
@@ -417,6 +444,32 @@ export default function SugarChallengePage() {
               })}
             </div>
           )}
+
+          {/* Craving timer — a short wait-it-out delay for when the urge hits,
+              same spirit as the Pause page but scoped to this challenge. */}
+          <div className="panel-soft" style={{ background: "#FAECE7", borderRadius: 6, padding: "14px 16px", marginBottom: 24 }}>
+            {cravingSeconds === null ? (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>Craving something sweet right now?</div>
+                  <div style={{ fontSize: 11, color: "#8a8477", marginTop: 2 }}>Most cravings pass in about 10 minutes. Wait it out before deciding.</div>
+                </div>
+                <button onClick={startCravingTimer} style={{ background: "#A34A38", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", flexShrink: 0 }}>
+                  Start 10-min timer
+                </button>
+              </div>
+            ) : (
+              <div style={{ textAlign: "center" }}>
+                <div className="lora tabnum" style={{ fontSize: 32, fontWeight: 600, color: "#A34A38" }}>
+                  {String(Math.floor(cravingSeconds / 60)).padStart(2, "0")}:{String(cravingSeconds % 60).padStart(2, "0")}
+                </div>
+                <div style={{ fontSize: 12, color: "#8a8477", margin: "4px 0 10px" }}>Sit with it. It'll pass.</div>
+                <button onClick={stopCravingTimer} style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "6px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 28 }}>
             <button
