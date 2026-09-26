@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, AlertTriangle, TrendingUp, TrendingDown, Download } from "lucide-react";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" }, { name: "Groceries", color: "#C98A2C" },
@@ -122,6 +122,26 @@ export default function ReportPage() {
     setViewDate(new Date(year, month + delta, 1));
   }
 
+  // One-tap CSV of everything logged this month — expenses and movies,
+  // in date order, for keeping outside the app or sharing.
+  function downloadCsv() {
+    const dataRows = [
+      ...monthExpenses.map((x) => [x.date, "Expense", x.category, x.note || "", x.amount]),
+      ...monthMovies.map((m) => [m.date, "Movie", "Movies", m.title, movieSpend(m)]),
+    ].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    const rows = [["Date", "Type", "Category", "Description", "Amount"], ...dataRows];
+    const csv = rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `statement-${targetYM}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   if (!loaded) {
     return <div className="loading-screen"><div className="app-spinner" /> Building your report…</div>;
   }
@@ -138,10 +158,15 @@ export default function ReportPage() {
           <div className="lora" style={{ fontSize: 24, fontWeight: 600 }}>Monthly Report</div>
           <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Money, movies, and diet — one end-of-month picture.</div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
           <button onClick={() => goMonth(-1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }}><ChevronLeft size={18} /></button>
           <div className="tabnum" style={{ fontSize: 14, fontWeight: 500, minWidth: 130, textAlign: "center" }}>{MONTH_NAMES[month]} {year}</div>
           <button onClick={() => goMonth(1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }}><ChevronRight size={18} /></button>
+          {hasAnyData && (
+            <button onClick={downloadCsv} style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 20, padding: "6px 12px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginLeft: 6 }}>
+              <Download size={13} /> CSV
+            </button>
+          )}
         </div>
       </div>
 
