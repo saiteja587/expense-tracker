@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { ArrowLeft, Plus, Trash2, Pencil, Check, X, HandCoins } from "lucide-react";
+import { showToast } from "../lib/toast";
 
 function fmt(n) {
   return "₹" + Math.round(n).toLocaleString("en-IN");
@@ -103,6 +104,7 @@ export default function IousPage() {
       setForm(emptyForm);
       setEditingId(null);
       await load();
+      showToast(isEdit ? "Entry updated" : "Entry added", "🤝");
     } finally {
       setSubmitting(false);
     }
@@ -110,7 +112,8 @@ export default function IousPage() {
 
   async function toggleSettled(i) {
     const prev = ious;
-    setIous(ious.map((x) => (x.id === i.id ? { ...x, settled: !x.settled } : x)));
+    const nowSettled = !i.settled;
+    setIous(ious.map((x) => (x.id === i.id ? { ...x, settled: nowSettled } : x)));
     const res = await fetch("/api/data", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -122,10 +125,11 @@ export default function IousPage() {
         direction: i.direction,
         note: i.note,
         dueDate: i.dueDate || null,
-        settled: !i.settled,
+        settled: nowSettled,
       }),
     });
     if (!res.ok) setIous(prev);
+    else showToast(nowSettled ? "Marked settled" : "Marked unsettled", nowSettled ? "✅" : "↩️");
   }
 
   async function remove(id) {
