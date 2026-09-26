@@ -115,6 +115,14 @@ export default function Page() {
   const [topupError, setTopupError] = useState("");
   const [topupSubmitting, setTopupSubmitting] = useState(false);
 
+  const [savingsGoal, setSavingsGoal] = useState(null);
+  useEffect(() => {
+    fetch("/api/data?type=savings-goal")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setSavingsGoal(d.goal))
+      .catch(() => {});
+  }, []);
+
   async function load() {
     try {
       const [expRes, movRes, balRes, ruleRes, chalRes, catRes, recRes] = await Promise.all([
@@ -428,6 +436,19 @@ export default function Page() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to save");
       }
+      // Big-expense check, using history from before this save: flag a new
+      // entry that's well above what's normal for its category — a nudge,
+      // not a block, so it's shown after the success toast rather than
+      // instead of it.
+      if (!isEdit) {
+        const sameCategoryPast = expenses.filter((x) => x.category === expenseForm.category && x.affectsBalance !== false);
+        if (sameCategoryPast.length >= 3) {
+          const avg = sameCategoryPast.reduce((s, x) => s + x.amount, 0) / sameCategoryPast.length;
+          if (amt > avg * 2.5 && amt - avg > 200) {
+            setTimeout(() => showToast(`That's ${Math.round(amt / avg)}x your usual ${expenseForm.category} spend (avg ${fmt(avg)})`, "👀"), 900);
+          }
+        }
+      }
       cancelEditExpense();
       await load();
       showToast(isEdit ? "Expense updated" : "Expense logged", isEdit ? "✏️" : "✅");
@@ -707,6 +728,25 @@ export default function Page() {
           {overallBreach || categoryBreaches.length > 0 ? "Over a budget rule" : "On budget"}
         </span>
       </div>
+
+      {savingsGoal && savingsGoal.targetAmount > 0 && (() => {
+        const pct = Math.min(100, Math.max(0, (balanceCalc.balance / savingsGoal.targetAmount) * 100));
+        const daysLeft = savingsGoal.targetDate ? Math.ceil((new Date(savingsGoal.targetDate + "T00:00:00") - new Date(todayISO() + "T00:00:00")) / 86400000) : null;
+        return (
+          <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "14px 16px", marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{savingsGoal.label || "Savings goal"}</div>
+              <div style={{ fontSize: 12, color: "#8a8477" }}>
+                <span className="tabnum">{fmt(balanceCalc.balance)}</span> of <span className="tabnum">{fmt(savingsGoal.targetAmount)}</span>
+                {daysLeft !== null && daysLeft >= 0 && <> · {daysLeft} day{daysLeft !== 1 ? "s" : ""} left</>}
+              </div>
+            </div>
+            <div style={{ height: 6, background: "#EAE5D9", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? "#2F6F5E" : "#A3763F", borderRadius: 4, transition: "width 0.3s" }} />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Balance */}
       <div className="panel-soft" style={{ background: balancePanelBg, borderRadius: 6, padding: "18px 20px", marginBottom: 28 }}>
