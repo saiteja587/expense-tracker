@@ -95,7 +95,7 @@ export default function SearchPage() {
         <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={{ width: 150 }} />
         <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={{ width: 150 }} />
         {(query || category || fromDate || toDate) && (
-          <button onClick={() => { setQuery(""); setCategory(""); setFromDate(""); setToDate(""); }} style={{ background: "#EAE5D9", border: "none", borderRadius: 3, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>
+          <button onClick={() => { setQuery(""); setCategory(""); setFromDate(""); setToDate(""); }} style={{ background: "#EAE5D9", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>
             Clear filters
           </button>
         )}
