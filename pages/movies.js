@@ -51,7 +51,7 @@ function QuantityStepper({ value, onChange }) {
   return (
     <div>
       <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Times watched</label>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, border: "1px solid #D9D2C2", borderRadius: 3, padding: "6px 10px", width: "fit-content" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, border: "1px solid #D9D2C2", borderRadius: 8, padding: "6px 10px", width: "fit-content" }}>
         <button
           type="button"
           onClick={() => onChange(Math.max(1, value - 1))}
@@ -537,7 +537,7 @@ export default function MoviesPage() {
         <div style={{ marginBottom: 32 }}>
           <button
             onClick={() => setShowAllTime((v) => !v)}
-            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "7px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 8, padding: "7px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
           >
             <BarChart3 size={13} /> {showAllTime ? "Hide" : "Show"} all-time stats
           </button>
@@ -601,7 +601,7 @@ export default function MoviesPage() {
         <div style={{ marginBottom: 32 }}>
           <button
             onClick={() => setShowWrapUp((v) => !v)}
-            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "7px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 8, padding: "7px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
           >
             <Sparkles size={13} /> {showWrapUp ? "Hide" : "Show"} {currentYear} wrap-up
           </button>
@@ -654,7 +654,7 @@ export default function MoviesPage() {
         <form onSubmit={addToWatchlist} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           <input type="text" placeholder="Movie to watch" value={watchlistForm.title} onChange={(e) => setWatchlistForm({ ...watchlistForm, title: e.target.value })} maxLength={100} style={{ flex: "1 1 160px" }} />
           <input type="text" placeholder="Note (optional)" value={watchlistForm.note} onChange={(e) => setWatchlistForm({ ...watchlistForm, note: e.target.value })} maxLength={100} style={{ flex: "1 1 140px" }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
             <Plus size={13} /> Add
           </button>
         </form>
@@ -700,7 +700,7 @@ export default function MoviesPage() {
                       setForm({ ...form, venueType: vt, venueName: options[0], venueNameOther: "" });
                     }}
                     style={{
-                      flex: 1, fontSize: 13, padding: "8px 10px", borderRadius: 3, cursor: "pointer",
+                      flex: 1, fontSize: 13, padding: "8px 10px", borderRadius: 8, cursor: "pointer",
                       border: "1px solid " + (form.venueType === vt ? "#241F1A" : "#D9D2C2"),
                       background: form.venueType === vt ? "#241F1A" : "transparent",
                       color: form.venueType === vt ? "#FBF8F2" : "#5f5a4f",
@@ -788,12 +788,12 @@ export default function MoviesPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                style={{ flex: 1, marginTop: 4, background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                style={{ flex: 1, marginTop: 4, background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
               >
                 <Plus size={16} /> {submitting ? "Saving…" : editingId ? "Save changes" : "Add movie"}
               </button>
               {editingId && (
-                <button type="button" onClick={cancelEdit} style={{ marginTop: 4, background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
+                <button type="button" onClick={cancelEdit} style={{ marginTop: 4, background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
                   Cancel
                 </button>
               )}
