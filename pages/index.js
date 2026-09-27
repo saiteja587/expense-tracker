@@ -668,7 +668,7 @@ export default function Page() {
             <MoreHorizontal size={15} /> More
           </button>
           {moreOpen && (
-            <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", background: "#FFFEFB", border: "1px solid #EAE5D9", borderRadius: 6, boxShadow: "0 6px 20px rgba(0,0,0,0.08)", minWidth: 170, zIndex: 20, overflow: "hidden" }}>
+            <div className="card" style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", minWidth: 180, zIndex: 20, overflow: "hidden", animation: "fadeIn 0.15s ease" }}>
               {[
                 { href: "/search", label: "Search" },
                 { href: "/year", label: "Year view" },
@@ -765,7 +765,7 @@ export default function Page() {
           </div>
           <button
             onClick={() => (showTopup ? cancelEditTopup() : setShowTopup(true))}
-            style={{ background: showTopup ? "#EAE5D9" : "#241F1A", color: showTopup ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            style={{ background: showTopup ? "#EAE5D9" : "#241F1A", color: showTopup ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
           >
             {showTopup ? <X size={14} /> : <Plus size={14} />} {showTopup ? "Cancel" : "Add money"}
           </button>
@@ -798,7 +798,7 @@ export default function Page() {
               <input type="number" inputMode="decimal" placeholder="Amount (₹)" value={topupForm.amount} onChange={(e) => setTopupForm({ ...topupForm, amount: e.target.value })} step="0.01" min="0" style={{ width: 140 }} />
               <input type="text" placeholder="Source (optional)" value={topupForm.note} onChange={(e) => setTopupForm({ ...topupForm, note: e.target.value })} maxLength={60} style={{ width: 160 }} />
               <input type="date" value={topupForm.date} onChange={(e) => setTopupForm({ ...topupForm, date: e.target.value })} max={todayISO()} style={{ width: 150 }} />
-              <button type="submit" disabled={topupSubmitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: topupSubmitting ? "default" : "pointer", opacity: topupSubmitting ? 0.6 : 1 }}>
+              <button type="submit" disabled={topupSubmitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: topupSubmitting ? "default" : "pointer", opacity: topupSubmitting ? 0.6 : 1 }}>
                 {topupSubmitting ? "Saving…" : editingTopupId ? "Save changes" : "Add"}
               </button>
             </div>
@@ -937,12 +937,12 @@ export default function Page() {
               <button
                 type="submit"
                 disabled={submitting}
-                style={{ flex: 1, marginTop: 4, background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                style={{ flex: 1, marginTop: 4, background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
               >
                 <Plus size={16} /> {submitting ? "Saving…" : editingExpenseId ? "Save changes" : "Add expense"}
               </button>
               {editingExpenseId && (
-                <button type="button" onClick={cancelEditExpense} style={{ marginTop: 4, background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
+                <button type="button" onClick={cancelEditExpense} style={{ marginTop: 4, background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
                   Cancel
                 </button>
               )}
