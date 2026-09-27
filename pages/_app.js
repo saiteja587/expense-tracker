@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import "../styles/globals.css";
@@ -45,18 +45,45 @@ function ToastHost() {
 }
 
 function BottomNav({ currentPath }) {
+  const navRef = useRef(null);
+  const itemRefs = useRef([]);
+  const [highlight, setHighlight] = useState(null);
+  const activeIndex = NAV_ITEMS.findIndex((i) => i.href === currentPath);
+
+  useEffect(() => {
+    function measure() {
+      const el = itemRefs.current[activeIndex];
+      if (!el || !navRef.current) return;
+      const navRect = navRef.current.getBoundingClientRect();
+      const rect = el.getBoundingClientRect();
+      setHighlight({ left: rect.left - navRect.left, width: rect.width });
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [activeIndex]);
+
   return (
-    <nav className="bottom-nav">
-      {NAV_ITEMS.map(({ href, label, Icon }) => {
-        const active = currentPath === href;
-        return (
-          <a key={href} href={href} className={active ? "active" : ""} aria-label={label}>
-            <Icon size={22} strokeWidth={active ? 2.3 : 1.7} />
-            <span className="nav-dot" />
-          </a>
-        );
-      })}
-    </nav>
+    <div className="bottom-nav-wrap">
+      <nav className="bottom-nav" ref={navRef}>
+        {highlight && <span className="bottom-nav-highlight" style={{ left: highlight.left, width: highlight.width }} />}
+        {NAV_ITEMS.map(({ href, label, Icon }, i) => {
+          const active = currentPath === href;
+          return (
+            <a
+              key={href}
+              href={href}
+              ref={(el) => (itemRefs.current[i] = el)}
+              className={active ? "active" : ""}
+              aria-label={label}
+            >
+              <Icon size={22} strokeWidth={active ? 2.3 : 1.7} />
+              <span className="nav-dot" />
+            </a>
+          );
+        })}
+      </nav>
+    </div>
   );
 }
 
@@ -153,7 +180,7 @@ function LockScreen({ onUnlock }) {
           style={{ fontSize: 24, textAlign: "center", letterSpacing: 8, width: 180, padding: "10px 12px", border: "1px solid #D9D2C2", borderRadius: 4, background: "#fff" }}
         />
         {error && <div style={{ color: "#A34A38", fontSize: 12, marginTop: 10 }}>{error}</div>}
-        <button type="submit" disabled={checking} style={{ display: "block", margin: "16px auto 0", background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "10px 22px", fontSize: 14, cursor: "pointer" }}>
+        <button type="submit" disabled={checking} style={{ display: "block", margin: "16px auto 0", background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "10px 22px", fontSize: 14, cursor: "pointer" }}>
           {checking ? "Checking…" : "Unlock"}
         </button>
       </form>
