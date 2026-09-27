@@ -28,6 +28,8 @@ export default function SugarChallengePage() {
 
   const [startDate, setStartDate] = useState(todayISO());
   const [lengthDays, setLengthDays] = useState(41);
+  const [sugarPerDay, setSugarPerDay] = useState("");
+  const [savingsPerDay, setSavingsPerDay] = useState("");
   const [setupError, setSetupError] = useState("");
   const [setupSubmitting, setSetupSubmitting] = useState(false);
 
@@ -89,7 +91,13 @@ export default function SugarChallengePage() {
       const res = await fetch("/api/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "challenge-meta", startDate, lengthDays: parseInt(lengthDays, 10) }),
+        body: JSON.stringify({
+          type: "challenge-meta",
+          startDate,
+          lengthDays: parseInt(lengthDays, 10),
+          sugarPerDay: parseFloat(sugarPerDay) || 0,
+          savingsPerDay: parseFloat(savingsPerDay) || 0,
+        }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
