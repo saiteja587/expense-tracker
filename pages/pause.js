@@ -114,7 +114,7 @@ export default function PausePage() {
             </div>
             <button
               onClick={handlePause}
-              style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "10px 18px", fontSize: 13, cursor: "pointer" }}
+              style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, cursor: "pointer" }}
             >
               Again
             </button>
