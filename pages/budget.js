@@ -369,8 +369,8 @@ export default function BudgetPage() {
         {editingOverall && (
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <input type="number" inputMode="decimal" placeholder="Monthly limit (₹)" value={overallInput} onChange={(e) => setOverallInput(e.target.value)} style={{ width: 160 }} />
-            <button onClick={submitOverall} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
-            <button onClick={() => { setEditingOverall(false); setOverallInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            <button onClick={submitOverall} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
+            <button onClick={() => { setEditingOverall(false); setOverallInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {overallRule && (
               <button onClick={() => { removeRule(overallRule.id); setEditingOverall(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove limit</button>
             )}
@@ -407,8 +407,8 @@ export default function BudgetPage() {
         {editingSavings && (
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <input type="number" inputMode="decimal" placeholder="Savings goal (₹)" value={savingsInput} onChange={(e) => setSavingsInput(e.target.value)} style={{ width: 160 }} />
-            <button onClick={submitSavings} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
-            <button onClick={() => { setEditingSavings(false); setSavingsInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            <button onClick={submitSavings} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
+            <button onClick={() => { setEditingSavings(false); setSavingsInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {savingsRule && (
               <button onClick={() => { removeRule(savingsRule.id); setEditingSavings(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove goal</button>
             )}
@@ -445,11 +445,11 @@ export default function BudgetPage() {
                 const ok = await saveRule("low_balance", null, amt);
                 if (ok) { setEditingLowBalance(false); setLowBalanceInput(""); }
               }}
-              style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
+              style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
             >
               <Check size={14} />
             </button>
-            <button onClick={() => { setEditingLowBalance(false); setLowBalanceInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            <button onClick={() => { setEditingLowBalance(false); setLowBalanceInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {lowBalanceRule && (
               <button onClick={() => { removeRule(lowBalanceRule.id); setEditingLowBalance(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove</button>
             )}
@@ -488,11 +488,11 @@ export default function BudgetPage() {
                 const ok = await saveRule("movie_count", null, amt);
                 if (ok) { setEditingMovieCount(false); setMovieCountInput(""); }
               }}
-              style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
+              style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
             >
               <Check size={14} />
             </button>
-            <button onClick={() => { setEditingMovieCount(false); setMovieCountInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            <button onClick={() => { setEditingMovieCount(false); setMovieCountInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {movieCountRule && (
               <button onClick={() => { removeRule(movieCountRule.id); setEditingMovieCount(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove</button>
             )}
@@ -531,8 +531,8 @@ export default function BudgetPage() {
               {isEditing && (
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <input type="number" inputMode="decimal" value={editCatAmount} onChange={(e) => setEditCatAmount(e.target.value)} style={{ width: 140 }} />
-                  <button onClick={() => submitEditCategoryLimit(r.category)} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
-                  <button onClick={() => setEditingCategory(null)} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+                  <button onClick={() => submitEditCategoryLimit(r.category)} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
+                  <button onClick={() => setEditingCategory(null)} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
                 </div>
               )}
             </div>
@@ -548,7 +548,7 @@ export default function BudgetPage() {
               ))}
             </select>
             <input type="number" inputMode="decimal" placeholder="Limit (₹)" value={newCatAmount} onChange={(e) => setNewCatAmount(e.target.value)} style={{ width: 120 }} />
-            <button onClick={submitNewCategoryLimit} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 12px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <button onClick={submitNewCategoryLimit} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
               <Plus size={14} /> Add limit
             </button>
           </div>
