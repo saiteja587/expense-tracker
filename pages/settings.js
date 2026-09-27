@@ -570,7 +570,7 @@ export default function SettingsPage() {
           <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Back up your data</div>
           <div style={{ fontSize: 11, color: "#8a8477" }}>Downloads everything — expenses, movies, balance, budget rules, challenge history — as one file.</div>
         </div>
-        <button onClick={exportData} disabled={exporting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 12, cursor: exporting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+        <button onClick={exportData} disabled={exporting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: exporting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
           <Download size={13} /> {exporting ? "Exporting…" : "Export"}
         </button>
       </div>
@@ -582,7 +582,7 @@ export default function SettingsPage() {
             <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Restore from a backup</div>
             <div style={{ fontSize: 11, color: "#8a8477" }}>Adds every record from an exported .json file back into this database. Meant for restoring into a fresh setup, not merging with existing data.</div>
           </div>
-          <label style={{ background: importing ? "#EAE5D9" : "#241F1A", color: importing ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 12, cursor: importing ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+          <label style={{ background: importing ? "#EAE5D9" : "#241F1A", color: importing ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: importing ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
             <Upload size={13} /> {importing ? "Importing…" : "Import"}
             <input type="file" accept="application/json" onChange={handleImportFile} disabled={importing} style={{ display: "none" }} />
           </label>
@@ -615,7 +615,7 @@ export default function SettingsPage() {
             <button
               onClick={notifStatus === "on" ? disableNotifications : enableNotifications}
               disabled={notifBusy}
-              style={{ background: notifStatus === "on" ? "#EAE5D9" : "#241F1A", color: notifStatus === "on" ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 12, cursor: notifBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
+              style={{ background: notifStatus === "on" ? "#EAE5D9" : "#241F1A", color: notifStatus === "on" ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: notifBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
             >
               {notifBusy ? "Working…" : notifStatus === "on" ? "Turn off" : "Turn on"}
             </button>
@@ -629,10 +629,10 @@ export default function SettingsPage() {
             Vercel's free plan can only run scheduled checks once a day — not frequently enough for a water reminder. To get one every 90 minutes at no cost, use a free external scheduler (e.g. cron-job.org): create an account, add a new cron job set to run every 90 minutes, and point it at the URL below. Replace YOUR_WATER_NOTIFY_SECRET with the actual value of the WATER_NOTIFY_SECRET environment variable you set on Vercel.
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <code style={{ fontSize: 11, background: "#F1ECDF", padding: "8px 10px", borderRadius: 3, flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
+            <code style={{ fontSize: 11, background: "#F1ECDF", padding: "8px 10px", borderRadius: 8, flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
               {typeof window !== "undefined" ? window.location.origin : ""}/api/notify-water?secret=YOUR_WATER_NOTIFY_SECRET
             </code>
-            <button onClick={copyWaterUrl} style={{ background: "#EAE5D9", border: "none", borderRadius: 3, padding: "8px 10px", cursor: "pointer", display: "flex" }}>
+            <button onClick={copyWaterUrl} style={{ background: "#EAE5D9", border: "none", borderRadius: 8, padding: "8px 10px", cursor: "pointer", display: "flex" }}>
               <Copy size={13} />
             </button>
           </div>
@@ -666,7 +666,7 @@ export default function SettingsPage() {
         </div>
         <form onSubmit={savePin} style={{ display: "flex", gap: 8 }}>
           <input type="password" inputMode="numeric" placeholder={hasPin ? "New PIN (blank to remove)" : "4-8 digit PIN"} value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))} maxLength={8} style={{ width: 180 }} />
-          <button type="submit" disabled={pinSaving} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer" }}>{pinSaving ? "Saving…" : "Save"}</button>
+          <button type="submit" disabled={pinSaving} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer" }}>{pinSaving ? "Saving…" : "Save"}</button>
         </form>
         {pinError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{pinError}</div>}
 
@@ -686,7 +686,7 @@ export default function SettingsPage() {
                 onClick={bioEnabled ? disableBiometric : enableBiometric}
                 disabled={bioBusy}
                 className="pill"
-                style={{ background: bioEnabled ? "#EAE5D9" : "#241F1A", color: bioEnabled ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 12, cursor: bioBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
+                style={{ background: bioEnabled ? "#EAE5D9" : "#241F1A", color: bioEnabled ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: bioBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
               >
                 {bioBusy ? "Working…" : bioEnabled ? "Turn off" : "Set up"}
               </button>
@@ -716,7 +716,7 @@ export default function SettingsPage() {
         )}
         <form onSubmit={addCategory} style={{ display: "flex", gap: 8 }}>
           <input type="text" placeholder="e.g. Gym, Gifts" value={newCat} onChange={(e) => setNewCat(e.target.value)} maxLength={30} style={{ width: 200 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
+          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
         </form>
       </div>
 
@@ -736,7 +736,7 @@ export default function SettingsPage() {
         )}
         <form onSubmit={addTheatre} style={{ display: "flex", gap: 8 }}>
           <input type="text" placeholder="e.g. Prasads IMAX" value={newTheatre} onChange={(e) => setNewTheatre(e.target.value)} maxLength={60} style={{ width: 200 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
+          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
         </form>
       </div>
 
@@ -756,7 +756,7 @@ export default function SettingsPage() {
         )}
         <form onSubmit={addOtt} style={{ display: "flex", gap: 8 }}>
           <input type="text" placeholder="e.g. Aha, Lionsgate Play" value={newOtt} onChange={(e) => setNewOtt(e.target.value)} maxLength={60} style={{ width: 200 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
+          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
         </form>
       </div>
 
@@ -806,9 +806,9 @@ export default function SettingsPage() {
           <input type="text" placeholder="Category" value={recForm.category} onChange={(e) => setRecForm({ ...recForm, category: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Note (e.g. Rent)" value={recForm.note} onChange={(e) => setRecForm({ ...recForm, note: e.target.value })} style={{ width: 130 }} />
           <input type="number" placeholder="Day (1-28)" value={recForm.dayOfMonth} onChange={(e) => setRecForm({ ...recForm, dayOfMonth: e.target.value })} min="1" max="28" style={{ width: 100 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingRecId ? "Save changes" : "Save"}</button>
+          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingRecId ? "Save changes" : "Save"}</button>
           {editingRecId && (
-            <button type="button" onClick={cancelEditRecurring} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
+            <button type="button" onClick={cancelEditRecurring} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
           )}
         </form>
         {recError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{recError}</div>}
@@ -848,9 +848,9 @@ export default function SettingsPage() {
           <input type="number" placeholder="Amount (₹)" value={incForm.amount} onChange={(e) => setIncForm({ ...incForm, amount: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Note (e.g. Salary)" value={incForm.note} onChange={(e) => setIncForm({ ...incForm, note: e.target.value })} style={{ width: 150 }} />
           <input type="number" placeholder="Day (1-28)" value={incForm.dayOfMonth} onChange={(e) => setIncForm({ ...incForm, dayOfMonth: e.target.value })} min="1" max="28" style={{ width: 100 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingIncId ? "Save changes" : "Save"}</button>
+          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingIncId ? "Save changes" : "Save"}</button>
           {editingIncId && (
-            <button type="button" onClick={cancelEditRecurringIncome} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
+            <button type="button" onClick={cancelEditRecurringIncome} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
           )}
         </form>
         {incError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{incError}</div>}
@@ -865,7 +865,7 @@ export default function SettingsPage() {
           <input type="text" placeholder="What for? (optional)" value={goalForm.label} onChange={(e) => setGoalForm({ ...goalForm, label: e.target.value })} maxLength={60} style={{ width: 160 }} />
           <input type="number" placeholder="Target (₹)" value={goalForm.targetAmount} onChange={(e) => setGoalForm({ ...goalForm, targetAmount: e.target.value })} style={{ width: 130 }} />
           <input type="date" value={goalForm.targetDate} onChange={(e) => setGoalForm({ ...goalForm, targetDate: e.target.value })} style={{ width: 150 }} />
-          <button type="submit" disabled={goalSaving} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+          <button type="submit" disabled={goalSaving} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
             <Check size={13} /> {goalSaving ? "Saving…" : "Save"}
           </button>
           {savingsGoal && (
