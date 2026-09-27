@@ -374,7 +374,7 @@ export default function SugarChallengePage() {
               <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Money saved per clean day (₹, optional)</label>
               <input type="number" value={savingsPerDay} onChange={(e) => setSavingsPerDay(e.target.value)} min="0" style={{ width: 140 }} />
             </div>
-            <button type="submit" disabled={setupSubmitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "10px 16px", fontSize: 14, fontWeight: 500, cursor: setupSubmitting ? "default" : "pointer" }}>
+            <button type="submit" disabled={setupSubmitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "10px 16px", fontSize: 14, fontWeight: 500, cursor: setupSubmitting ? "default" : "pointer" }}>
               {setupSubmitting ? "Starting…" : "Start"}
             </button>
           </div>
@@ -454,7 +454,7 @@ export default function SugarChallengePage() {
                   <div style={{ fontSize: 13, fontWeight: 500 }}>Craving something sweet right now?</div>
                   <div style={{ fontSize: 11, color: "#8a8477", marginTop: 2 }}>Most cravings pass in about 10 minutes. Wait it out before deciding.</div>
                 </div>
-                <button onClick={startCravingTimer} style={{ background: "#A34A38", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", flexShrink: 0 }}>
+                <button onClick={startCravingTimer} style={{ background: "#A34A38", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", flexShrink: 0 }}>
                   Start 10-min timer
                 </button>
               </div>
@@ -464,7 +464,7 @@ export default function SugarChallengePage() {
                   {String(Math.floor(cravingSeconds / 60)).padStart(2, "0")}:{String(cravingSeconds % 60).padStart(2, "0")}
                 </div>
                 <div style={{ fontSize: 12, color: "#8a8477", margin: "4px 0 10px" }}>Sit with it. It'll pass.</div>
-                <button onClick={stopCravingTimer} style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "6px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer" }}>
+                <button onClick={stopCravingTimer} style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 8, padding: "6px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer" }}>
                   Cancel
                 </button>
               </div>
@@ -475,14 +475,14 @@ export default function SugarChallengePage() {
             <button
               onClick={restartChallenge}
               disabled={restarting}
-              style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "8px 14px", fontSize: 12, color: "#5f5a4f", cursor: restarting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6 }}
+              style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 8, padding: "8px 14px", fontSize: 12, color: "#5f5a4f", cursor: restarting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6 }}
             >
               <RotateCcw size={13} /> {restarting ? "Archiving…" : "End this challenge & start a new one"}
             </button>
             {currentStreak > 0 && (
               <button
                 onClick={shareStreak}
-                style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 3, padding: "8px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 8, padding: "8px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
               >
                 <Share2 size={13} /> Share your streak
               </button>
@@ -519,10 +519,10 @@ export default function SugarChallengePage() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => markDay(today, true)} style={{ background: todayEntry.completed === true ? "#2F6F5E" : "#EAE5D9", color: todayEntry.completed === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => markDay(today, true)} style={{ background: todayEntry.completed === true ? "#2F6F5E" : "#EAE5D9", color: todayEntry.completed === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                   <Check size={14} /> Sugar-free
                 </button>
-                <button onClick={() => { setSelectedDay(today); setNoteDraft(""); setReasonDraft(""); setNaturalSugarDraft(false); setPendingChoice(false); }} style={{ background: todayEntry.completed === false ? "#A34A38" : "#EAE5D9", color: todayEntry.completed === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => { setSelectedDay(today); setNoteDraft(""); setReasonDraft(""); setNaturalSugarDraft(false); setPendingChoice(false); }} style={{ background: todayEntry.completed === false ? "#A34A38" : "#EAE5D9", color: todayEntry.completed === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                   <X size={14} /> I slipped
                 </button>
               </div>
@@ -560,8 +560,8 @@ export default function SugarChallengePage() {
               </div>
               <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 8 }}>Pick one, then tap Save — nothing changes until you save.</div>
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                <button onClick={() => setPendingChoice(true)} style={{ background: pendingChoice === true ? "#2F6F5E" : "#EAE5D9", color: pendingChoice === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Sugar-free</button>
-                <button onClick={() => setPendingChoice(false)} style={{ background: pendingChoice === false ? "#A34A38" : "#EAE5D9", color: pendingChoice === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 3, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Slipped</button>
+                <button onClick={() => setPendingChoice(true)} style={{ background: pendingChoice === true ? "#2F6F5E" : "#EAE5D9", color: pendingChoice === true ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Sugar-free</button>
+                <button onClick={() => setPendingChoice(false)} style={{ background: pendingChoice === false ? "#A34A38" : "#EAE5D9", color: pendingChoice === false ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 8, padding: "7px 12px", fontSize: 12, cursor: "pointer" }}>Slipped</button>
               </div>
               {pendingChoice === false && (
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#5f5a4f", marginBottom: 10, cursor: "pointer" }}>
@@ -577,8 +577,8 @@ export default function SugarChallengePage() {
               )}
               <input type="text" placeholder={pendingChoice === false && !naturalSugarDraft ? "What happened? (required)" : "Note (optional)"} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={140} style={{ marginBottom: 10, borderColor: pendingChoice === false && !naturalSugarDraft ? "#A34A38" : undefined }} />
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => saveNote(selectedDay)} disabled={saving} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save"}</button>
-                <button onClick={() => { setSelectedDay(null); setPendingChoice(null); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Cancel</button>
+                <button onClick={() => saveNote(selectedDay)} disabled={saving} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save"}</button>
+                <button onClick={() => { setSelectedDay(null); setPendingChoice(null); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer" }}>Cancel</button>
               </div>
             </div>
           )}
