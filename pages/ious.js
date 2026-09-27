@@ -178,11 +178,11 @@ export default function IousPage() {
           </select>
           <input type="text" placeholder="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} style={{ width: 150 }} maxLength={140} />
           <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} style={{ width: 150 }} min={todayISO()} />
-          <button type="submit" disabled={submitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+          <button type="submit" disabled={submitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
             <Plus size={13} /> {editingId ? "Save changes" : "Add"}
           </button>
           {editingId && (
-            <button type="button" onClick={cancelEdit} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 3, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <button type="button" onClick={cancelEdit} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
               <X size={13} /> Cancel
             </button>
           )}
