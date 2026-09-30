@@ -3,7 +3,8 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import "../styles/globals.css";
 import { flushQueue, getQueue } from "../lib/offlineQueue";
-import { Home, Clapperboard, PiggyBank, Flame, Settings as SettingsIcon } from "lucide-react";
+import { isSessionValid, extendSession, clearSession } from "../lib/unlockSession";
+import { Home, Clapperboard, PiggyBank, Flame, Settings as SettingsIcon, Download, X } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Ledger", Icon: Home },
@@ -118,7 +119,7 @@ function LockScreen({ onUnlock }) {
         },
       });
       if (assertion) {
-        sessionStorage.setItem("unlocked", "1");
+        extendSession();
         onUnlock();
       }
     } catch (e) {
@@ -140,7 +141,7 @@ function LockScreen({ onUnlock }) {
       });
       const data = await res.json();
       if (data.ok) {
-        sessionStorage.setItem("unlocked", "1");
+        extendSession();
         onUnlock();
       } else if (data.locked) {
         setError(`Too many wrong attempts — wait ${data.waitSeconds}s and try again.`);
@@ -188,6 +189,62 @@ function LockScreen({ onUnlock }) {
   );
 }
 
+function InstallBanner() {
+  const [promptEvent, setPromptEvent] = useState(null);
+  const [dismissed, setDismissed] = useState(true);
+
+  useEffect(() => {
+    if (localStorage.getItem("installBannerDismissed") === "1") return;
+    // Already running as an installed app — nothing to offer.
+    if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone) return;
+
+    function handler(e) {
+      e.preventDefault();
+      setPromptEvent(e);
+      setDismissed(false);
+    }
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  function dismiss() {
+    setDismissed(true);
+    localStorage.setItem("installBannerDismissed", "1");
+  }
+
+  async function install() {
+    if (!promptEvent) return;
+    promptEvent.prompt();
+    await promptEvent.userChoice;
+    setDismissed(true);
+  }
+
+  if (dismissed || !promptEvent) return null;
+  return (
+    <div
+      style={{
+        position: "fixed", left: 12, right: 12, bottom: "calc(78px + env(safe-area-inset-bottom, 0px))", zIndex: 45,
+        background: "#241F1A", color: "#FBF8F2", borderRadius: 14, padding: "12px 14px",
+        display: "flex", alignItems: "center", gap: 10, boxShadow: "0 8px 20px rgba(36,31,26,0.25)",
+      }}
+    >
+      <Download size={18} style={{ flexShrink: 0 }} />
+      <div style={{ flex: 1, fontSize: 12.5, lineHeight: 1.35 }}>
+        Install Expense Ledger for faster, full-screen access
+      </div>
+      <button
+        onClick={install}
+        style={{ background: "#FBF8F2", color: "#241F1A", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+      >
+        Install
+      </button>
+      <button onClick={dismiss} aria-label="Dismiss" style={{ background: "none", border: "none", color: "#C4BDAC", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0 }}>
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
 export default function App({ Component, pageProps }) {
   const router = useRouter();
   const [locked, setLocked] = useState(null); // null = checking, true/false once known
@@ -220,7 +277,7 @@ export default function App({ Component, pageProps }) {
       document.documentElement.setAttribute("data-theme", "dark");
     }
 
-    if (sessionStorage.getItem("unlocked") === "1") {
+    if (isSessionValid()) {
       setLocked(false);
     } else {
       fetch("/api/data?type=pin-status")
@@ -229,36 +286,37 @@ export default function App({ Component, pageProps }) {
         .catch(() => setLocked(false));
     }
 
-    // Auto re-lock after 5 minutes of no touch/click/key activity, so an
-    // unlocked session doesn't stay open indefinitely if the phone is set down.
-    const RELOCK_MS = 5 * 60 * 1000;
-    let relockTimer = null;
-    function scheduleRelock() {
-      if (relockTimer) clearTimeout(relockTimer);
-      relockTimer = setTimeout(() => {
-        if (sessionStorage.getItem("unlocked") === "1") {
-          fetch("/api/data?type=pin-status")
-            .then((r) => r.json())
-            .then((d) => {
-              if (d.hasPin) {
-                sessionStorage.removeItem("unlocked");
-                setLocked(true);
-              }
-            })
-            .catch(() => {});
-        }
-      }, RELOCK_MS);
+    // While unlocked, any touch/click/key activity pushes the session
+    // forward (see lib/unlockSession) so a normal day of use never
+    // re-prompts for the PIN. A periodic check catches the case where the
+    // session has quietly expired — e.g. the phone sat untouched for hours —
+    // and locks the app back up next time it's checked.
+    function extendIfUnlocked() {
+      if (isSessionValid()) extendSession();
     }
     const activityEvents = ["mousedown", "touchstart", "keydown"];
-    activityEvents.forEach((ev) => window.addEventListener(ev, scheduleRelock));
-    scheduleRelock();
+    activityEvents.forEach((ev) => window.addEventListener(ev, extendIfUnlocked));
+
+    const expiryCheck = setInterval(() => {
+      if (!isSessionValid() && localStorage.getItem("unlockedUntil")) {
+        fetch("/api/data?type=pin-status")
+          .then((r) => r.json())
+          .then((d) => {
+            if (d.hasPin) {
+              clearSession();
+              setLocked(true);
+            }
+          })
+          .catch(() => {});
+      }
+    }, 30 * 1000);
 
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       clearInterval(interval);
-      activityEvents.forEach((ev) => window.removeEventListener(ev, scheduleRelock));
-      if (relockTimer) clearTimeout(relockTimer);
+      clearInterval(expiryCheck);
+      activityEvents.forEach((ev) => window.removeEventListener(ev, extendIfUnlocked));
     };
   }, []);
 
@@ -289,6 +347,7 @@ export default function App({ Component, pageProps }) {
           )}
           <Component {...pageProps} />
           <ToastHost />
+          <InstallBanner />
           <BottomNav currentPath={router.pathname} />
         </>
       )}
