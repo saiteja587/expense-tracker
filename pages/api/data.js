@@ -1,5 +1,16 @@
 import * as db from "../../lib/db";
 
+// Receipt photos arrive as a compressed base64 string in the JSON body,
+// which can run a few hundred KB — comfortably over the framework's 1MB
+// default, so it's raised here.
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "4mb",
+    },
+  },
+};
+
 function err(res, msg, status = 400) {
   return res.status(status).json({ error: msg });
 }
@@ -72,7 +83,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!body.date) return err(res, "Date is required");
-        const expense = await db.createExpense({ amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance });
+        const expense = await db.createExpense({ amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto });
         return res.status(201).json({ expense });
       }
 
@@ -285,7 +296,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!body.date) return err(res, "Date is required");
-        const expense = await db.updateExpense(numId, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance });
+        const expense = await db.updateExpense(numId, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto });
         return res.status(200).json({ expense });
       }
 
