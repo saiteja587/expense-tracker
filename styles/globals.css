@@ -408,13 +408,15 @@ html[data-theme="dark"] img, html[data-theme="dark"] video {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 0;
-    z-index: 47;
+    /* Sits just above the floating bottom nav bar, never on top of it —
+       collapsed or open. */
+    bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+    z-index: 48;
     background: #FBF8F2;
-    border-radius: var(--radius-lg, 20px) var(--radius-lg, 20px) 0 0;
-    box-shadow: 0 -10px 30px rgba(36, 31, 26, 0.18);
-    padding: 10px 20px calc(24px + env(safe-area-inset-bottom, 0px));
-    max-height: 84vh;
+    border-radius: var(--radius-lg, 20px);
+    box-shadow: 0 10px 30px rgba(36, 31, 26, 0.18);
+    padding: 10px 20px 16px;
+    max-height: calc(84vh - 74px);
     overflow-y: auto;
     transform: translateY(calc(100% - 64px));
     transition: transform 0.32s var(--ease-fluid);
