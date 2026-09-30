@@ -1,8 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert, Mic, MoreHorizontal } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert, Mic, MoreHorizontal, Camera } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
+import { vibrate } from "../lib/haptics";
+import { fileToCompressedDataUrl } from "../lib/receiptImage";
+import SwipeRow from "../components/SwipeRow";
+import PullToRefresh from "../components/PullToRefresh";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -36,7 +40,7 @@ function nowTimeHHMM() {
 }
 
 function getEmptyExpenseForm() {
-  return { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), time: nowTimeHHMM(), affectsBalance: true };
+  return { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "" };
 }
 const emptyTopupForm = { amount: "", note: "", date: todayISO(), mode: "add" };
 
@@ -94,6 +98,13 @@ export default function Page() {
   const [expenseMoreOpen, setExpenseMoreOpen] = useState(false);
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // On a phone the add-expense form lives in a bottom sheet, collapsed to a
+  // peek strip until tapped or triggered (editing, voice, a shared amount).
+  // On a wide screen this flag has no visual effect — the form is always
+  // shown inline there.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const receiptInputRef = useRef(null);
+  const [receiptUploading, setReceiptUploading] = useState(false);
 
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceError, setVoiceError] = useState("");
@@ -144,6 +155,7 @@ export default function Page() {
         date: x.expense_date.slice(0, 10),
         time: x.expense_time ? x.expense_time.slice(0, 5) : "",
         affectsBalance: x.affects_balance !== false,
+        receiptPhoto: x.receipt_photo || "",
       }));
       setExpenses(mappedExpenses);
       let mappedMovies = [];
@@ -239,11 +251,38 @@ export default function Page() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("quickadd") === "expense") {
+      setSheetOpen(true);
       setTimeout(() => {
         amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
         amountInputRef.current?.focus();
       }, 300);
     }
+  }, [loaded]);
+
+  // Handles the phone's native "Share" sheet, once this app is registered as
+  // a share target (see manifest.json): sharing a UPI notification or a
+  // note to Expense Ledger lands here as a URL like /?shared_text=...,
+  // which gets parsed the same way a spoken amount does and dropped straight
+  // into the form, open and ready to confirm.
+  useEffect(() => {
+    if (typeof window === "undefined" || !loaded) return;
+    const params = new URLSearchParams(window.location.search);
+    const sharedText = params.get("shared_text") || params.get("shared_title") || "";
+    if (!sharedText.trim()) return;
+    const parsed = parseVoiceExpense(sharedText);
+    setExpenseForm((f) => ({
+      ...f,
+      amount: parsed.amount || f.amount,
+      category: parsed.category || f.category,
+      note: parsed.note || f.note,
+    }));
+    setSheetOpen(true);
+    setTimeout(() => {
+      amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      amountInputRef.current?.focus();
+    }, 350);
+    window.history.replaceState({}, "", "/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
 
   const movieItems = useMemo(() => {
@@ -323,10 +362,11 @@ export default function Page() {
 
   function startEditExpense(x) {
     setEditingExpenseId(x.id);
-    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false });
+    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false, receiptPhoto: x.receiptPhoto || "" });
     // Editing always shows the full form — the person may specifically be
     // here to fix the date or the deduct toggle.
     setExpenseMoreOpen(true);
+    setSheetOpen(true);
     setFormError("");
   }
 
@@ -334,6 +374,7 @@ export default function Page() {
     setEditingExpenseId(null);
     setExpenseForm(getEmptyExpenseForm());
     setExpenseMoreOpen(false);
+    setSheetOpen(false);
     setFormError("");
   }
 
@@ -359,6 +400,7 @@ export default function Page() {
       setVoiceError("Voice input isn't supported in this browser.");
       return;
     }
+    setSheetOpen(true);
     setVoiceError("");
     const recognition = new SR();
     recognition.lang = "en-IN";
@@ -378,6 +420,21 @@ export default function Page() {
     recognition.onerror = () => setVoiceError("Didn't catch that — try again or type it in.");
     recognition.onend = () => setVoiceListening(false);
     recognition.start();
+  }
+
+  async function handleReceiptChange(e) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // so picking the same file again still fires onChange
+    if (!file) return;
+    setReceiptUploading(true);
+    try {
+      const dataUrl = await fileToCompressedDataUrl(file);
+      setExpenseForm((f) => ({ ...f, receiptPhoto: dataUrl }));
+    } catch {
+      setFormError("Couldn't process that photo — try again.");
+    } finally {
+      setReceiptUploading(false);
+    }
   }
 
   async function submitExpense(e) {
@@ -407,6 +464,7 @@ export default function Page() {
       date: expenseForm.date,
       time: expenseForm.time,
       affectsBalance: expenseForm.affectsBalance,
+      receiptPhoto: expenseForm.receiptPhoto || "",
     };
 
     let res;
@@ -421,7 +479,7 @@ export default function Page() {
       queueRequest({ url: "/api/data", method: isEdit ? "PUT" : "POST", body: payload });
       if (!isEdit) {
         setExpenses((prev) => [
-          { id: `pending-${Date.now()}`, amount: amt, category: expenseForm.category, note: expenseForm.note.trim(), date: expenseForm.date, time: expenseForm.time, affectsBalance: expenseForm.affectsBalance !== false, pending: true },
+          { id: `pending-${Date.now()}`, amount: amt, category: expenseForm.category, note: expenseForm.note.trim(), date: expenseForm.date, time: expenseForm.time, affectsBalance: expenseForm.affectsBalance !== false, receiptPhoto: expenseForm.receiptPhoto || "", pending: true },
           ...prev,
         ]);
       }
@@ -449,6 +507,7 @@ export default function Page() {
           }
         }
       }
+      vibrate(10);
       cancelEditExpense();
       await load();
       showToast(isEdit ? "Expense updated" : "Expense logged", isEdit ? "✏️" : "✅");
@@ -511,6 +570,7 @@ export default function Page() {
         throw new Error(data.error || "Failed to save");
       }
       const wasEdit = editingTopupId !== null;
+      vibrate(10);
       cancelEditTopup();
       await load();
       showToast(wasEdit ? "Balance entry updated" : "Balance updated", "💰");
@@ -705,7 +765,13 @@ export default function Page() {
         {!loggedToday && ", "}
         {!loggedToday && (
           <button
-            onClick={() => amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }) || amountInputRef.current?.focus()}
+            onClick={() => {
+              setSheetOpen(true);
+              setTimeout(() => {
+                amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                amountInputRef.current?.focus();
+              }, 320);
+            }}
             style={{ background: "none", border: "none", padding: 0, color: "#A34A38", fontWeight: 600, cursor: "pointer", fontSize: 13, textDecoration: "underline" }}
           >
             nothing logged yet today — add one now →
@@ -871,24 +937,45 @@ export default function Page() {
         </div>
       )}
 
+      {sheetOpen && <div className="sheet-backdrop" onClick={() => !editingExpenseId && setSheetOpen(false)} />}
+
+      <button
+        type="button"
+        className="mobile-fab-add"
+        aria-label="Add expense"
+        onClick={() => {
+          setSheetOpen(true);
+          setTimeout(() => {
+            amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+            amountInputRef.current?.focus();
+          }, 350);
+        }}
+      >
+        <Plus size={24} />
+      </button>
+
       <div className="responsive-grid">
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>
-              {editingExpenseId ? "Edit expense" : "Add an expense"}
+          <div className={`expense-form-wrap${sheetOpen ? " open" : ""}`}>
+            <div className="sheet-peek" onClick={() => setSheetOpen((v) => !v)}>
+              <span className="sheet-drag-handle" />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>
+                  {editingExpenseId ? "Edit expense" : "Add an expense"}
+                </div>
+                {!editingExpenseId && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); startVoiceAdd(); }}
+                    disabled={voiceListening}
+                    title="Speak an expense, e.g. '250 for food swiggy'"
+                    style={{ display: "flex", alignItems: "center", gap: 5, background: voiceListening ? "#A34A38" : "#F1ECDF", color: voiceListening ? "#FBF8F2" : "#5f5a4f", border: "none", borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: voiceListening ? "default" : "pointer" }}
+                  >
+                    <Mic size={13} /> {voiceListening ? "Listening…" : "Speak to add"}
+                  </button>
+                )}
+              </div>
             </div>
-            {!editingExpenseId && (
-              <button
-                type="button"
-                onClick={startVoiceAdd}
-                disabled={voiceListening}
-                title="Speak an expense, e.g. '250 for food swiggy'"
-                style={{ display: "flex", alignItems: "center", gap: 5, background: voiceListening ? "#A34A38" : "#F1ECDF", color: voiceListening ? "#FBF8F2" : "#5f5a4f", border: "none", borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: voiceListening ? "default" : "pointer" }}
-              >
-                <Mic size={13} /> {voiceListening ? "Listening…" : "Speak to add"}
-              </button>
-            )}
-          </div>
           {voiceError && <div style={{ fontSize: 11, color: "#A34A38", marginTop: -6, marginBottom: 10 }}>{voiceError}</div>}
           <form onSubmit={submitExpense} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <input ref={amountInputRef} type="number" inputMode="decimal" placeholder="Amount (₹)" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} step="0.01" min="0" />
@@ -900,14 +987,37 @@ export default function Page() {
                 <option key={c.name} value={c.name}>{c.name}</option>
               ))}
             </select>
-            <input
-              type="text"
-              placeholder={expenseForm.category === "Other" ? "Reason (required)" : "Note (optional)"}
-              value={expenseForm.note}
-              onChange={(e) => setExpenseForm({ ...expenseForm, note: e.target.value })}
-              maxLength={80}
-              style={expenseForm.category === "Other" ? { borderColor: "#A34A38" } : undefined}
-            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="text"
+                placeholder={expenseForm.category === "Other" ? "Reason (required)" : "Note (optional)"}
+                value={expenseForm.note}
+                onChange={(e) => setExpenseForm({ ...expenseForm, note: e.target.value })}
+                maxLength={80}
+                style={{ flex: 1, ...(expenseForm.category === "Other" ? { borderColor: "#A34A38" } : {}) }}
+              />
+              <input ref={receiptInputRef} type="file" accept="image/*" capture="environment" onChange={handleReceiptChange} style={{ display: "none" }} />
+              <button
+                type="button"
+                onClick={() => receiptInputRef.current?.click()}
+                disabled={receiptUploading}
+                title="Attach a photo of the receipt"
+                aria-label="Attach receipt photo"
+                style={{ flexShrink: 0, width: 40, display: "flex", alignItems: "center", justifyContent: "center", background: expenseForm.receiptPhoto ? "#F1ECDF" : "none", border: "1px solid #D9D2C2", borderRadius: 8, color: expenseForm.receiptPhoto ? "#A34A38" : "#5f5a4f", cursor: receiptUploading ? "default" : "pointer" }}
+              >
+                <Camera size={16} />
+              </button>
+            </div>
+            {receiptUploading && <div style={{ fontSize: 11, color: "#8a8477", marginTop: -6 }}>Processing photo…</div>}
+            {expenseForm.receiptPhoto && !receiptUploading && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -4 }}>
+                <img src={expenseForm.receiptPhoto} alt="Receipt" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #D9D2C2" }} />
+                <span style={{ fontSize: 11, color: "#8a8477" }}>Receipt attached</span>
+                <button type="button" onClick={() => setExpenseForm({ ...expenseForm, receiptPhoto: "" })} style={{ background: "none", border: "none", color: "#A34A38", fontSize: 11, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
+                  Remove
+                </button>
+              </div>
+            )}
             {expenseMoreOpen ? (
               <>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -948,6 +1058,7 @@ export default function Page() {
               )}
             </div>
           </form>
+          </div>
 
           {byCategory.length > 0 && (
             <div style={{ marginTop: 36 }}>
@@ -983,6 +1094,7 @@ export default function Page() {
           <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
             Transactions
           </div>
+          <PullToRefresh onRefresh={load}>
           {grouped.length === 0 ? (
             <div style={{ border: "1px dashed #D9D2C2", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "#8a8477", fontSize: 14 }}>
               <Wallet size={22} style={{ marginBottom: 8, opacity: 0.5 }} />
@@ -1000,10 +1112,19 @@ export default function Page() {
                   <div style={{ borderTop: "1px solid #EAE5D9" }}>
                     {items.map((x) => {
                       const isMovie = x.category === MOVIE_CATEGORY.name;
-                      return (
-                        <div key={x.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EAE5D9", gap: 12 }}>
+                      const canSwipeDelete = !isMovie && !x.pending && !x.isRecurringPending;
+                      const row = (
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EAE5D9", gap: 12, background: "#FBF8F2" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                             <span style={{ width: 8, height: 8, borderRadius: "50%", background: catColor(x.category), flexShrink: 0 }} />
+                            {x.receiptPhoto && (
+                              <img
+                                src={x.receiptPhoto}
+                                alt="Receipt"
+                                onClick={() => window.open(x.receiptPhoto, "_blank")}
+                                style={{ width: 26, height: 26, objectFit: "cover", borderRadius: 5, flexShrink: 0, cursor: "pointer" }}
+                              />
+                            )}
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {x.note || x.category}
@@ -1035,12 +1156,18 @@ export default function Page() {
                           </div>
                         </div>
                       );
+                      return canSwipeDelete ? (
+                        <SwipeRow key={x.id} onDelete={() => removeExpense(x.id)}>{row}</SwipeRow>
+                      ) : (
+                        <div key={x.id}>{row}</div>
+                      );
                     })}
                   </div>
                 </div>
               ))}
             </div>
           )}
+          </PullToRefresh>
         </div>
       </div>
     </div>
