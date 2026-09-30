@@ -356,3 +356,82 @@ html[data-theme="dark"] img, html[data-theme="dark"] video {
   width: 5px;
   height: 5px;
 }
+
+/* =========================================================================
+   Mobile quick-add: a floating "+" button and a bottom sheet. On a wide
+   screen these rules simply don't apply — the same form renders inline in
+   its normal place in the grid, untouched.
+   ========================================================================= */
+.mobile-fab-add {
+  display: none;
+}
+.sheet-drag-handle {
+  display: none;
+}
+.sheet-backdrop {
+  display: none;
+}
+
+@media (max-width: 680px) {
+  .mobile-fab-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: 18px;
+    bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: var(--accent-gradient);
+    color: #fff;
+    border: none;
+    box-shadow: 0 10px 24px rgba(163, 74, 56, 0.35), 0 2px 8px rgba(36, 31, 26, 0.15);
+    z-index: 44;
+    cursor: pointer;
+    transition: transform 0.2s var(--ease-spring);
+  }
+  .mobile-fab-add:active {
+    transform: scale(0.92);
+  }
+
+  .sheet-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(36, 31, 26, 0.32);
+    z-index: 46;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .expense-form-wrap {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 47;
+    background: #FBF8F2;
+    border-radius: var(--radius-lg, 20px) var(--radius-lg, 20px) 0 0;
+    box-shadow: 0 -10px 30px rgba(36, 31, 26, 0.18);
+    padding: 10px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+    max-height: 84vh;
+    overflow-y: auto;
+    transform: translateY(calc(100% - 64px));
+    transition: transform 0.32s var(--ease-fluid);
+  }
+  .expense-form-wrap.open {
+    transform: translateY(0);
+  }
+  .sheet-peek {
+    cursor: pointer;
+    padding: 8px 0 12px;
+  }
+  .sheet-drag-handle {
+    display: block;
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: #D9D2C2;
+    margin: 0 auto 10px;
+  }
+}
