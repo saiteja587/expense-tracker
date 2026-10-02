@@ -728,7 +728,7 @@ export default function Page() {
             <MoreHorizontal size={15} /> More
           </button>
           {moreOpen && (
-            <div className="card" style={{ position: "absolute", right: 0, top: "calc(100% + 8px)", minWidth: 180, zIndex: 20, overflow: "hidden", animation: "fadeIn 0.15s ease" }}>
+            <div className="card" style={{ position: "absolute", left: 0, top: "calc(100% + 8px)", minWidth: 180, maxWidth: "calc(100vw - 48px)", zIndex: 20, overflow: "hidden", animation: "fadeIn 0.15s ease" }}>
               {[
                 { href: "/search", label: "Search" },
                 { href: "/year", label: "Year view" },
