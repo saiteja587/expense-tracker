@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3, Bookmark, Sparkles } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
+import CountUp from "../components/CountUp";
 
 const TAKES = [
   { value: "loved", label: "Loved it", score: 3, color: "#2F6F5E" },
@@ -476,7 +477,7 @@ export default function MoviesPage() {
           <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
             <ArrowLeft size={12} /> Expense ledger
           </a>
-          <div className="lora" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
+          <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
             Movie Nights
           </div>
           <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
@@ -536,8 +537,9 @@ export default function MoviesPage() {
       {allTimeStats && (
         <div style={{ marginBottom: 32 }}>
           <button
+            className="story-chip"
             onClick={() => setShowAllTime((v) => !v)}
-            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 8, padding: "7px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 20, padding: "7px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
           >
             <BarChart3 size={13} /> {showAllTime ? "Hide" : "Show"} all-time stats
           </button>
@@ -545,24 +547,24 @@ export default function MoviesPage() {
             <div className="panel-soft" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginTop: 14, padding: "16px 18px", background: "#F1ECDF", borderRadius: 6 }}>
               <div>
                 <div style={{ fontSize: 11, color: "#8a8477" }}>Titles logged</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{allTimeStats.totalTitles}</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalTitles} /></div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: "#8a8477" }}>Total viewings</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{allTimeStats.totalViewings}</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalViewings} /></div>
                 {allTimeStats.rewatches > 0 && <div style={{ fontSize: 10, color: "#8a8477" }}>{allTimeStats.rewatches} rewatched</div>}
               </div>
               <div>
                 <div style={{ fontSize: 11, color: "#8a8477" }}>Spent all-time</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{fmt(allTimeStats.totalSpend)}</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalSpend} format={fmt} /></div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: "#8a8477" }}>Avg. per viewing</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{fmt(allTimeStats.avgCost)}</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.avgCost} format={fmt} /></div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: "#8a8477" }}>Agree with public</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{allTimeStats.agreementRate}%</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.agreementRate} />%</div>
               </div>
               {allTimeStats.topCompanion && (
                 <div>
@@ -573,7 +575,7 @@ export default function MoviesPage() {
               )}
               <div>
                 <div style={{ fontSize: 11, color: "#8a8477" }}>Rewatch rate</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{allTimeStats.rewatchRate}%</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.rewatchRate} />%</div>
               </div>
               {allTimeStats.topGenres.length > 0 && (
                 <div>
