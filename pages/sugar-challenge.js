@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Check, X, Flame, Trophy, RotateCcw, Share2 } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
+import { celebrateMilestone, popHeart } from "../lib/celebrate";
+import CountUp from "../components/CountUp";
 
 const SLIP_REASONS = ["Stress", "Social occasion", "Craving", "Travel", "Tiredness", "Other"];
 
@@ -238,7 +240,7 @@ export default function SugarChallengePage() {
     const milestoneSet = [7, 14, 21, 30, 41];
     if (prevStreakRef.current !== null && milestoneSet.includes(currentStreak) && currentStreak > prevStreakRef.current) {
       const reward = milestoneRewards[currentStreak];
-      showToast(reward ? `${currentStreak}-day streak! You earned: ${reward}` : `${currentStreak}-day streak! 🎉`, "🔥");
+      celebrateMilestone(currentStreak, reward);
     }
     prevStreakRef.current = currentStreak;
   }, [currentStreak, milestoneRewards]);
@@ -352,7 +354,7 @@ export default function SugarChallengePage() {
         <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
         </a>
-        <div className="lora" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
+        <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
           No-Sugar Challenge
         </div>
         <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
@@ -398,13 +400,31 @@ export default function SugarChallengePage() {
                 {Math.min(elapsedCount, meta.length_days)}<span style={{ fontSize: 18, color: "#8a8477" }}> / {meta.length_days}</span>
               </div>
             </div>
-            <div>
-              <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}><Flame size={13} color="#C98A2C" /> Current streak</div>
-              <div className="lora tabnum" style={{ fontSize: "clamp(26px, 8vw, 36px)", fontWeight: 600, lineHeight: 1, color: "#C98A2C" }}>{currentStreak}</div>
-            </div>
+            {(() => {
+              const nextGoal = [7, 14, 21, 30, 41].find((m) => m > currentStreak) || meta.length_days;
+              const pct = Math.min(100, Math.round((currentStreak / Math.max(1, nextGoal)) * 100));
+              const tier = currentStreak >= 30 ? "#7C3AED" : currentStreak >= 14 ? "#F0457B" : currentStreak >= 7 ? "#E8731F" : "#C98A2C";
+              const flameSize = Math.round(22 + Math.min(currentStreak, 30) * 0.9);
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  <div className="streak-ring" style={{ "--p": pct, "--ring-a": tier, "--flame": tier, "--glow": Math.min(26, 4 + currentStreak) }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1 }}>
+                      <Flame className="streak-flame" size={flameSize} color={tier} fill={currentStreak > 0 ? tier : "none"} />
+                      <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 700, marginTop: 2, color: tier }}>
+                        <CountUp value={currentStreak} />
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 2 }}>Current streak</div>
+                    <div style={{ fontSize: 11, color: "#8a8477" }}>{nextGoal - currentStreak} day{nextGoal - currentStreak !== 1 ? "s" : ""} to day {nextGoal}</div>
+                  </div>
+                </div>
+              );
+            })()}
             <div>
               <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}><Trophy size={13} color="#2F6F5E" /> Longest streak</div>
-              <div className="lora tabnum" style={{ fontSize: "clamp(26px, 8vw, 36px)", fontWeight: 600, lineHeight: 1, color: "#2F6F5E" }}>{longestStreak}</div>
+              <div className="lora tabnum" style={{ fontSize: "clamp(26px, 8vw, 36px)", fontWeight: 600, lineHeight: 1, color: "#2F6F5E" }}><CountUp value={longestStreak} /></div>
             </div>
             {failedCount > 0 && (
               <div>
@@ -538,7 +558,8 @@ export default function SugarChallengePage() {
           )}
 
           {/* Grid */}
-          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>All {meta.length_days} days</div>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>All {meta.length_days} days</div>
+          <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>Tip: double-tap an unmarked day to log it sugar-free 💚</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(40px, 1fr))", gap: 6 }}>
             {dayList.map((d) => {
               let bg = "#EAE5D9", color = "#8a8477", border = "1px solid transparent";
@@ -552,7 +573,14 @@ export default function SugarChallengePage() {
                   disabled={d.isFuture}
                   onClick={() => { setSelectedDay(d.date); setNoteDraft(d.note); setReasonDraft(days[d.date]?.reason || ""); setNaturalSugarDraft(!!days[d.date]?.naturalSugar); setPendingChoice(d.completed ?? null); }}
                   title={d.note || undefined}
-                  style={{ aspectRatio: "1", background: bg, color, border, borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: d.isFuture ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  onDoubleClick={(e) => {
+                    // Double-tap an unmarked day = quick "sugar-free" with a heart.
+                    if (d.isFuture || d.completed !== null && d.completed !== undefined) return;
+                    popHeart(e.clientX, e.clientY);
+                    markDay(d.date, true);
+                    setSelectedDay(null);
+                  }}
+                  style={{ touchAction: "manipulation", aspectRatio: "1", background: bg, color, border, borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: d.isFuture ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                   className="tabnum"
                 >
                   {d.dayNumber}
