@@ -10,7 +10,7 @@ import { vibrate } from "../lib/haptics";
 const REVEAL_WIDTH = 76;
 const TRIGGER_DISTANCE = 40;
 
-export default function SwipeRow({ children, onDelete, disabled }) {
+export default function SwipeRow({ children, onDelete, disabled, className = "" }) {
   const [dragX, setDragX] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const startX = useRef(null);
@@ -62,7 +62,7 @@ export default function SwipeRow({ children, onDelete, disabled }) {
   }
 
   return (
-    <div style={{ position: "relative", overflow: "hidden" }}>
+    <div className={className} data-no-tab-swipe="1" style={{ position: "relative", overflow: "hidden" }}>
       <div
         style={{
           position: "absolute", inset: 0, display: "flex", alignItems: "stretch", justifyContent: "flex-end",
