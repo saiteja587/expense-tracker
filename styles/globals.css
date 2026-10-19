@@ -17,7 +17,13 @@
   --shadow-lift: 0 8px 20px rgba(36, 31, 26, 0.10), 0 2px 6px rgba(36, 31, 26, 0.06);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-fluid: cubic-bezier(0.22, 1, 0.36, 1);
-  --accent-gradient: linear-gradient(135deg, #A34A38 0%, #8C4470 50%, #2F6F5E 100%);
+  /* The signature gradient: sunset orange through hot pink and violet into
+     electric blue — warmer and more alive than the earthy palette it sits on,
+     so it reads as "this is the thing to tap". Used for primary buttons,
+     story rings, the nav highlight and the title. */
+  --accent-gradient: linear-gradient(135deg, #FF8A3D 0%, #F0457B 38%, #9B3FD0 72%, #4F6BED 100%);
+  --accent-solid: #D63C78;
+  --accent-glow: 0 6px 20px rgba(214, 60, 120, 0.32), 0 2px 6px rgba(155, 63, 208, 0.2);
 }
 
 * {
@@ -48,6 +54,9 @@ body {
   background-image: radial-gradient(1200px 600px at 15% -10%, rgba(163, 74, 56, 0.05), transparent 60%),
                      radial-gradient(1000px 500px at 100% 0%, rgba(47, 111, 94, 0.05), transparent 55%);
   background-attachment: fixed;
+  /* Transparent so the slow-drifting aurora layer (body::before, below) can
+     show through; the page colour still comes from <html>. */
+  background-color: transparent;
 }
 
 #__next {
@@ -316,8 +325,8 @@ html[data-theme="dark"] img, html[data-theme="dark"] video {
   bottom: 6px;
   border-radius: 999px;
   background: var(--accent-gradient);
-  opacity: 0.14;
-  transition: left 0.35s var(--ease-fluid), width 0.35s var(--ease-fluid);
+  opacity: 0.18;
+  transition: left 0.4s var(--ease-spring), width 0.4s var(--ease-spring);
 }
 .bottom-nav a {
   position: relative;
@@ -336,7 +345,7 @@ html[data-theme="dark"] img, html[data-theme="dark"] video {
   transform: scale(0.9);
 }
 .bottom-nav a.active {
-  color: #241F1A;
+  color: var(--accent-solid);
 }
 .bottom-nav a svg {
   transition: transform 0.3s var(--ease-spring);
@@ -372,4 +381,259 @@ html[data-theme="dark"] img, html[data-theme="dark"] video {
 }
 .sheet-backdrop {
   display: none;
+}
+
+/* =========================================================================
+   VISUAL UPGRADE — alive, tactile, a little theatrical.
+   Everything below is additive: it restyles by class or attribute and never
+   touches layout, so no page logic depends on it.
+   ========================================================================= */
+
+/* ---------- Aurora: soft colour blobs that drift slowly behind the page ---------- */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -25%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(40% 35% at 20% 25%, rgba(255, 138, 61, 0.16), transparent 70%),
+    radial-gradient(35% 35% at 80% 20%, rgba(155, 63, 208, 0.13), transparent 70%),
+    radial-gradient(40% 40% at 70% 85%, rgba(79, 107, 237, 0.12), transparent 70%),
+    radial-gradient(35% 35% at 15% 80%, rgba(47, 111, 94, 0.10), transparent 70%);
+  animation: auroraDrift 26s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes auroraDrift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(3%, -2%, 0) scale(1.06); }
+  100% { transform: translate3d(-3%, 3%, 0) scale(1.02); }
+}
+
+/* ---------- Gradient flow: used by every primary button and the title ---------- */
+@keyframes gradientFlow {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Primary buttons. Every filled-dark button in the app (all the "Add",
+   "Save", "Unlock" buttons, and selected toggles) is recognised by its
+   background and given the flowing gradient, a glow, and a hover lift.
+   Only background-image and shadow are set, so each button keeps its own
+   radius, padding and text colour. Both forms of the attribute are listed
+   because server-rendered markup writes the hex and the browser rewrites it
+   as rgb(). */
+button[type="submit"]:not(:disabled),
+button[style*="background:#241F1A"]:not(:disabled),
+button[style*="background: rgb(36, 31, 26)"]:not(:disabled) {
+  background-image: var(--accent-gradient) !important;
+  background-size: 240% 240% !important;
+  animation: gradientFlow 8s ease infinite;
+  color: #fff !important;
+  box-shadow: var(--accent-glow) !important;
+}
+@media (hover: hover) {
+  button[type="submit"]:not(:disabled):hover,
+  button[style*="background:#241F1A"]:not(:disabled):hover,
+  button[style*="background: rgb(36, 31, 26)"]:not(:disabled):hover {
+    transform: translateY(-2px);
+    filter: brightness(1.06) saturate(1.1);
+  }
+}
+button[type="submit"]:not(:disabled):active,
+button[style*="background:#241F1A"]:not(:disabled):active,
+button[style*="background: rgb(36, 31, 26)"]:not(:disabled):active {
+  transform: scale(0.95);
+  filter: brightness(0.96);
+}
+
+.pill {
+  background: var(--accent-gradient) !important;
+  background-size: 240% 240% !important;
+  animation: gradientFlow 8s ease infinite;
+  box-shadow: var(--accent-glow) !important;
+}
+
+/* Every other button gets a gentler hover so nothing feels dead under a cursor. */
+@media (hover: hover) {
+  button:not(:disabled):hover {
+    filter: brightness(1.04);
+  }
+}
+
+/* ---------- Ripple: a soft ring that expands from exactly where you tapped ---------- */
+.rfx-host {
+  position: relative;
+  overflow: hidden;
+}
+.rfx {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.22;
+  transform: scale(0);
+  pointer-events: none;
+  animation: rfxOut 0.62s var(--ease-fluid) forwards;
+}
+@keyframes rfxOut {
+  to { transform: scale(1); opacity: 0; }
+}
+
+/* ---------- Entrance: page sections rise in one after another ---------- */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+.page-container > * {
+  animation: riseIn 0.6s var(--ease-fluid) backwards;
+}
+.page-container > *:nth-child(1)  { animation-delay: 0.02s; }
+.page-container > *:nth-child(2)  { animation-delay: 0.07s; }
+.page-container > *:nth-child(3)  { animation-delay: 0.12s; }
+.page-container > *:nth-child(4)  { animation-delay: 0.17s; }
+.page-container > *:nth-child(5)  { animation-delay: 0.22s; }
+.page-container > *:nth-child(6)  { animation-delay: 0.27s; }
+.page-container > *:nth-child(7)  { animation-delay: 0.32s; }
+.page-container > *:nth-child(8)  { animation-delay: 0.37s; }
+.page-container > *:nth-child(n+9) { animation-delay: 0.42s; }
+
+/* ---------- Title: the app name in the flowing gradient ---------- */
+.gradient-title {
+  background: var(--accent-gradient) !important;
+  background-size: 220% 220% !important;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: gradientFlow 7s ease infinite;
+}
+
+/* ---------- Story chips: the streak / movies / budget pills get an Instagram
+   story-style gradient ring that slowly shimmers. A chip that is "idle"
+   (no streak yet) keeps a quiet grey ring instead. ---------- */
+.story-chip {
+  border: 2px solid transparent !important;
+  background:
+    linear-gradient(#FFFDF8, #FFFDF8) padding-box,
+    var(--accent-gradient) border-box !important;
+  background-size: 100% 100%, 260% 260% !important;
+  animation: gradientFlow 6s ease infinite;
+  box-shadow: 0 3px 12px rgba(214, 60, 120, 0.14);
+  transition: transform 0.2s var(--ease-spring), box-shadow 0.2s var(--ease-fluid);
+}
+.story-chip.idle {
+  background:
+    linear-gradient(#FFFDF8, #FFFDF8) padding-box,
+    linear-gradient(135deg, #E5DFD1, #D2CBB9) border-box !important;
+  animation: none;
+  box-shadow: none;
+}
+@media (hover: hover) {
+  .story-chip:hover { transform: translateY(-2px) scale(1.03); }
+}
+.story-chip:active { transform: scale(0.94); }
+
+/* ---------- Panels: a faint moving sheen so a flat tinted box feels like glass ---------- */
+.panel-soft {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.panel-soft::before {
+  content: "";
+  position: absolute;
+  top: -40%;
+  right: -20%;
+  width: 70%;
+  height: 180%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(255, 255, 255, 0.55), transparent 70%);
+  animation: sheenDrift 9s ease-in-out infinite alternate;
+}
+@keyframes sheenDrift {
+  from { transform: translate3d(-8%, 0, 0); opacity: 0.7; }
+  to   { transform: translate3d(10%, 6%, 0); opacity: 1; }
+}
+
+/* ---------- Skeleton loader: shimmering placeholders instead of a bare "Loading…" ---------- */
+.skeleton {
+  border-radius: 12px;
+  background: linear-gradient(100deg, #EFE9DC 30%, #FAF6EC 50%, #EFE9DC 70%);
+  background-size: 220% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+@keyframes shimmer {
+  from { background-position: 120% 0; }
+  to   { background-position: -120% 0; }
+}
+
+/* ---------- Bottom nav: the active icon pops, the highlight springs ---------- */
+@keyframes navPop {
+  0%   { transform: translateY(0) scale(0.8); }
+  55%  { transform: translateY(-4px) scale(1.22); }
+  100% { transform: translateY(-1px) scale(1.06); }
+}
+.bottom-nav a.active svg {
+  animation: navPop 0.5s var(--ease-spring);
+}
+.bottom-nav {
+  box-shadow: 0 14px 36px rgba(36, 31, 26, 0.14), 0 2px 8px rgba(36, 31, 26, 0.06),
+              0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+}
+
+/* ---------- Inputs: a gradient glow instead of a flat outline on focus ---------- */
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-solid);
+  box-shadow: 0 0 0 4px rgba(214, 60, 120, 0.12), 0 6px 18px rgba(155, 63, 208, 0.10);
+  transform: translateY(-1px);
+}
+
+/* ---------- Toasts: dark glass with a gradient hairline ---------- */
+.toast-bubble {
+  background: rgba(36, 31, 26, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24), 0 0 0 1.5px rgba(240, 69, 123, 0.55);
+}
+
+/* ---------- Celebration burst: confetti that fans out when something saves ---------- */
+.burst-host {
+  position: fixed;
+  left: 50%;
+  bottom: 118px;
+  width: 0;
+  height: 0;
+  z-index: 101;
+  pointer-events: none;
+}
+.burst-dot {
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: hsl(var(--h), 92%, 60%);
+  animation: burstOut 0.95s var(--ease-fluid) forwards;
+}
+.burst-dot.bar {
+  width: 5px;
+  height: 11px;
+  border-radius: 2px;
+}
+@keyframes burstOut {
+  0%   { transform: translate(0, 0) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(0.5); opacity: 0; }
+}
+
+/* ---------- Respect people who ask their device for less motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
