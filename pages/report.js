@@ -155,7 +155,7 @@ export default function ReportPage() {
           <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
             <ArrowLeft size={12} /> Expense ledger
           </a>
-          <div className="lora" style={{ fontSize: 24, fontWeight: 600 }}>Monthly Report</div>
+          <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Monthly Report</div>
           <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Money, movies, and diet — one end-of-month picture.</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
