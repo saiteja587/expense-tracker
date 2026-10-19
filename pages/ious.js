@@ -151,7 +151,7 @@ export default function IousPage() {
           <ArrowLeft size={12} /> Expense ledger
         </a>
         <div className="lora" style={{ fontSize: 24, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-          <HandCoins size={22} color="#A34A38" /> Who owes what
+          <HandCoins size={22} color="#A34A38" /> <span className="gradient-title">Who owes what</span>
         </div>
         <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Track money owed to you and money you owe others. Doesn't touch your balance.</div>
       </div>
