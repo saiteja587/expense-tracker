@@ -23,7 +23,8 @@
      story rings, the nav highlight and the title. */
   --accent-gradient: linear-gradient(135deg, #FF8A3D 0%, #F0457B 38%, #9B3FD0 72%, #4F6BED 100%);
   --accent-solid: #D63C78;
-  --accent-glow: 0 6px 20px rgba(214, 60, 120, 0.32), 0 2px 6px rgba(155, 63, 208, 0.2);
+  --accent-rgb: 214, 60, 120;
+  --accent-glow: 0 6px 20px rgba(var(--accent-rgb), 0.32), 0 2px 6px rgba(var(--accent-rgb), 0.18);
 }
 
 * {
@@ -162,12 +163,31 @@ a {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ---------- Dark mode ---------- */
+/* ---------- Dark mode ----------
+   The whole page is inverted (light surfaces become deep charcoal, dark text
+   becomes light) and hue-rotated back so colours keep their identity. The
+   html background is the LIGHT page colour on purpose: the filter flips it
+   dark along with everything else. Anything that should keep its true
+   colours — photos, the vivid gradient, icons, confetti — is flipped back
+   a second time, so the gradient glow stays vivid against the dark. */
 html[data-theme="dark"] {
-  filter: invert(0.92) hue-rotate(180deg);
-  background: #1a1712;
+  filter: invert(0.93) hue-rotate(180deg);
+  background: #FBF8F2;
 }
-html[data-theme="dark"] img, html[data-theme="dark"] video {
+html[data-theme="dark"] img,
+html[data-theme="dark"] video,
+html[data-theme="dark"] body::before,
+html[data-theme="dark"] .gradient-title,
+html[data-theme="dark"] .bottom-nav-highlight,
+html[data-theme="dark"] .burst-dot,
+html[data-theme="dark"] .confetti-piece,
+html[data-theme="dark"] .heart-pop,
+html[data-theme="dark"] .cat-icon,
+html[data-theme="dark"] .theme-swatch,
+html[data-theme="dark"] .pill,
+html[data-theme="dark"] button[type="submit"]:not(:disabled),
+html[data-theme="dark"] button[style*="background:#241F1A"]:not(:disabled),
+html[data-theme="dark"] button[style*="background: rgb(36, 31, 26)"]:not(:disabled) {
   filter: invert(1) hue-rotate(180deg);
 }
 
@@ -397,7 +417,7 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(40% 35% at 20% 25%, rgba(255, 138, 61, 0.16), transparent 70%),
+    radial-gradient(40% 35% at 20% 25%, rgba(var(--accent-rgb), 0.16), transparent 70%),
     radial-gradient(35% 35% at 80% 20%, rgba(155, 63, 208, 0.13), transparent 70%),
     radial-gradient(40% 40% at 70% 85%, rgba(79, 107, 237, 0.12), transparent 70%),
     radial-gradient(35% 35% at 15% 80%, rgba(47, 111, 94, 0.10), transparent 70%);
@@ -519,7 +539,7 @@ button[style*="background: rgb(36, 31, 26)"]:not(:disabled):active {
     var(--accent-gradient) border-box !important;
   background-size: 100% 100%, 260% 260% !important;
   animation: gradientFlow 6s ease infinite;
-  box-shadow: 0 3px 12px rgba(214, 60, 120, 0.14);
+  box-shadow: 0 3px 12px rgba(var(--accent-rgb), 0.14);
   transition: transform 0.2s var(--ease-spring), box-shadow 0.2s var(--ease-fluid);
 }
 .story-chip.idle {
@@ -586,7 +606,7 @@ button[style*="background: rgb(36, 31, 26)"]:not(:disabled):active {
 /* ---------- Inputs: a gradient glow instead of a flat outline on focus ---------- */
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent-solid);
-  box-shadow: 0 0 0 4px rgba(214, 60, 120, 0.12), 0 6px 18px rgba(155, 63, 208, 0.10);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.12), 0 6px 18px rgba(var(--accent-rgb), 0.10);
   transform: translateY(-1px);
 }
 
@@ -595,7 +615,7 @@ input:focus, select:focus, textarea:focus {
   background: rgba(36, 31, 26, 0.92);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24), 0 0 0 1.5px rgba(240, 69, 123, 0.55);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24), 0 0 0 1.5px rgba(var(--accent-rgb), 0.55);
 }
 
 /* ---------- Celebration burst: confetti that fans out when something saves ---------- */
@@ -636,4 +656,225 @@ input:focus, select:focus, textarea:focus {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* =========================================================================
+   SECOND WAVE — swipe pages, collapsing bar, rows that move, icons,
+   streak ring, celebrations, theme swatches.
+   ========================================================================= */
+
+/* ---------- Page slide: swiping or tapping between tabs slides the new page in ---------- */
+@keyframes slideFromRight {
+  from { opacity: 0; transform: translate3d(46px, 0, 0); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes slideFromLeft {
+  from { opacity: 0; transform: translate3d(-46px, 0, 0); }
+  to   { opacity: 1; transform: none; }
+}
+.route-wrap.from-right { animation: slideFromRight 0.38s var(--ease-fluid); }
+.route-wrap.from-left  { animation: slideFromLeft 0.38s var(--ease-fluid); }
+
+/* ---------- Collapsing top bar: the page title shrinks into a slim glass bar as you scroll ---------- */
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 42;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(46px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+  background: rgba(255, 253, 248, 0.78);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border-bottom: 1px solid rgba(217, 210, 194, 0.55);
+  box-shadow: 0 6px 20px rgba(36, 31, 26, 0.06);
+  transform: translateY(-110%);
+  opacity: 0;
+  transition: transform 0.32s var(--ease-fluid), opacity 0.25s ease;
+  pointer-events: none;
+}
+.top-bar.show {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+.top-bar-title {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  background: var(--accent-gradient);
+  background-size: 220% 220%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientFlow 7s ease infinite;
+  transform: scale(0.9);
+  transition: transform 0.32s var(--ease-spring);
+}
+.top-bar.show .top-bar-title { transform: scale(1); }
+html[data-theme="dark"] .top-bar-title { filter: invert(1) hue-rotate(180deg); }
+
+/* ---------- Rows that move: new entries pop in, deleted ones shrink away ---------- */
+@keyframes rowPop {
+  0%   { opacity: 0; transform: translateY(-14px) scale(0.94); background: rgba(var(--accent-rgb), 0.16); }
+  60%  { opacity: 1; transform: translateY(0) scale(1.015); }
+  100% { opacity: 1; transform: none; background: transparent; }
+}
+.row-new { animation: rowPop 0.75s var(--ease-spring); }
+@keyframes rowLeave {
+  0%   { max-height: 96px; opacity: 1; transform: none; }
+  100% { max-height: 0; opacity: 0; transform: translateX(-36px); }
+}
+.row-leave {
+  overflow: hidden;
+  animation: rowLeave 0.32s var(--ease-fluid) forwards;
+}
+
+/* ---------- Category icons ---------- */
+.cat-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  box-shadow: 0 3px 9px rgba(36, 31, 26, 0.18);
+}
+
+/* ---------- Bars fill from the left instead of appearing at full length ---------- */
+@keyframes barGrow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.bar-grow {
+  transform-origin: left center;
+  animation: barGrow 0.9s var(--ease-fluid) backwards;
+}
+
+/* ---------- Streak: a progress ring with a flame that grows with the streak ---------- */
+.streak-ring {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: conic-gradient(from 200deg, var(--ring-a) 0 calc(var(--p) * 1%), #E7E0D0 0);
+  box-shadow: 0 0 calc(var(--glow) * 1px) rgba(var(--accent-rgb), 0.5);
+  transition: box-shadow 0.6s ease;
+}
+.streak-ring::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: #FFFDF8;
+}
+.streak-ring > * { position: relative; }
+.streak-flame {
+  filter: drop-shadow(0 0 calc(var(--glow) * 0.5px) var(--flame));
+  animation: flameFlicker 1.6s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+@keyframes flameFlicker {
+  0%, 100% { transform: scale(1) rotate(-1deg); }
+  35% { transform: scale(1.08) rotate(1.5deg); }
+  70% { transform: scale(0.97) rotate(-1.5deg); }
+}
+
+/* ---------- Double-tap heart ---------- */
+.heart-pop {
+  position: fixed;
+  z-index: 103;
+  font-size: 88px;
+  line-height: 1;
+  margin: -44px 0 0 -44px;
+  pointer-events: none;
+  filter: drop-shadow(0 8px 18px rgba(240, 69, 123, 0.5));
+  animation: heartPop 0.95s var(--ease-spring) forwards;
+}
+@keyframes heartPop {
+  0%   { transform: scale(0) rotate(-12deg); opacity: 0; }
+  25%  { transform: scale(1.25) rotate(6deg); opacity: 1; }
+  45%  { transform: scale(0.95) rotate(0deg); }
+  100% { transform: translateY(-90px) scale(1.05); opacity: 0; }
+}
+
+/* ---------- Milestone celebration: confetti rain + a reward card ---------- */
+.celebrate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 102;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(36, 31, 26, 0.45);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fadeInPlain 0.25s ease;
+}
+@keyframes fadeInPlain {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.celebrate-card {
+  position: relative;
+  z-index: 2;
+  max-width: 300px;
+  margin: 0 24px;
+  padding: 30px 26px 24px;
+  text-align: center;
+  background: #FFFDF8;
+  border-radius: 28px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  animation: cardIn 0.55s var(--ease-spring);
+}
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(40px) scale(0.8); }
+  to   { opacity: 1; transform: none; }
+}
+.celebrate-trophy {
+  font-size: 58px;
+  line-height: 1;
+  animation: trophyBounce 1.2s var(--ease-spring) infinite alternate;
+}
+@keyframes trophyBounce {
+  from { transform: translateY(0) rotate(-6deg); }
+  to   { transform: translateY(-8px) rotate(6deg); }
+}
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  background: hsl(var(--h), 90%, 58%);
+  animation: confettiFall var(--dur) linear var(--delay) forwards;
+}
+@keyframes confettiFall {
+  0%   { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate3d(var(--drift), 108vh, 0) rotate(var(--spin)); opacity: 0.9; }
+}
+
+/* ---------- Theme swatches (Settings) ---------- */
+.theme-swatch {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  cursor: pointer;
+  padding: 0;
+  box-shadow: 0 0 0 2px #E5DFD1, 0 6px 14px rgba(36, 31, 26, 0.15);
+  transition: transform 0.25s var(--ease-spring), box-shadow 0.25s ease;
+}
+.theme-swatch.active {
+  box-shadow: 0 0 0 3px var(--accent-solid), 0 8px 18px rgba(36, 31, 26, 0.2);
+  transform: scale(1.12);
 }
