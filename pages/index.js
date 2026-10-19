@@ -7,6 +7,8 @@ import { vibrate } from "../lib/haptics";
 import { fileToCompressedDataUrl } from "../lib/receiptImage";
 import SwipeRow from "../components/SwipeRow";
 import PullToRefresh from "../components/PullToRefresh";
+import CountUp from "../components/CountUp";
+import CategoryIcon from "../components/CategoryIcon";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -79,6 +81,9 @@ function useCountUp(target, durationMs = 500) {
 
 export default function Page() {
   const [expenses, setExpenses] = useState([]);
+  const [freshIds, setFreshIds] = useState([]);
+  const [removingIds, setRemovingIds] = useState([]);
+  const seenIds = useRef(null);
   const [movies, setMovies] = useState([]);
   const [topups, setTopups] = useState([]);
   const [budgetRules, setBudgetRules] = useState([]);
@@ -518,10 +523,27 @@ export default function Page() {
     }
   }
 
+  // Spot entries that weren't there a moment ago so they can pop in.
+  useEffect(() => {
+    if (expenses.length === 0) return;
+    const ids = new Set(expenses.map((x) => x.id));
+    if (seenIds.current) {
+      const added = expenses.filter((x) => !seenIds.current.has(x.id)).map((x) => x.id);
+      if (added.length > 0 && added.length <= 3) {
+        setFreshIds(added);
+        setTimeout(() => setFreshIds([]), 900);
+      }
+    }
+    seenIds.current = ids;
+  }, [expenses]);
+
   async function removeExpense(id) {
     if (!window.confirm("Delete this expense? This can't be undone.")) return;
     const prev = expenses;
+    setRemovingIds((r) => [...r, id]);
+    await new Promise((r) => setTimeout(r, 300));
     setExpenses(expenses.filter((x) => x.id !== id));
+    setRemovingIds((r) => r.filter((x) => x !== id));
     try {
       const res = await fetch(`/api/data?type=expenses&id=${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
@@ -908,7 +930,7 @@ export default function Page() {
         <div>
           <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>Spent in {MONTH_NAMES[month]}</div>
           <div className="lora tabnum" style={{ fontSize: "clamp(30px, 9vw, 44px)", fontWeight: 600, lineHeight: 1 }}>
-            {fmt(spentSoFar)}
+            <CountUp value={spentSoFar} format={fmt} />
           </div>
           <div style={{ fontSize: 11, color: "#8a8477", marginTop: 4 }}>Includes movie tickets and canteen spend</div>
         </div>
@@ -923,7 +945,7 @@ export default function Page() {
       {upcomingTotal > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#A3763F", marginBottom: 40 }}>
           <Clock size={14} />
-          <span><strong className="tabnum">{fmt(upcomingTotal)}</strong> scheduled later this month ({upcomingItems.length} item{upcomingItems.length !== 1 ? "s" : ""}, not yet deducted from balance)</span>
+          <span><strong className="tabnum"><CountUp value={upcomingTotal} format={fmt} /></strong> scheduled later this month ({upcomingItems.length} item{upcomingItems.length !== 1 ? "s" : ""}, not yet deducted from balance)</span>
         </div>
       )}
       {upcomingTotal === 0 && <div style={{ marginBottom: upcomingTotal > 0 || overallBreach || categoryBreaches.length > 0 ? 0 : 40 }} />}
@@ -1120,10 +1142,11 @@ export default function Page() {
                     {items.map((x) => {
                       const isMovie = x.category === MOVIE_CATEGORY.name;
                       const canSwipeDelete = !isMovie && !x.pending && !x.isRecurringPending;
+                      const rowClass = removingIds.includes(x.id) ? "row-leave" : freshIds.includes(x.id) ? "row-new" : "";
                       const row = (
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EAE5D9", gap: 12, background: "#FBF8F2" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: catColor(x.category), flexShrink: 0 }} />
+                            <CategoryIcon category={x.category} color={catColor(x.category)} size={34} />
                             {x.receiptPhoto && (
                               <img
                                 src={x.receiptPhoto}
@@ -1164,9 +1187,9 @@ export default function Page() {
                         </div>
                       );
                       return canSwipeDelete ? (
-                        <SwipeRow key={x.id} onDelete={() => removeExpense(x.id)}>{row}</SwipeRow>
+                        <SwipeRow key={x.id} className={rowClass} onDelete={() => removeExpense(x.id)}>{row}</SwipeRow>
                       ) : (
-                        <div key={x.id}>{row}</div>
+                        <div key={x.id} className={rowClass}>{row}</div>
                       );
                     })}
                   </div>
