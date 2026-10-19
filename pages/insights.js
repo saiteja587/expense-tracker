@@ -119,7 +119,7 @@ export default function InsightsPage() {
         <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
         </a>
-        <div className="lora" style={{ fontSize: 24, fontWeight: 600 }}>Patterns</div>
+        <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Patterns</div>
         <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
           Real connections between your money, movies, and diet — things a single-purpose app could never show you.
         </div>
