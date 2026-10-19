@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { ArrowLeft, Pencil, Trash2, Check, X, Plus } from "lucide-react";
+import CountUp from "../components/CountUp";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -30,7 +31,7 @@ function ProgressBar({ spent, limit }) {
   const color = over ? "#A34A38" : pct > 75 ? "#C98A2C" : "#2F6F5E";
   return (
     <div style={{ height: 6, background: "#EAE5D9", borderRadius: 4, overflow: "hidden", marginTop: 6 }}>
-      <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 4, transition: "width 0.2s" }} />
+      <div className="bar-grow" style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 4, transition: "width 0.6s var(--ease-fluid)" }} />
     </div>
   );
 }
@@ -301,7 +302,7 @@ export default function BudgetPage() {
         <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
         </a>
-        <div className="lora" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
+        <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
           Money Rules
         </div>
         <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
@@ -351,7 +352,7 @@ export default function BudgetPage() {
             {overallRule ? (
               <>
                 <div style={{ fontSize: 13, color: "#5f5a4f", marginTop: 4 }}>
-                  <span className="tabnum">{fmt(overallSpent)}</span> of <span className="tabnum">{fmt(overallRule.amount)}</span> spent this month
+                  <span className="tabnum"><CountUp value={overallSpent} format={fmt} /></span> of <span className="tabnum">{fmt(overallRule.amount)}</span> spent this month
                   {overallSpent > overallRule.amount && <span style={{ color: "#A34A38", fontWeight: 500 }}> — over by {fmt(overallSpent - overallRule.amount)}</span>}
                 </div>
                 <ProgressBar spent={overallSpent} limit={overallRule.amount} />
@@ -520,7 +521,7 @@ export default function BudgetPage() {
                   <span style={{ fontSize: 14, fontWeight: 500 }}>{r.category}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tabnum" style={{ fontSize: 13, color: "#5f5a4f" }}>{fmt(spent)} / {fmt(effectiveLimit)}</span>
+                  <span className="tabnum" style={{ fontSize: 13, color: "#5f5a4f" }}><CountUp value={spent} format={fmt} /> / {fmt(effectiveLimit)}</span>
                   <button onClick={() => { setEditingCategory(r.category); setEditCatAmount(String(r.amount)); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}><Pencil size={13} /></button>
                   <button onClick={() => removeRule(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}><Trash2 size={13} /></button>
                 </div>
