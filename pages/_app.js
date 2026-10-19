@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import "../styles/globals.css";
 import { flushQueue, getQueue } from "../lib/offlineQueue";
 import { isSessionValid, extendSession, clearSession } from "../lib/unlockSession";
+import { vibrate } from "../lib/haptics";
 import { Home, Clapperboard, PiggyBank, Flame, Settings as SettingsIcon, Download, X } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -14,13 +15,73 @@ const NAV_ITEMS = [
   { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
+// Emojis that mark something genuinely worth celebrating (a save, a
+// milestone) — plain errors and info toasts don't get confetti.
+const CELEBRATE = new Set(["✅", "💰", "🔥", "🎉", "🏆", "✨", "📥"]);
+
+function makeBurst() {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const dots = Array.from({ length: 18 }, (_, i) => {
+    const angle = (Math.PI * (0.1 + 0.8 * Math.random())) * -1 + (Math.random() - 0.5) * 0.2; // fan upward
+    const dist = 70 + Math.random() * 90;
+    return {
+      key: i,
+      bar: i % 3 === 0,
+      style: {
+        "--h": Math.floor(Math.random() * 360),
+        "--dx": `${Math.cos(angle) * dist}px`,
+        "--dy": `${Math.sin(angle) * dist}px`,
+        "--rot": `${Math.floor(Math.random() * 540 - 270)}deg`,
+      },
+    };
+  });
+  return { id, dots };
+}
+
+// Any tap on a button (or a nav icon / story chip) gets a ripple that grows
+// from the exact point of contact, plus a barely-there haptic tick on phones
+// that support it. One listener on the document covers every button on every
+// page, including ones added later.
+function useTapFeedback() {
+  useEffect(() => {
+    function onDown(e) {
+      const el = e.target.closest && e.target.closest("button, .bottom-nav a, .story-chip");
+      if (!el || el.disabled) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const size = Math.max(rect.width, rect.height) * 2;
+      const ripple = document.createElement("span");
+      ripple.className = "rfx";
+      ripple.style.width = ripple.style.height = `${size}px`;
+      ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
+      ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
+      el.classList.add("rfx-host");
+      el.appendChild(ripple);
+      vibrate(4);
+      setTimeout(() => {
+        ripple.remove();
+        if (!el.querySelector(".rfx")) el.classList.remove("rfx-host");
+      }, 650);
+    }
+    document.addEventListener("pointerdown", onDown, { passive: true });
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, []);
+}
+
 function ToastHost() {
   const [toasts, setToasts] = useState([]);
+  const [bursts, setBursts] = useState([]);
+  useTapFeedback();
 
   useEffect(() => {
     function handleToast(e) {
       const toast = { ...e.detail, leaving: false };
       setToasts((prev) => [...prev, toast]);
+      if (CELEBRATE.has(toast.emoji)) {
+        const burst = makeBurst();
+        setBursts((prev) => [...prev, burst]);
+        setTimeout(() => setBursts((prev) => prev.filter((b) => b.id !== burst.id)), 1100);
+      }
       setTimeout(() => {
         setToasts((prev) => prev.map((t) => (t.id === toast.id ? { ...t, leaving: true } : t)));
       }, 1800);
@@ -32,16 +93,26 @@ function ToastHost() {
     return () => window.removeEventListener("app:toast", handleToast);
   }, []);
 
-  if (toasts.length === 0) return null;
   return (
-    <div className="toast-host">
-      {toasts.map((t) => (
-        <div key={t.id} className={`toast-bubble${t.leaving ? " leaving" : ""}`}>
-          {t.emoji && <span>{t.emoji}</span>}
-          {t.message}
+    <>
+      {bursts.map((b) => (
+        <div key={b.id} className="burst-host">
+          {b.dots.map((d) => (
+            <span key={d.key} className={`burst-dot${d.bar ? " bar" : ""}`} style={d.style} />
+          ))}
         </div>
       ))}
-    </div>
+      {toasts.length > 0 && (
+        <div className="toast-host">
+          {toasts.map((t) => (
+            <div key={t.id} className={`toast-bubble${t.leaving ? " leaving" : ""}`}>
+              {t.emoji && <span>{t.emoji}</span>}
+              {t.message}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
