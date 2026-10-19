@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { THEMES, getTheme, saveTheme } from "../lib/theme";
 import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy, Fingerprint } from "lucide-react";
 
 const BASE_CATEGORY_COLORS = ["#B5533C", "#C98A2C", "#3F6E5B", "#5B3A5C", "#2F4858", "#A3763F", "#6B7A3E", "#8A4B6B", "#6B6558"];
 
 export default function SettingsPage() {
+  const [accent, setAccent] = useState("sunset");
   const [categories, setCategories] = useState([]);
   const [newCat, setNewCat] = useState("");
   const [theatres, setTheatres] = useState([]);
@@ -234,6 +236,15 @@ export default function SettingsPage() {
     navigator.clipboard?.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  useEffect(() => {
+    setAccent(getTheme());
+  }, []);
+
+  function pickAccent(name) {
+    setAccent(name);
+    saveTheme(name);
   }
 
   function toggleDarkMode() {
@@ -561,7 +572,7 @@ export default function SettingsPage() {
         <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
         </a>
-        <div className="lora" style={{ fontSize: 24, fontWeight: 600 }}>Settings</div>
+        <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Settings</div>
       </div>
 
       {/* Data backup */}
@@ -653,6 +664,26 @@ export default function SettingsPage() {
         <button onClick={toggleDarkMode} style={{ background: darkMode ? "#241F1A" : "#EAE5D9", color: darkMode ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 20, padding: "6px 16px", fontSize: 12, cursor: "pointer" }}>
           {darkMode ? "On" : "Off"}
         </button>
+      </div>
+
+      {/* Accent theme */}
+      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Colour theme</div>
+        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 14 }}>Changes the buttons, titles, glow and highlights everywhere.</div>
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
+          {Object.entries(THEMES).map(([key, t]) => (
+            <div key={key} style={{ textAlign: "center" }}>
+              <button
+                type="button"
+                className={`theme-swatch${accent === key ? " active" : ""}`}
+                aria-label={`${t.label} theme`}
+                onClick={() => pickAccent(key)}
+                style={{ background: t.gradient }}
+              />
+              <div style={{ fontSize: 11, marginTop: 6, color: accent === key ? "#241F1A" : "#8a8477", fontWeight: accent === key ? 600 : 400 }}>{t.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* PIN lock */}
