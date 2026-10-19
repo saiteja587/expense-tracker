@@ -72,7 +72,7 @@ export default function SearchPage() {
         <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
         </a>
-        <div className="lora" style={{ fontSize: 24, fontWeight: 600 }}>Search</div>
+        <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Search</div>
         <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Across every expense, movie, and diet note you've logged.</div>
       </div>
 
