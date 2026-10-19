@@ -692,8 +692,15 @@ export default function Page() {
 
   if (!loaded) {
     return (
-      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>
-        Loading your ledger…
+      <div className="page-container" style={{ maxWidth: 920, margin: "0 auto", padding: "40px 24px 64px" }}>
+        <div className="skeleton" style={{ height: 30, width: 190, marginBottom: 10 }} />
+        <div className="skeleton" style={{ height: 14, width: 270, maxWidth: "100%", marginBottom: 30 }} />
+        <div className="skeleton" style={{ height: 36, width: 230, maxWidth: "100%", marginBottom: 22, borderRadius: 999 }} />
+        <div className="skeleton" style={{ height: 112, marginBottom: 28, borderRadius: 20 }} />
+        <div className="skeleton" style={{ height: 46, width: 210, marginBottom: 28 }} />
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="skeleton" style={{ height: 54, marginBottom: 10 }} />
+        ))}
       </div>
     );
   }
@@ -709,7 +716,7 @@ export default function Page() {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, gap: 12 }}>
         <div style={{ minWidth: 0 }}>
-          <div className="lora" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em", whiteSpace: "nowrap" }}>
+          <div className="lora gradient-title" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>
             Expense Ledger
           </div>
           <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
@@ -781,15 +788,15 @@ export default function Page() {
 
       {/* Daily snapshot: money, movies, diet in one glance */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
-        <a href="/sugar-challenge" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
+        <a href="/sugar-challenge" className={`story-chip${currentStreak > 0 ? "" : " idle"}`} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
           <Flame size={13} color={currentStreak > 0 ? "#C98A2C" : "#C4BDAC"} className={currentStreak > 0 ? "pulse-flame" : ""} />
           {challengeMeta ? `${currentStreak}-day streak` : "No challenge running"}
         </a>
-        <a href="/movies" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
+        <a href="/movies" className={`story-chip${moviesThisMonth > 0 ? "" : " idle"}`} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
           <Clapperboard size={13} color="#7A3E56" />
           {moviesThisMonth} movie{moviesThisMonth !== 1 ? "s" : ""} this month
         </a>
-        <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
+        <span className={`story-chip${overallBreach || categoryBreaches.length > 0 ? " idle" : ""}`} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
           {overallBreach || categoryBreaches.length > 0 ? <ShieldAlert size={13} color="#A34A38" /> : <ShieldCheck size={13} color="#2F6F5E" />}
           {overallBreach || categoryBreaches.length > 0 ? "Over a budget rule" : "On budget"}
         </span>
