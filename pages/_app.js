@@ -5,6 +5,7 @@ import "../styles/globals.css";
 import { flushQueue, getQueue } from "../lib/offlineQueue";
 import { isSessionValid, extendSession, clearSession } from "../lib/unlockSession";
 import { vibrate } from "../lib/haptics";
+import { applyTheme, getTheme } from "../lib/theme";
 import { Home, Clapperboard, PiggyBank, Flame, Settings as SettingsIcon, Download, X } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -14,6 +15,17 @@ const NAV_ITEMS = [
   { href: "/sugar-challenge", label: "Diet", Icon: Flame },
   { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
+
+// Which way the next page should slide in. Set just before navigating by
+// a tab tap or a swipe, read when the new page mounts.
+let navDirection = "";
+function goToTab(router, href, fromHref) {
+  const a = NAV_ITEMS.findIndex((i) => i.href === fromHref);
+  const b = NAV_ITEMS.findIndex((i) => i.href === href);
+  navDirection = b > a ? "from-right" : "from-left";
+  vibrate(6);
+  router.push(href);
+}
 
 // Emojis that mark something genuinely worth celebrating (a save, a
 // milestone) — plain errors and info toasts don't get confetti.
@@ -116,7 +128,7 @@ function ToastHost() {
   );
 }
 
-function BottomNav({ currentPath }) {
+function BottomNav({ currentPath, router }) {
   const navRef = useRef(null);
   const itemRefs = useRef([]);
   const [highlight, setHighlight] = useState(null);
@@ -148,6 +160,11 @@ function BottomNav({ currentPath }) {
               ref={(el) => (itemRefs.current[i] = el)}
               className={active ? "active" : ""}
               aria-label={label}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+                e.preventDefault();
+                if (!active) goToTab(router, href, currentPath);
+              }}
             >
               <Icon size={22} strokeWidth={active ? 2.3 : 1.7} />
               <span className="nav-dot" />
@@ -156,6 +173,109 @@ function BottomNav({ currentPath }) {
         })}
       </nav>
     </div>
+  );
+}
+
+// Title shrinks into a slim glass bar once the page's big title scrolls away.
+function CollapsingBar({ pathname }) {
+  const [title, setTitle] = useState("");
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    setShow(false);
+    const t = setTimeout(() => {
+      const el = document.querySelector(".gradient-title");
+      setTitle(el ? el.textContent.trim() : "");
+    }, 250);
+    function onScroll() {
+      setShow(window.scrollY > 90);
+    }
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [pathname]);
+
+  if (pathname === "/pause" || !title) return null;
+  return (
+    <div className={`top-bar${show ? " show" : ""}`} aria-hidden="true">
+      <span className="top-bar-title">{title}</span>
+    </div>
+  );
+}
+
+// Full-screen confetti + reward card for streak milestones, and the
+// double-tap heart. Pages only fire events (lib/celebrate).
+function CelebrationHost() {
+  const [party, setParty] = useState(null);
+  const [hearts, setHearts] = useState([]);
+
+  useEffect(() => {
+    function onMilestone(e) {
+      const pieces = Array.from({ length: 70 }, (_, i) => ({
+        key: i,
+        style: {
+          left: `${Math.random() * 100}%`,
+          "--h": Math.floor(Math.random() * 360),
+          "--dur": `${2.2 + Math.random() * 1.8}s`,
+          "--delay": `${Math.random() * 0.9}s`,
+          "--drift": `${Math.floor(Math.random() * 160 - 80)}px`,
+          "--spin": `${Math.floor(Math.random() * 900 - 450)}deg`,
+        },
+      }));
+      setParty({ ...e.detail, pieces, id: Date.now() });
+      vibrate([20, 40, 20, 40, 60]);
+    }
+    function onHeart(e) {
+      const h = { id: `${Date.now()}-${Math.random()}`, x: e.detail.x, y: e.detail.y };
+      setHearts((prev) => [...prev, h]);
+      vibrate(15);
+      setTimeout(() => setHearts((prev) => prev.filter((x) => x.id !== h.id)), 1000);
+    }
+    window.addEventListener("app:milestone", onMilestone);
+    window.addEventListener("app:heart", onHeart);
+    return () => {
+      window.removeEventListener("app:milestone", onMilestone);
+      window.removeEventListener("app:heart", onHeart);
+    };
+  }, []);
+
+  return (
+    <>
+      {hearts.map((h) => (
+        <div key={h.id} className="heart-pop" style={{ left: h.x, top: h.y }}>
+          💚
+        </div>
+      ))}
+      {party && (
+        <div className="celebrate-overlay" onClick={() => setParty(null)}>
+          {party.pieces.map((p) => (
+            <span key={p.key} className="confetti-piece" style={p.style} />
+          ))}
+          <div className="celebrate-card" onClick={(e) => e.stopPropagation()}>
+            <div className="celebrate-trophy">🏆</div>
+            <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 24, fontWeight: 700, marginTop: 10, color: "#241F1A" }}>
+              {party.day}-day streak!
+            </div>
+            {party.reward ? (
+              <div style={{ marginTop: 10, fontSize: 14, lineHeight: 1.45, color: "#4A4338" }}>
+                Your reward: <strong>{party.reward}</strong>
+              </div>
+            ) : (
+              <div style={{ marginTop: 10, fontSize: 14, color: "#6B6558" }}>Keep it going — you're unstoppable.</div>
+            )}
+            <button
+              onClick={() => setParty(null)}
+              style={{ marginTop: 18, background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 999, padding: "10px 26px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+            >
+              Yay!
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -322,6 +442,11 @@ export default function App({ Component, pageProps }) {
   const [isOnline, setIsOnline] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
 
+  const routerRef = useRef(router);
+  routerRef.current = router;
+  const pathRef = useRef(router.pathname);
+  pathRef.current = router.pathname;
+
   function refreshPending() {
     setPendingCount(getQueue().length);
   }
@@ -344,6 +469,7 @@ export default function App({ Component, pageProps }) {
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     const interval = setInterval(refreshPending, 5000);
+    applyTheme(getTheme());
     if (document.documentElement.getAttribute("data-theme") === "dark" || localStorage.getItem("darkMode") === "1") {
       document.documentElement.setAttribute("data-theme", "dark");
     }
@@ -382,7 +508,33 @@ export default function App({ Component, pageProps }) {
       }
     }, 30 * 1000);
 
+    // Swipe left/right anywhere (except inputs, rows with their own swipe,
+    // and scrollable strips) to move between the bottom-nav tabs.
+    let sx = 0, sy = 0, st = 0, swipeOk = false;
+    function onTouchStart(e) {
+      const t = e.touches[0];
+      sx = t.clientX; sy = t.clientY; st = Date.now();
+      const el = e.target;
+      swipeOk =
+        e.touches.length === 1 &&
+        !(el.closest && el.closest("input, textarea, select, [data-no-tab-swipe], .no-swipe, [role='dialog']"));
+    }
+    function onTouchEnd(e) {
+      if (!swipeOk) return;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Math.abs(dx) < 90 || Math.abs(dy) > 55 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - st > 600) return;
+      const cur = NAV_ITEMS.findIndex((i) => i.href === pathRef.current);
+      if (cur === -1) return;
+      const next = NAV_ITEMS[cur + (dx < 0 ? 1 : -1)];
+      if (next) goToTab(routerRef.current, next.href, pathRef.current);
+    }
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchend", onTouchEnd, { passive: true });
+
     return () => {
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchend", onTouchEnd);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       clearInterval(interval);
@@ -416,10 +568,14 @@ export default function App({ Component, pageProps }) {
                 : `Syncing ${pendingCount} change${pendingCount !== 1 ? "s" : ""}…`}
             </div>
           )}
-          <Component {...pageProps} />
+          <CollapsingBar pathname={router.pathname} />
+          <div key={router.pathname} className={`route-wrap ${navDirection}`}>
+            <Component {...pageProps} />
+          </div>
           <ToastHost />
+          <CelebrationHost />
           <InstallBanner />
-          <BottomNav currentPath={router.pathname} />
+          <BottomNav currentPath={router.pathname} router={router} />
         </>
       )}
     </>
