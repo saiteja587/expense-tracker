@@ -661,6 +661,54 @@ export default function Page() {
   const balanceColor = balanceStatus === "negative" ? "#A34A38" : balanceStatus === "low" ? "#C98A2C" : "#241F1A";
   const balancePanelBg = balanceStatus === "negative" ? "#FAECE7" : balanceStatus === "low" ? "#F7EEDD" : "#F1ECDF";
   const animatedBalance = useCountUp(balanceCalc.balance);
+
+  // ---- Forecast + safe-to-spend (current month only) ----
+  const forecast = useMemo(() => {
+    const now = new Date();
+    if (year !== now.getFullYear() || month !== now.getMonth()) return null;
+    const dim = new Date(year, month + 1, 0).getDate();
+    const dom = now.getDate();
+    const daysLeft = dim - dom + 1; // includes today
+    const spentBeforeToday = monthItems.filter((x) => x.date < today).reduce((s, x) => s + x.amount, 0);
+    const spentToday = monthItems.filter((x) => x.date === today).reduce((s, x) => s + x.amount, 0);
+    const pastDays = Math.max(1, dom - 1);
+    const dailyAvg = dom > 1 ? spentBeforeToday / pastDays : spentToday;
+    const projected = spentSoFar + upcomingTotal + dailyAvg * (dim - dom);
+    const upcomingDeducting = upcomingItems.filter((x) => x.affectsBalance !== false).reduce((s, x) => s + x.amount, 0);
+    // Money you can spend per day for the rest of the month without dipping below zero.
+    const pool = balanceCalc.balance + spentToday - upcomingDeducting;
+    const safePerDay = Math.max(0, pool / daysLeft);
+    return { dim, dom, daysLeft, projected, spentToday, safePerDay, dailyAvg, enough: dom >= 3 };
+  }, [monthItems, year, month, today, spentSoFar, upcomingTotal, upcomingItems, balanceCalc.balance]);
+
+  // ---- Quick-add chips: your most repeated entries, one tap to log ----
+  const quickChips = useMemo(() => {
+    const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    const map = {};
+    for (const x of expenses) {
+      if (x.category === MOVIE_CATEGORY.name || x.date < cutoff || x.pending) continue;
+      if (x.category === "Other" && !x.note) continue;
+      const key = `${x.category}|${x.note || ""}|${x.amount}`;
+      map[key] = map[key] || { category: x.category, note: x.note || "", amount: x.amount, count: 0 };
+      map[key].count++;
+    }
+    return Object.values(map).filter((c) => c.count >= 2).sort((a, b) => b.count - a.count).slice(0, 6);
+  }, [expenses]);
+
+  async function quickAdd(c) {
+    vibrate(12);
+    const payload = { type: "expenses", amount: c.amount, category: c.category, note: c.note, date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "" };
+    try {
+      const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error();
+      await load();
+      showToast(`${c.note || c.category} ${fmt(c.amount)} logged`, "✅");
+    } catch {
+      queueRequest({ url: "/api/data", method: "POST", body: payload });
+      setExpenses((prev) => [{ id: `pending-${Date.now()}`, ...c, date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "", pending: true }, ...prev]);
+      showToast("Saved — will sync once you're back online", "📥");
+    }
+  }
   const categoryRuleMap = useMemo(() => {
     const map = {};
     for (const r of budgetRules) if (r.ruleType === "category") map[r.category] = r.amount;
@@ -824,20 +872,64 @@ export default function Page() {
         </span>
       </div>
 
+      {forecast && (
+        <div className="panel-soft" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, padding: "14px 16px", marginBottom: 20, background: "#F1ECDF", borderRadius: 10 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "#8a8477" }}>Safe to spend per day</div>
+            <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700, color: forecast.safePerDay === 0 ? "#A34A38" : "#2F6F5E" }}>
+              <CountUp value={forecast.safePerDay} format={fmt} />
+            </div>
+            <div style={{ fontSize: 10, color: "#8a8477" }}>for the next {forecast.daysLeft} day{forecast.daysLeft !== 1 ? "s" : ""}, after scheduled items</div>
+            <div style={{ height: 5, background: "#E3DCC9", borderRadius: 4, overflow: "hidden", marginTop: 6 }}>
+              <div className="bar-grow" style={{ height: "100%", width: `${forecast.safePerDay > 0 ? Math.min(100, (forecast.spentToday / forecast.safePerDay) * 100) : 100}%`, background: forecast.spentToday > forecast.safePerDay ? "#A34A38" : "#2F6F5E", borderRadius: 4, transition: "width 0.5s var(--ease-fluid)" }} />
+            </div>
+            <div style={{ fontSize: 10, color: "#8a8477", marginTop: 3 }}>Today: {fmt(forecast.spentToday)} spent</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "#8a8477" }}>Month-end forecast</div>
+            {forecast.enough ? (
+              <>
+                <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700, color: overallRule && forecast.projected > overallRule.amount ? "#A34A38" : "#241F1A" }}>
+                  <CountUp value={forecast.projected} format={fmt} />
+                </div>
+                <div style={{ fontSize: 10, color: overallRule && forecast.projected > overallRule.amount ? "#A34A38" : "#8a8477" }}>
+                  {overallRule
+                    ? forecast.projected > overallRule.amount
+                      ? `~${fmt(forecast.projected - overallRule.amount)} over your ${fmt(overallRule.amount)} rule at this pace`
+                      : `within your ${fmt(overallRule.amount)} rule at this pace`
+                    : `at ~${fmt(forecast.dailyAvg)}/day so far`}
+                </div>
+              </>
+            ) : (
+              <div style={{ fontSize: 12, color: "#8a8477", marginTop: 6 }}>Needs a few days of data to forecast.</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {savingsGoal && savingsGoal.targetAmount > 0 && (() => {
         const pct = Math.min(100, Math.max(0, (balanceCalc.balance / savingsGoal.targetAmount) * 100));
         const daysLeft = savingsGoal.targetDate ? Math.ceil((new Date(savingsGoal.targetDate + "T00:00:00") - new Date(todayISO() + "T00:00:00")) / 86400000) : null;
+        const remaining = Math.max(0, savingsGoal.targetAmount - balanceCalc.balance);
+        const perDay = daysLeft && daysLeft > 0 ? remaining / daysLeft : null;
+        const done = pct >= 100;
         return (
-          <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "14px 16px", marginBottom: 20 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, flexWrap: "wrap", gap: 6 }}>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{savingsGoal.label || "Savings goal"}</div>
-              <div style={{ fontSize: 12, color: "#8a8477" }}>
-                <span className="tabnum">{fmt(balanceCalc.balance)}</span> of <span className="tabnum">{fmt(savingsGoal.targetAmount)}</span>
-                {daysLeft !== null && daysLeft >= 0 && <> · {daysLeft} day{daysLeft !== 1 ? "s" : ""} left</>}
-              </div>
+          <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 10, padding: "14px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16 }}>
+            <div className="streak-ring" style={{ width: 84, height: 84, "--p": pct, "--ring-a": done ? "#2F6F5E" : "var(--accent-solid)", "--glow": done ? 18 : 6 }}>
+              <span className="lora tabnum" style={{ fontSize: 17, fontWeight: 700, color: done ? "#2F6F5E" : "#241F1A" }}>
+                <CountUp value={Math.round(pct)} />%
+              </span>
             </div>
-            <div style={{ height: 6, background: "#EAE5D9", borderRadius: 4, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? "#2F6F5E" : "#A3763F", borderRadius: 4, transition: "width 0.3s" }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{savingsGoal.label || "Savings goal"} {done && "🎉"}</div>
+              <div style={{ fontSize: 12, color: "#8a8477", marginTop: 2 }}>
+                <span className="tabnum">{fmt(balanceCalc.balance)}</span> of <span className="tabnum">{fmt(savingsGoal.targetAmount)}</span>
+              </div>
+              {!done && daysLeft !== null && daysLeft >= 0 && (
+                <div style={{ fontSize: 11, color: "#8a8477", marginTop: 2 }}>
+                  {daysLeft} day{daysLeft !== 1 ? "s" : ""} left{perDay ? ` · save ~${fmt(perDay)}/day to hit it` : ""}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1006,6 +1098,15 @@ export default function Page() {
               </div>
             </div>
           {voiceError && <div style={{ fontSize: 11, color: "#A34A38", marginTop: -6, marginBottom: 10 }}>{voiceError}</div>}
+          {!editingExpenseId && quickChips.length > 0 && (
+            <div data-no-tab-swipe="1" style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6, marginBottom: 8 }}>
+              {quickChips.map((c) => (
+                <button key={`${c.category}|${c.note}|${c.amount}`} type="button" className="story-chip" onClick={() => quickAdd(c)} style={{ flexShrink: 0, background: "none", borderRadius: 20, padding: "6px 12px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", whiteSpace: "nowrap" }}>
+                  ⚡ {c.note || c.category} · {fmt(c.amount)}
+                </button>
+              ))}
+            </div>
+          )}
           <form onSubmit={submitExpense} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <input ref={amountInputRef} type="number" inputMode="decimal" placeholder="Amount (₹)" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} step="0.01" min="0" />
             <select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>
