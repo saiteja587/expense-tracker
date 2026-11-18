@@ -10,7 +10,10 @@ const memory = (() => {
 })();
 const inflight = {};
 
+// Only real poster URLs are saved on the device. A "no poster" answer isn't,
+// so adding TMDB_API_KEY later makes posters appear for movies already seen.
 function remember(key, url) {
+  if (!url) return;
   memory[key] = url;
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(memory)); } catch { /* full */ }
 }
@@ -20,7 +23,7 @@ async function lookup(title) {
   if (key in memory) return memory[key];
   inflight[key] = inflight[key] || fetch(`/api/data?type=poster&title=${encodeURIComponent(title)}`)
     .then((r) => (r.ok ? r.json() : { url: null }))
-    .then((d) => { remember(key, d.url || null); return d.url || null; })
+    .then((d) => { remember(key, d.url || null); delete inflight[key]; return d.url || null; })
     .catch(() => null);
   return inflight[key];
 }
