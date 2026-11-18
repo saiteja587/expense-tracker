@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import Jars from "../components/Jars";
 import { ArrowLeft, Pencil, Trash2, Check, X, Plus } from "lucide-react";
 import CountUp from "../components/CountUp";
 import { fmt, todayISO } from "../lib/format";
-import { describeChange } from "../lib/ledger";
+import { compareToUsual } from "../lib/ledger";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -180,7 +181,8 @@ export default function BudgetPage() {
       // Only flag jumps against a meaningful baseline (₹500+ a month) and by at
       // least ₹300 — a ₹40 → ₹3,840 jump used to read "up 9500%".
       if (avg >= 500 && spend > avg * 1.15 && spend - avg >= 300) {
-        jumps.push({ category, spend, avg, change: describeChange(spend, avg) });
+        const c = compareToUsual(spend, avg);
+        jumps.push({ category, spend, avg, change: c.kind === "pct" ? `${c.pct}%` : fmt(c.diff) });
       }
     }
     return jumps;
@@ -316,6 +318,8 @@ export default function BudgetPage() {
           ))}
         </div>
       )}
+
+      <Jars />
 
       {/* Zero-based budgeting: assign every rupee of expected income somewhere */}
       {(expectedIncome > 0 || categoryRules.length > 0) && (

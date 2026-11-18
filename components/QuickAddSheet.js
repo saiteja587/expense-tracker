@@ -6,6 +6,8 @@ import { Camera, Mic, ClipboardPaste, Users, X, Delete, Check, CalendarDays } fr
 import { useLedger, notifyLedgerChanged } from "../lib/useLedger";
 import { allCategories, MOVIE_CATEGORY } from "../lib/categories";
 import { quickSuggestions, addDays } from "../lib/ledger";
+import { learnCategory } from "../lib/smart";
+import { guessCategory } from "../lib/smsParse";
 import { parseExpenseText } from "../lib/smsParse";
 import { fmt, todayISO, nowHHMM } from "../lib/format";
 import { queueRequest, newRequestId } from "../lib/offlineQueue";
@@ -60,6 +62,9 @@ function Sheet({ prefill, onClose }) {
 
   const [amount, setAmount] = useState(prefill.amount ? String(prefill.amount) : "");
   const [category, setCategory] = useState(prefill.category || "");
+  // True once you tap a category yourself; until then the note can pick one.
+  const [pickedByHand, setPickedByHand] = useState(!!prefill.category);
+  const [autoPicked, setAutoPicked] = useState(false);
   const [note, setNote] = useState(prefill.note || "");
   const [date, setDate] = useState(today);
   const [deduct, setDeduct] = useState(true);
@@ -75,6 +80,15 @@ function Sheet({ prefill, onClose }) {
   const amt = parseFloat(amount) || 0;
   const friends = splitNames.split(",").map((s) => s.trim()).filter(Boolean);
   const share = friends.length ? Math.round((amt / (friends.length + 1)) * 100) / 100 : 0;
+
+  // Learn the category from what you usually log with these words (falls back
+  // to well-known merchants like Swiggy/Uber), unless you picked one yourself.
+  function onNote(v) {
+    setNote(v);
+    if (pickedByHand) return;
+    const guess = (data && learnCategory(data.expenses, v)) || guessCategory(v);
+    if (guess && categories.some((c) => c.name === guess)) { setCategory(guess); setAutoPicked(true); }
+  }
 
   function press(k) {
     vibrate(4);
@@ -198,13 +212,16 @@ function Sheet({ prefill, onClose }) {
         <div className="h-scroll" style={{ margin: "10px 0" }} role="radiogroup" aria-label="Category">
           {categories.map((c) => (
             <button key={c.name} type="button" role="radio" aria-checked={category === c.name}
-              className={`chip${category === c.name ? " active" : ""}`} onClick={() => { vibrate(4); setCategory(c.name); setError(""); }}>
+              className={`chip${category === c.name ? " active" : ""}`} onClick={() => { vibrate(4); setCategory(c.name); setPickedByHand(true); setAutoPicked(false); setError(""); }}>
               <span aria-hidden="true">{c.emoji}</span> {c.name}
             </button>
           ))}
         </div>
 
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional) — e.g. Swiggy dinner" maxLength={120} style={{ marginBottom: 10 }} />
+        <input value={note} onChange={(e) => onNote(e.target.value)} placeholder="Note (optional) — e.g. Swiggy dinner" maxLength={120} style={{ marginBottom: autoPicked ? 4 : 10 }} />
+        {autoPicked && category && (
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>✨ Category set to <b>{category}</b> from your past entries — tap another to change.</div>
+        )}
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           <button type="button" className={`chip${panel === "more" ? " active" : ""}`} onClick={() => setPanel(panel === "more" ? null : "more")}>

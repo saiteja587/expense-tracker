@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import Poster from "../components/Poster";
+import { PosterWall, PickForMe } from "../components/MovieExtras";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3, Bookmark, Sparkles } from "lucide-react";
 import { queueRequest, newRequestId } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
@@ -31,7 +32,7 @@ function getEmptyForm() {
   return {
     title: "", date: todayISO(), time: nowTimeHHMM(), ticketPrice: "", canteenPrice: "", companions: "",
     myTake: "liked", publicTake: "liked", note: "", affectsBalance: true, quantity: 1,
-    venueType: "Theatre", venueName: "", venueNameOther: "", genre: "",
+    venueType: "Theatre", venueName: "", venueNameOther: "", genre: "", rating: 0, review: "",
   };
 }
 
@@ -126,6 +127,8 @@ export default function MoviesPage() {
         companions: m.companions || "",
         myTake: m.my_take,
         publicTake: m.public_take,
+        rating: m.rating || 0,
+        review: m.review || "",
         note: m.note || "",
         affectsBalance: m.affects_balance !== false,
         quantity: m.quantity || 1,
@@ -190,6 +193,8 @@ export default function MoviesPage() {
       companions: m.companions,
       myTake: m.myTake,
       publicTake: m.publicTake,
+      rating: m.rating || 0,
+      review: m.review || "",
       note: m.note,
       affectsBalance: m.affectsBalance !== false,
       quantity: m.quantity || 1,
@@ -251,6 +256,8 @@ export default function MoviesPage() {
       venueType: form.venueType,
       venueName: resolvedVenueName,
       genre: form.genre,
+      rating: form.rating || null,
+      review: (form.review || "").trim(),
       ...(isEdit ? {} : { clientRequestId: newRequestId() }),
     };
 
@@ -639,11 +646,14 @@ export default function MoviesPage() {
         </div>
       )}
 
+      <PosterWall movies={movies} />
+
       {/* Watchlist: movies you want to watch, kept separate from what you've logged */}
       <div style={{ marginBottom: 32 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
           <Bookmark size={15} color="#7A3E56" /> Watchlist
         </div>
+        <PickForMe watchlist={watchlist} movies={movies} />
         <form onSubmit={addToWatchlist} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           <input type="text" placeholder="Movie to watch" value={watchlistForm.title} onChange={(e) => setWatchlistForm({ ...watchlistForm, title: e.target.value })} maxLength={100} style={{ flex: "1 1 160px" }} />
           <input type="text" placeholder="Note (optional)" value={watchlistForm.note} onChange={(e) => setWatchlistForm({ ...watchlistForm, note: e.target.value })} maxLength={100} style={{ flex: "1 1 140px" }} />
@@ -761,6 +771,19 @@ export default function MoviesPage() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <div className="field-label">Your rating</div>
+                  <div role="radiogroup" aria-label="Your rating" style={{ display: "flex", gap: 4 }}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button key={n} type="button" role="radio" aria-checked={form.rating === n} aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                        onClick={() => setForm({ ...form, rating: form.rating === n ? 0 : n })}
+                        style={{ background: "none", border: "none", padding: 4, cursor: "pointer", fontSize: 28, lineHeight: 1, color: n <= form.rating ? "#F5A524" : "var(--line-strong)" }}>
+                        ★
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input type="text" placeholder="One-line review (optional)" value={form.review} onChange={(e) => setForm({ ...form, review: e.target.value })} maxLength={280} />
                 <input type="text" placeholder="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} maxLength={140} />
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-2)", cursor: "pointer" }}>
                   <input type="checkbox" checked={form.affectsBalance} onChange={(e) => setForm({ ...form, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
@@ -869,6 +892,12 @@ export default function MoviesPage() {
                         </span>
                       )}
                     </div>
+                    {(m.rating > 0 || m.review) && (
+                      <div style={{ marginTop: 8 }}>
+                        {m.rating > 0 && <span aria-label={`${m.rating} of 5 stars`} style={{ color: "#F5A524", fontSize: 15, letterSpacing: 1 }}>{"★".repeat(m.rating)}<span style={{ color: "var(--line-strong)" }}>{"★".repeat(5 - m.rating)}</span></span>}
+                        {m.review && <div style={{ fontSize: 13, color: "var(--ink)", marginTop: 2 }}>“{m.review}”</div>}
+                      </div>
+                    )}
                     {m.note && (
                       <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 8, fontStyle: "italic" }}>{m.note}</div>
                     )}

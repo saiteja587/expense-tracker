@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { THEMES, getTheme, saveTheme } from "../lib/theme";
+import AutoBackups from "../components/AutoBackups";
 import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy, Fingerprint } from "lucide-react";
 
 const BASE_CATEGORY_COLORS = ["#B5533C", "var(--warn)", "#3F6E5B", "#5B3A5C", "#2F4858", "var(--amber)", "#6B7A3E", "#8A4B6B", "#6B6558"];
@@ -16,7 +17,7 @@ export default function SettingsPage() {
   const [ottPlatforms, setOttPlatforms] = useState([]);
   const [newOtt, setNewOtt] = useState("");
   const [recurring, setRecurring] = useState([]);
-  const [recForm, setRecForm] = useState({ amount: "", category: "Bills", note: "", dayOfMonth: "1" });
+  const [recForm, setRecForm] = useState({ amount: "", category: "Bills", note: "", dayOfMonth: "1", upiId: "" });
   const [recError, setRecError] = useState("");
   const [editingRecId, setEditingRecId] = useState(null);
 
@@ -340,10 +341,10 @@ export default function SettingsPage() {
     const res = await fetch("/api/data", {
       method: isEdit ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "recurring", ...(isEdit ? { id: editingRecId } : {}), amount, category: recForm.category, note: recForm.note, dayOfMonth, affectsBalance: true }),
+      body: JSON.stringify({ type: "recurring", ...(isEdit ? { id: editingRecId } : {}), amount, category: recForm.category, note: recForm.note, dayOfMonth, affectsBalance: true, upiId: recForm.upiId.trim() }),
     });
     if (res.ok) {
-      setRecForm({ amount: "", category: "Bills", note: "", dayOfMonth: "1" });
+      setRecForm({ amount: "", category: "Bills", note: "", dayOfMonth: "1", upiId: "" });
       setEditingRecId(null);
       await load();
     } else {
@@ -354,13 +355,13 @@ export default function SettingsPage() {
 
   function startEditRecurring(r) {
     setEditingRecId(r.id);
-    setRecForm({ amount: String(r.amount), category: r.category, note: r.note || "", dayOfMonth: String(r.day_of_month) });
+    setRecForm({ amount: String(r.amount), category: r.category, note: r.note || "", dayOfMonth: String(r.day_of_month), upiId: r.upi_id || "" });
     setRecError("");
   }
 
   function cancelEditRecurring() {
     setEditingRecId(null);
-    setRecForm({ amount: "", category: "Bills", note: "", dayOfMonth: "1" });
+    setRecForm({ amount: "", category: "Bills", note: "", dayOfMonth: "1", upiId: "" });
     setRecError("");
   }
 
@@ -618,6 +619,9 @@ export default function SettingsPage() {
           <Download size={13} /> {exporting ? "Exporting…" : "Export"}
         </button>
       </div>
+
+      {/* Automatic weekly backups (kept on the server, last 4) */}
+      <AutoBackups onRestored={load} />
 
       {/* Data restore */}
       <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
@@ -901,6 +905,7 @@ export default function SettingsPage() {
           <input type="text" placeholder="Category" value={recForm.category} onChange={(e) => setRecForm({ ...recForm, category: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Note (e.g. Rent)" value={recForm.note} onChange={(e) => setRecForm({ ...recForm, note: e.target.value })} style={{ width: 130 }} />
           <input type="number" placeholder="Day (1-31)" title="29–31 fall on the last day of shorter months" value={recForm.dayOfMonth} onChange={(e) => setRecForm({ ...recForm, dayOfMonth: e.target.value })} min="1" max="31" style={{ width: 100 }} />
+          <input type="text" placeholder="UPI ID to pay (optional) e.g. landlord@okhdfc" aria-label="UPI ID to pay (optional)" value={recForm.upiId} onChange={(e) => setRecForm({ ...recForm, upiId: e.target.value })} autoCapitalize="none" style={{ width: "100%" }} />
           <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingRecId ? "Save changes" : "Save"}</button>
           {editingRecId && (
             <button type="button" onClick={cancelEditRecurring} style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>

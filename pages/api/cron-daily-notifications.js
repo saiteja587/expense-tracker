@@ -1,4 +1,5 @@
-import { listMovies, listRecurring, listExpenses, listChallengeDays } from "../../lib/db";
+import { listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup } from "../../lib/db";
+import { buildExport } from "./data";
 import { sendToAllDevices } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
 import { localDateParts, effectiveDay, addDaysISO } from "../../lib/dates";
@@ -32,14 +33,30 @@ export default async function handler(req, res) {
 
     const recurring = await listRecurring();
     const day = local.day;
+    // Tomorrow's date parts (handles month ends).
+    const tmr = localDateParts(new Date(Date.now() + 86400000));
     for (const r of recurring) {
+      const label = r.note || r.category;
+      // Bills with a UPI id open a "Pay now" page that launches the UPI app.
+      const url = r.upi_id ? `/pay?r=${r.id}` : "/";
       if (effectiveDay(r.day_of_month, local.year, local.month) === day) {
-        await sendToAllDevices({
-          title: "💳 Recurring expense today",
-          body: `${r.note || r.category} — ₹${Math.round(r.amount)} is due today.`,
-          url: "/",
-        });
-        sentItems.push(`recurring:${r.note || r.category}`);
+        await sendToAllDevices({ title: "💳 Due today", body: `${label} — ₹${Math.round(r.amount)} is due today.${r.upi_id ? " Tap to pay via UPI." : ""}`, url });
+        sentItems.push(`recurring:${label}`);
+      } else if (effectiveDay(r.day_of_month, tmr.year, tmr.month) === tmr.day) {
+        await sendToAllDevices({ title: "⏰ Bill due tomorrow", body: `${label} — ₹${Math.round(r.amount)} is due tomorrow.${r.upi_id ? " Tap to pay now via UPI." : ""}`, url });
+        sentItems.push(`recurring-tomorrow:${label}`);
+      }
+    }
+
+    // Sundays: keep a server-side backup copy (last 4 are kept) and remind
+    // you to save one to your phone too.
+    if (local.weekday === 0) {
+      try {
+        await saveBackup(JSON.stringify(await buildExport()));
+        await sendToAllDevices({ title: "🛟 Weekly backup saved", body: "A copy is stored on the server. Tap to download one to your phone as well.", url: "/settings?backup=1" });
+        sentItems.push("weekly-backup");
+      } catch (e) {
+        console.error("[cron-daily] weekly backup failed:", e);
       }
     }
 

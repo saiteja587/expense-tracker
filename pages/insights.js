@@ -9,6 +9,9 @@ import { itemsInMonth, byCategory, ymOf, compareToUsual } from "../lib/ledger";
 import { generateInsights, prevMonth } from "../lib/insights";
 import { fmt, todayISO } from "../lib/format";
 import PatternsSection from "../components/PatternsSection";
+import SpendCalendar from "../components/SpendCalendar";
+import { detectSubscriptions } from "../lib/smart";
+import { daysInMonthOf } from "../lib/ledger";
 
 const monthName = (ym) => new Date(ym + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 function nextMonth(ym) {
@@ -32,6 +35,16 @@ export default function InsightsPage() {
     const days = new Set(now.map((x) => x.date)).size;
     return { total, lastTotal, cats, lastCats, days, cmp: compareToUsual(total, lastTotal) };
   }, [derived, data, ym, today]);
+
+  const subs = useMemo(() => (data ? detectSubscriptions(data.expenses, today) : { subs: [], total: 0 }), [data, today]);
+  // Daily target for the calendar: your monthly limit spread over the month,
+  // or (without a limit) your average spending day.
+  const dailyTarget = useMemo(() => {
+    if (!data || !view) return null;
+    const overall = data.rules.find((r) => r.ruleType === "overall");
+    if (overall) return overall.amount / daysInMonthOf(ym + "-01");
+    return view.days ? view.total / view.days : null;
+  }, [data, view, ym]);
 
   const insights = useMemo(
     () => (derived ? generateInsights({ items: derived.items, movies: data.movies, todayIso: today }) : []),
@@ -86,6 +99,28 @@ export default function InsightsPage() {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      <SpendCalendar items={derived.items} ym={ym} dailyTarget={dailyTarget} todayIso={today} />
+
+      {subs.subs.length > 0 && (
+        <section aria-label="Subscriptions" className="card" style={{ padding: 18, borderRadius: 20, marginBottom: 16 }}>
+          <h2 className="section-title" style={{ marginBottom: 4 }}>Subscriptions</h2>
+          <div style={{ fontSize: 14, color: "var(--text-2)", marginBottom: 10 }}>
+            You pay about <b>{fmt(subs.total)}/month</b> in repeating charges — {fmt(subs.total * 12)} a year.
+          </div>
+          {subs.subs.map((s) => (
+            <div key={s.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderTop: "1px solid var(--line)", gap: 10 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 500 }}>{s.name}</div>
+                <div style={{ fontSize: 12, color: s.stale ? "var(--warn)" : "var(--muted)" }}>
+                  {s.stale ? `Last charged ${s.daysSince} days ago — still using it?` : `Last charged ${new Date(s.lastDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`}
+                </div>
+              </div>
+              <div className="tabnum" style={{ fontWeight: 600 }}>{fmt(s.monthly)}</div>
+            </div>
+          ))}
         </section>
       )}
 

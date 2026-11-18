@@ -25,10 +25,13 @@ const TAB_FOR_PATH = {
   "/transactions": "/",
   "/report": "/insights", "/year": "/insights", "/wrapped": "/insights",
   "/budget": "/me", "/sugar-challenge": "/me", "/settings": "/me", "/ious": "/me",
-  "/search": "/me", "/pause": "/me", "/badges": "/me", "/challenges": "/me",
+  "/search": "/me", "/pause": "/me", "/badges": "/me", "/challenges": "/me", "/shared": "/me", "/pay": "/",
 };
 // Full-screen pages with no nav bar or top bar.
-const IMMERSIVE = new Set(["/wrapped", "/welcome"]);
+const IMMERSIVE = new Set(["/wrapped", "/welcome", "/shared/[token]"]);
+// Pages anyone with the link may open without the PIN. They only talk to
+// their own token-scoped API (/api/shared), never to /api/data.
+const PUBLIC_PAGES = new Set(["/shared/[token]"]);
 
 export function tabFor(path) {
   return TAB_FOR_PATH[path] || path;
@@ -684,7 +687,12 @@ export default function App({ Component, pageProps }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Ledger" />
       </Head>
-      {locked === null ? null : locked ? (
+      {PUBLIC_PAGES.has(router.pathname) ? (
+        <>
+          <Component {...pageProps} />
+          <ToastHost />
+        </>
+      ) : locked === null ? null : locked ? (
         <LockScreen
           onUnlock={() => {
             setLocked(false);

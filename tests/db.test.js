@@ -156,3 +156,37 @@ describe("importAll", () => {
     expect(await count("expenses")).toBe(before);
   });
 });
+
+describe("schema v4 features", () => {
+  it("keeps only the 4 newest server backups", async () => {
+    for (let i = 0; i < 6; i++) await db.saveBackup(JSON.stringify({ n: i }));
+    const list = await db.listBackups();
+    expect(list).toHaveLength(4);
+    expect(JSON.parse(await db.getBackup(list[0].id)).n).toBe(5);
+  });
+
+  it("stores movie ratings (clamped 1–5) and reviews", async () => {
+    const m = await db.createMovie({ title: "Rated", date: "2026-11-01", ticketPrice: 0, canteenPrice: 0, myTake: "loved", publicTake: "liked", rating: 9, review: "Great" });
+    expect(m.rating).toBe(5);
+    const u = await db.updateMovie(m.id, { title: "Rated", date: "2026-11-01", ticketPrice: 0, canteenPrice: 0, myTake: "loved", publicTake: "liked", rating: "", review: "" });
+    expect(u.rating).toBeNull();
+  });
+
+  it("only keeps valid UPI ids on recurring bills", async () => {
+    const ok = await db.createRecurring({ amount: 100, category: "Bills", dayOfMonth: 5, upiId: "landlord@okhdfc" });
+    const bad = await db.createRecurring({ amount: 100, category: "Bills", dayOfMonth: 5, upiId: "not a upi id" });
+    expect(ok.upi_id).toBe("landlord@okhdfc");
+    expect(bad.upi_id).toBe("");
+  });
+
+  it("shared spaces: entries are scoped to their group and cascade on delete", async () => {
+    const g1 = await db.createSharedGroup({ name: "Flat", members: ["Me", "Priya"], token: "tok_one_aaaaaaaaaaaa" });
+    const g2 = await db.createSharedGroup({ name: "Trip", members: ["Me", "Ravi"], token: "tok_two_bbbbbbbbbbbb" });
+    const e = await db.createSharedEntry(g1.id, { payer: "Me", amount: 900, note: "Groceries", date: "2026-11-10", splitWith: ["Me", "Priya"] });
+    await db.deleteSharedEntry(g2.id, e.id); // wrong group: must not delete
+    expect(await db.listSharedEntries(g1.id)).toHaveLength(1);
+    expect((await db.getSharedGroupByToken("tok_one_aaaaaaaaaaaa")).name).toBe("Flat");
+    await db.deleteSharedGroup(g1.id);
+    expect(await db.listSharedEntries(g1.id)).toHaveLength(0);
+  });
+});

@@ -38,6 +38,11 @@ Ordered by priority. Tick items off as they're fixed.
 - [x] Phase 3: Wrapped stories, badges & levels, mini challenges, plain-language insights.
 - [x] Phase 4: movie posters (TMDB), WhatsApp IOU reminders, bill splitting, SMS paste, app-icon shortcuts, first-run welcome.
 
+## Features batch 2 (Nov 2026) — done
+- [x] App-icon badge, 9 PM nudge, learned categories, subscriptions, spending calendar, micro-animations, seasonal greetings,
+      envelope jars, "Can I afford it?", bill reminders with UPI pay page, movie ratings/reviews + poster wall, "Pick for me",
+      slip triggers, weekly server backups, shared spaces.
+
 ## Open follow-ups
 - [ ] Movie cards feel cramped next to the poster on narrow phones; consider moving edit/delete into a ⋯ menu.
 - [ ] Remaining lint warnings (9): React hook dependency warnings and `<img>` for receipt previews. Harmless, but worth a look during the #14 split.

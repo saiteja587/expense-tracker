@@ -19,6 +19,35 @@ export const config = {
   },
 };
 
+// Everything except receipt photos (they'd blow past the response size
+// limit; the client fetches those via ?type=receipts). Also used for the
+// weekly server-side backups.
+export async function buildExport() {
+  const [expenses, movies, topups, rules, recurring, recurringIncome, ious, watchlist] = await Promise.all([
+    db.listExpenses(), db.listMovies(), db.listTopups(), db.listBudgetRules(), db.listRecurring(),
+    db.listRecurringIncome(), db.listIous(), db.listWatchlist(),
+  ]);
+  const challengeMeta = await db.getChallengeMeta();
+  const challengeDays = await db.listChallengeDays();
+  const challengeHistory = await db.listChallengeHistory();
+  const setting = async (key) => {
+    const raw = await db.getSetting(key);
+    return raw ? JSON.parse(raw) : null;
+  };
+  return {
+    exportedAt: new Date().toISOString(),
+    formatVersion: 2,
+    expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious, watchlist,
+    sugarChallenge: { meta: challengeMeta, days: challengeDays, history: challengeHistory },
+    customCategories: (await setting("custom_categories")) || [],
+    theatres: await setting("custom_theatres"),
+    ottPlatforms: await setting("custom_ott_platforms"),
+    savingsGoal: await setting("savings_goal"),
+    milestoneRewards: (await setting("milestone_rewards")) || {},
+    miniChallenges: (await setting("mini_challenges")) || [],
+  };
+}
+
 // Poster URLs by title, kept for the life of the server instance.
 const posterCache = new Map();
 async function lookupPoster(title, year) {
@@ -120,33 +149,21 @@ export default async function handler(req, res) {
         for (const id of ids) receipts[id] = await db.getExpenseReceipt(id);
         return res.status(200).json({ receipts });
       }
-      // Everything except receipt photos (they'd blow past the response size
-      // limit). The client fetches those separately via ?type=receipts, using
-      // has_receipt on each expense, and merges them into the backup file.
       if (type === "export-all") {
-        const [expenses, movies, topups, rules, recurring, recurringIncome, ious, watchlist] = await Promise.all([
-          db.listExpenses(), db.listMovies(), db.listTopups(), db.listBudgetRules(), db.listRecurring(),
-          db.listRecurringIncome(), db.listIous(), db.listWatchlist(),
-        ]);
-        const challengeMeta = await db.getChallengeMeta();
-        const challengeDays = await db.listChallengeDays();
-        const challengeHistory = await db.listChallengeHistory();
-        const setting = async (key) => {
-          const raw = await db.getSetting(key);
-          return raw ? JSON.parse(raw) : null;
-        };
-        return res.status(200).json({
-          exportedAt: new Date().toISOString(),
-          formatVersion: 2,
-          expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious, watchlist,
-          sugarChallenge: { meta: challengeMeta, days: challengeDays, history: challengeHistory },
-          customCategories: (await setting("custom_categories")) || [],
-          theatres: await setting("custom_theatres"),
-          ottPlatforms: await setting("custom_ott_platforms"),
-          savingsGoal: await setting("savings_goal"),
-          milestoneRewards: (await setting("milestone_rewards")) || {},
-          miniChallenges: (await setting("mini_challenges")) || [],
-        });
+        return res.status(200).json(await buildExport());
+      }
+      // Weekly server-side backups (#14): list, or fetch one to download.
+      if (type === "backups") {
+        return res.status(200).json({ backups: await db.listBackups() });
+      }
+      if (type === "backup") {
+        const payload = await db.getBackup(parseInt(req.query.id, 10));
+        if (!payload) return err(res, "Backup not found", 404);
+        return res.status(200).json(JSON.parse(payload));
+      }
+      if (type === "shared-groups") {
+        const groups = await db.listSharedGroups();
+        return res.status(200).json({ groups: groups.map((g) => ({ ...g, members: JSON.parse(g.members) })) });
       }
       return err(res, "Unknown type");
     }
@@ -175,7 +192,7 @@ export default async function handler(req, res) {
           title: body.title.trim(), date: body.date, time: body.time, ticketPrice, canteenPrice,
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
-          venueType: body.venueType, venueName: (body.venueName || "").trim(), genre: (body.genre || "").trim(),
+          venueType: body.venueType, venueName: (body.venueName || "").trim(), genre: (body.genre || "").trim(), rating: body.rating, review: (body.review || "").trim(),
           clientRequestId: body.clientRequestId,
         });
         return res.status(201).json({ movie });
@@ -229,7 +246,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurring = await db.createRecurring({ amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance });
+        const recurring = await db.createRecurring({ amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId });
         return res.status(201).json({ recurring });
       }
 
@@ -269,6 +286,28 @@ export default async function handler(req, res) {
         if (!targetAmount || targetAmount <= 0) return err(res, "Enter a target amount greater than 0");
         const goal = await db.setSavingsGoal({ targetAmount, targetDate: body.targetDate || null, label: (body.label || "").trim() });
         return res.status(201).json({ goal });
+      }
+
+      if (type === "backup-now") {
+        await db.saveBackup(JSON.stringify(await buildExport()));
+        return res.status(201).json({ backups: await db.listBackups() });
+      }
+      // Restoring merges the snapshot back in; rows already present are skipped.
+      if (type === "restore-backup") {
+        const payload = await db.getBackup(parseInt(body.id, 10));
+        if (!payload) return err(res, "Backup not found", 404);
+        const results = await db.importAll(JSON.parse(payload));
+        return res.status(201).json({ ok: true, results });
+      }
+
+      if (type === "shared-group") {
+        const name = String(body.name || "").trim().slice(0, 60);
+        const members = [...new Set((Array.isArray(body.members) ? body.members : []).map((m) => String(m).trim().slice(0, 40)).filter(Boolean))];
+        if (!name) return err(res, "Give the space a name");
+        if (members.length < 2) return err(res, "Add at least two people (including you)");
+        const token = require("crypto").randomBytes(18).toString("base64url");
+        const group = await db.createSharedGroup({ name, members: members.slice(0, 12), token });
+        return res.status(201).json({ group: { ...group, members: JSON.parse(group.members) } });
       }
 
       if (type === "mini-challenges") {
@@ -413,7 +452,7 @@ export default async function handler(req, res) {
           title: body.title.trim(), date: body.date, time: body.time, ticketPrice, canteenPrice,
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
-          venueType: body.venueType, venueName: (body.venueName || "").trim(), genre: (body.genre || "").trim(),
+          venueType: body.venueType, venueName: (body.venueName || "").trim(), genre: (body.genre || "").trim(), rating: body.rating, review: (body.review || "").trim(),
         });
         return res.status(200).json({ movie });
       }
@@ -432,7 +471,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurring = await db.updateRecurring(numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance });
+        const recurring = await db.updateRecurring(numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId });
         return res.status(200).json({ recurring });
       }
 
@@ -472,6 +511,7 @@ export default async function handler(req, res) {
       else if (type === "recurring-income") await db.deleteRecurringIncome(numId);
       else if (type === "ious") await db.deleteIou(numId);
       else if (type === "watchlist") await db.deleteWatchlistItem(numId);
+      else if (type === "shared-group") await db.deleteSharedGroup(numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }
