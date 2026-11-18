@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { THEMES, getTheme, saveTheme } from "../lib/theme";
 import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy, Fingerprint } from "lucide-react";
 
@@ -333,7 +334,7 @@ export default function SettingsPage() {
     const amount = parseFloat(recForm.amount);
     const dayOfMonth = parseInt(recForm.dayOfMonth, 10);
     if (!amount || amount <= 0) { setRecError("Enter an amount greater than 0"); return; }
-    if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) { setRecError("Day must be between 1 and 28"); return; }
+    if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) { setRecError("Day must be between 1 and 31"); return; }
     setRecError("");
     const isEdit = editingRecId !== null;
     const res = await fetch("/api/data", {
@@ -453,7 +454,7 @@ export default function SettingsPage() {
     const amount = parseFloat(incForm.amount);
     const dayOfMonth = parseInt(incForm.dayOfMonth, 10);
     if (!amount || amount <= 0) { setIncError("Enter an amount greater than 0"); return; }
-    if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) { setIncError("Day must be between 1 and 28"); return; }
+    if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) { setIncError("Day must be between 1 and 31"); return; }
     setIncError("");
     const isEdit = editingIncId !== null;
     const res = await fetch("/api/data", {
@@ -519,6 +520,16 @@ export default function SettingsPage() {
       const res = await fetch("/api/data?type=export-all");
       if (!res.ok) throw new Error();
       const data = await res.json();
+      // Receipt photos come separately, 10 at a time, to stay under the
+      // server's response size limit.
+      const withReceipt = (data.expenses || []).filter((x) => x.has_receipt);
+      for (let i = 0; i < withReceipt.length; i += 10) {
+        const batch = withReceipt.slice(i, i + 10);
+        const r = await fetch(`/api/data?type=receipts&ids=${batch.map((x) => x.id).join(",")}`);
+        if (!r.ok) throw new Error();
+        const { receipts } = await r.json();
+        for (const x of batch) x.receipt_photo = receipts[x.id] || "";
+      }
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -539,24 +550,43 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-    if (!window.confirm("Import will ADD every record from this file to your current data — it does not replace anything. If you already have data, this can create duplicates. Best used to restore into a fresh, empty setup. Continue?")) return;
+    if (!window.confirm("Import adds the records from this file to your current data. Records that are already here are skipped, so it's safe to import the same backup again. Continue?")) return;
     setImporting(true);
     setImportError("");
     setImportResult(null);
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const res = await fetch("/api/data", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "import-all", data }),
-      });
-      if (!res.ok) throw new Error("Import failed");
-      const result = await res.json();
-      setImportResult(result.results);
+      // Send in chunks under ~3MB (the server accepts ~4MB per request):
+      // first everything except expenses, then expenses in batches. Each
+      // chunk is all-or-nothing, and already-imported rows are skipped, so if
+      // one chunk fails, re-running the import picks up where it stopped.
+      const { expenses = [], ...rest } = data;
+      const chunks = [rest];
+      const LIMIT = 3 * 1024 * 1024;
+      let batch = [], size = 0;
+      for (const x of expenses) {
+        const n = JSON.stringify(x).length;
+        if (batch.length && size + n > LIMIT) { chunks.push({ expenses: batch }); batch = []; size = 0; }
+        batch.push(x); size += n;
+      }
+      if (batch.length) chunks.push({ expenses: batch });
+
+      const totals = {};
+      for (const chunk of chunks) {
+        const res = await fetch("/api/data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "import-all", data: chunk }),
+        });
+        if (!res.ok) throw new Error("Import failed");
+        const { results } = await res.json();
+        for (const [k, v] of Object.entries(results || {})) totals[k] = (totals[k] || 0) + v;
+      }
+      setImportResult(totals);
       await load();
     } catch (err) {
-      setImportError("Couldn't import that file — make sure it's an export from this app.");
+      setImportError("Couldn't finish the import. Anything already imported is kept — run it again with the same file to finish.");
     } finally {
       setImporting(false);
     }
@@ -569,9 +599,9 @@ export default function SettingsPage() {
   return (
     <div className="page-container" style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px 64px" }}>
       <div style={{ marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
+        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
-        </a>
+        </Link>
         <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Settings</div>
       </div>
 
@@ -600,7 +630,7 @@ export default function SettingsPage() {
         </div>
         {importResult && (
           <div style={{ fontSize: 12, color: "#2F6F5E", marginTop: 10 }}>
-            Restored: {importResult.expenses} expenses, {importResult.movies} movies, {importResult.topups} top-ups, {importResult.budgetRules} rules, {importResult.recurring} recurring, {importResult.challengeDays} challenge days.
+            Added {importResult.expenses || 0} expenses, {importResult.movies || 0} movies, {importResult.topups || 0} top-ups, {importResult.ious || 0} IOUs, {importResult.recurring || 0} recurring, {importResult.challengeDays || 0} challenge days (anything already here was skipped).
           </div>
         )}
         {importError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 10 }}>{importError}</div>}
@@ -836,7 +866,7 @@ export default function SettingsPage() {
           <input type="number" placeholder="Amount (₹)" value={recForm.amount} onChange={(e) => setRecForm({ ...recForm, amount: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Category" value={recForm.category} onChange={(e) => setRecForm({ ...recForm, category: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Note (e.g. Rent)" value={recForm.note} onChange={(e) => setRecForm({ ...recForm, note: e.target.value })} style={{ width: 130 }} />
-          <input type="number" placeholder="Day (1-28)" value={recForm.dayOfMonth} onChange={(e) => setRecForm({ ...recForm, dayOfMonth: e.target.value })} min="1" max="28" style={{ width: 100 }} />
+          <input type="number" placeholder="Day (1-31)" title="29–31 fall on the last day of shorter months" value={recForm.dayOfMonth} onChange={(e) => setRecForm({ ...recForm, dayOfMonth: e.target.value })} min="1" max="31" style={{ width: 100 }} />
           <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingRecId ? "Save changes" : "Save"}</button>
           {editingRecId && (
             <button type="button" onClick={cancelEditRecurring} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
@@ -878,7 +908,7 @@ export default function SettingsPage() {
         <form onSubmit={addRecurringIncome} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input type="number" placeholder="Amount (₹)" value={incForm.amount} onChange={(e) => setIncForm({ ...incForm, amount: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Note (e.g. Salary)" value={incForm.note} onChange={(e) => setIncForm({ ...incForm, note: e.target.value })} style={{ width: 150 }} />
-          <input type="number" placeholder="Day (1-28)" value={incForm.dayOfMonth} onChange={(e) => setIncForm({ ...incForm, dayOfMonth: e.target.value })} min="1" max="28" style={{ width: 100 }} />
+          <input type="number" placeholder="Day (1-31)" title="29–31 fall on the last day of shorter months" value={incForm.dayOfMonth} onChange={(e) => setIncForm({ ...incForm, dayOfMonth: e.target.value })} min="1" max="31" style={{ width: 100 }} />
           <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingIncId ? "Save changes" : "Save"}</button>
           {editingIncId && (
             <button type="button" onClick={cancelEditRecurringIncome} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>

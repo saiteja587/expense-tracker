@@ -3,31 +3,34 @@
 Ordered by priority. Tick items off as they're fixed.
 
 ## 🔴 Critical — security & data safety
-- [x] **1. API has no authentication.** ~~The PIN is only checked in the browser.~~ Fixed: correct PIN → signed HttpOnly session cookie (30 days, rolling); `/api/data` returns 401 without it. Changing the PIN signs out all other devices. Note: if no PIN is set, the API is still open — set one.
-- [ ] **20. Next.js 14.2.5 has a known security vulnerability** (npm warns on install). Upgrade to the latest patched 14.2.x.
-- [ ] **2. Cron endpoints are public.** `/api/cron-daily-notifications` and `/api/cron-generate-recurring` don't check Vercel's `CRON_SECRET` — anyone can trigger them and spam push notifications.
-- [ ] **3. Weak PIN hashing.** Unsalted SHA-256 of a 4–8 digit PIN is brute-forceable instantly if the DB leaks. Use salted scrypt.
+- [x] **1. API has no authentication.** Correct PIN → signed HttpOnly session cookie (30 days, rolling); `/api/data` returns 401 without it. Changing the PIN signs out all other devices. If no PIN is set the API is still open — set one.
+- [x] **2. Cron endpoints are public.** Both cron routes now require Vercel's `CRON_SECRET` (and refuse to run if it isn't configured).
+- [x] **3. Weak PIN hashing.** Salted scrypt. Old SHA-256 hashes are upgraded automatically on the next correct PIN entry.
+- [x] **20. Next.js 14.2.5 security vulnerability.** Upgraded to 14.2.35.
 
 ## 🟠 Data-integrity bugs
-- [ ] **4. Recurring items can be generated twice.** `generateDueRecurring` / `generateDueRecurringIncome` (lib/db.js) do SELECT → INSERT → UPDATE non-atomically on every expense list load; concurrent loads duplicate entries. Fix with an atomic `UPDATE … WHERE last_generated_month != ym RETURNING`.
-- [ ] **5. Import duplicates everything.** `importAll` doesn't dedupe and isn't transactional — importing twice doubles data; a mid-import failure leaves partial data.
-- [ ] **6. Backup is incomplete.** Not exported: savings goal, milestone rewards, theatres, OTT platforms. Exported but not imported: sugar-challenge history, receipt photos, IOU `settled` flag.
-- [ ] **7. Offline queue issues.** 4xx responses are retried forever; a lost response after a successful write duplicates on retry (no idempotency key); queuing a receipt photo can overflow localStorage (unhandled `QuotaExceededError`).
-- [ ] **8. `archiveChallenge` isn't atomic.** Insert history + 2 deletes run as separate statements.
+- [x] **4. Recurring items can be generated twice.** Generation is now a single `UPDATE … RETURNING` + `INSERT` statement, so only one caller can claim a month.
+- [x] **5. Import duplicates everything.** Rows keep their original `created_at` and are skipped if already present; each import call is one transaction; large backups are sent in chunks and can simply be re-run.
+- [x] **6. Backup is incomplete.** Export/import now cover receipts, savings goal, milestone rewards, theatres, OTT platforms, challenge history, IOU `settled`, and recurring `last_generated_month`.
+- [x] **7. Offline queue issues.** 4xx responses are dropped (and reported) instead of retried forever; new records carry a `clientRequestId` so retries can't duplicate; a full localStorage queues without the photo instead of failing silently.
+- [x] **8. `archiveChallenge` isn't atomic.** Runs as one transaction.
 
 ## 🟡 Performance
-- [ ] **9. `listExpenses` returns every receipt photo** (base64) on every load. Return a `has_receipt` flag and fetch the photo on demand.
-- [ ] **10. Cold start runs ~25 sequential DDL statements** in `ensureTables()`.
-- [ ] **11. No pagination / date filtering** — every page fetches all history.
+- [x] **9. `listExpenses` returns every receipt photo.** The list returns `has_receipt`; photos load on demand (`?type=receipts&ids=`) in an in-app viewer.
+- [x] **10. Cold start runs ~25 sequential DDL statements.** One `SELECT` of `schema_version`; the DDL only runs (as one transaction) when `SCHEMA_VERSION` changes.
+- [ ] **11. No pagination / date filtering.** *Deferred on purpose.* Insights, report and year views compute from the full history, so paging would need server-side aggregates first. With receipts out of the list payload (#9), an expense row is ~200 bytes, so a few years of data is still well under 1MB. Revisit if loading feels slow.
 
 ## 🔵 Code quality
-- [ ] **12. Dead files:** `lib/balance.js`, `lib/movies.js`, `lib/sugarChallenge.js`, `lib/budget.js`.
-- [ ] **13. README and `schema.sql` are outdated** (describe an `app/` dir and a single table).
-- [ ] **14. Very large page files:** `pages/index.js` (~1300 lines), settings, movies, sugar-challenge.
-- [ ] **15. No tests or linting.**
-- [ ] **16. Errors are swallowed:** non-404/410 push failures ignored; all server errors return a generic "Server error".
+- [x] **12. Dead files** removed.
+- [x] **13. README, `schema.sql`, `.env.example`** rewritten to match the app.
+- [ ] **14. Very large page files.** *Partly done:* shared `fmt`/`todayISO` moved to `lib/format.js`. Still to do: split `pages/index.js` (~1350 lines), settings, movies and sugar-challenge into components. Best done gradually, now that tests and lint exist.
+- [x] **15. No tests or linting.** `npm test` (vitest; DB tests run real SQL on in-process Postgres via PGlite) and `npm run lint` (next/core-web-vitals, 0 errors). Internal `<a>` links switched to `next/link`.
+- [x] **16. Errors are swallowed.** Push failures are logged; API errors say which call failed, and bad input (Postgres class 22) returns a 400 with the reason.
 
 ## ⚪ UX
-- [ ] **17. Recurring day limited to 1–28** — no "last day of month" option.
-- [ ] **18. Server uses UTC** for recurring generation; 00:00–05:30 IST it still thinks it's the previous day.
-- [ ] **19. Top-up form default date is computed once at module load** — stale if the app stays open past midnight.
+- [x] **17. Recurring day limited to 1–28.** Now 1–31; 29–31 fall on the last day of shorter months.
+- [x] **18. Server uses UTC.** Recurring generation and daily notifications use `APP_TIMEZONE` (default `Asia/Kolkata`).
+- [x] **19. Top-up form default date is stale** after midnight. Computed when the form opens.
+
+## Open follow-ups
+- [ ] Remaining lint warnings (9): React hook dependency warnings and `<img>` for receipt previews. Harmless, but worth a look during the #14 split.

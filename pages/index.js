@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert, Mic, MoreHorizontal, Camera } from "lucide-react";
-import { queueRequest } from "../lib/offlineQueue";
+import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert, Mic, MoreHorizontal, Camera, Receipt } from "lucide-react";
+import { queueRequest, newRequestId } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
 import { vibrate } from "../lib/haptics";
 import { fileToCompressedDataUrl } from "../lib/receiptImage";
@@ -9,6 +10,7 @@ import SwipeRow from "../components/SwipeRow";
 import PullToRefresh from "../components/PullToRefresh";
 import CountUp from "../components/CountUp";
 import CategoryIcon from "../components/CategoryIcon";
+import { fmt, todayISO } from "../lib/format";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -26,16 +28,6 @@ const MOVIE_CATEGORY = { name: "Movies", color: "#7A3E56" };
 
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-function fmt(n) {
-  return "₹" + Math.round(n).toLocaleString("en-IN");
-}
-
-function todayISO() {
-  const d = new Date();
-  const off = d.getTimezoneOffset() * 60000;
-  return new Date(d - off).toISOString().slice(0, 10);
-}
-
 function nowTimeHHMM() {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -44,7 +36,11 @@ function nowTimeHHMM() {
 function getEmptyExpenseForm() {
   return { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "" };
 }
-const emptyTopupForm = { amount: "", note: "", date: todayISO(), mode: "add" };
+// A function, not a constant: a constant computed at module load keeps
+// yesterday's date if the app stays open past midnight.
+function getEmptyTopupForm() {
+  return { amount: "", note: "", date: todayISO(), mode: "add" };
+}
 
 function greeting() {
   const h = new Date().getHours();
@@ -110,6 +106,7 @@ export default function Page() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const receiptInputRef = useRef(null);
   const [receiptUploading, setReceiptUploading] = useState(false);
+  const [receiptView, setReceiptView] = useState(null); // null | "loading" | data URL
 
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceError, setVoiceError] = useState("");
@@ -126,7 +123,7 @@ export default function Page() {
   }, [moreOpen]);
 
   const [showTopup, setShowTopup] = useState(false);
-  const [topupForm, setTopupForm] = useState(emptyTopupForm);
+  const [topupForm, setTopupForm] = useState(getEmptyTopupForm);
   const [editingTopupId, setEditingTopupId] = useState(null);
   const [topupError, setTopupError] = useState("");
   const [topupSubmitting, setTopupSubmitting] = useState(false);
@@ -160,7 +157,7 @@ export default function Page() {
         date: x.expense_date.slice(0, 10),
         time: x.expense_time ? x.expense_time.slice(0, 5) : "",
         affectsBalance: x.affects_balance !== false,
-        receiptPhoto: x.receipt_photo || "",
+        hasReceipt: !!x.has_receipt,
       }));
       setExpenses(mappedExpenses);
       let mappedMovies = [];
@@ -318,7 +315,7 @@ export default function Page() {
         amount: parseFloat(r.amount),
         category: r.category,
         note: r.note || "(recurring)",
-        date: `${ym}-${String(r.day_of_month).padStart(2, "0")}`,
+        date: `${ym}-${String(Math.min(r.day_of_month, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate())).padStart(2, "0")}`,
         affectsBalance: r.affects_balance !== false,
         isRecurringPending: true,
       }));
@@ -327,7 +324,6 @@ export default function Page() {
   const allItems = useMemo(() => [...expenses, ...movieItems, ...recurringPendingItems], [expenses, movieItems, recurringPendingItems]);
 
   const totalRecurringPerMonth = useMemo(() => recurring.reduce((s, r) => s + parseFloat(r.amount), 0), [recurring]);
-
 
   // Balance: expenses/movies dated in the future (e.g. an EMI you logged ahead of
   // time) don't reduce the balance until their date actually arrives. They still
@@ -367,7 +363,7 @@ export default function Page() {
 
   function startEditExpense(x) {
     setEditingExpenseId(x.id);
-    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false, receiptPhoto: x.receiptPhoto || "" });
+    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false, receiptPhoto: null, hasReceipt: !!x.hasReceipt });
     // Editing always shows the full form — the person may specifically be
     // here to fix the date or the deduct toggle.
     setExpenseMoreOpen(true);
@@ -442,6 +438,23 @@ export default function Page() {
     }
   }
 
+  // Photos aren't in the list payload; fetch one when it's asked for and show
+  // it in an in-app overlay (browsers block window.open on data: URLs).
+  async function openReceipt(x) {
+    if (x.receiptPhoto) { setReceiptView(x.receiptPhoto); return; }
+    setReceiptView("loading");
+    try {
+      const res = await fetch(`/api/data?type=receipts&ids=${x.id}`);
+      if (!res.ok) throw new Error();
+      const { receipts } = await res.json();
+      if (!receipts[x.id]) throw new Error();
+      setReceiptView(receipts[x.id]);
+    } catch {
+      setReceiptView(null);
+      showToast("Couldn't load that receipt", "⚠️");
+    }
+  }
+
   async function submitExpense(e) {
     e.preventDefault();
     const amt = parseFloat(expenseForm.amount);
@@ -462,14 +475,15 @@ export default function Page() {
     const isEdit = editingExpenseId !== null;
     const payload = {
       type: "expenses",
-      ...(isEdit ? { id: editingExpenseId } : {}),
+      ...(isEdit ? { id: editingExpenseId } : { clientRequestId: newRequestId() }),
       amount: amt,
       category: expenseForm.category,
       note: expenseForm.note.trim(),
       date: expenseForm.date,
       time: expenseForm.time,
       affectsBalance: expenseForm.affectsBalance,
-      receiptPhoto: expenseForm.receiptPhoto || "",
+      // On edit: null keeps the stored photo, "" removes it, a data URL replaces it.
+      receiptPhoto: isEdit ? expenseForm.receiptPhoto : expenseForm.receiptPhoto || "",
     };
 
     let res;
@@ -481,16 +495,25 @@ export default function Page() {
       });
     } catch (networkErr) {
       // Genuine network failure (offline) — queue it and show it locally right away.
-      queueRequest({ url: "/api/data", method: isEdit ? "PUT" : "POST", body: payload });
+      const queued = queueRequest({ url: "/api/data", method: isEdit ? "PUT" : "POST", body: payload });
+      if (!queued.ok) {
+        setSubmitting(false);
+        setFormError("You're offline and this phone's storage is full — couldn't save. Try again when online.");
+        return;
+      }
       if (!isEdit) {
+        const keptPhoto = queued.droppedPhoto ? "" : expenseForm.receiptPhoto || "";
         setExpenses((prev) => [
-          { id: `pending-${Date.now()}`, amount: amt, category: expenseForm.category, note: expenseForm.note.trim(), date: expenseForm.date, time: expenseForm.time, affectsBalance: expenseForm.affectsBalance !== false, receiptPhoto: expenseForm.receiptPhoto || "", pending: true },
+          { id: `pending-${Date.now()}`, amount: amt, category: expenseForm.category, note: expenseForm.note.trim(), date: expenseForm.date, time: expenseForm.time, affectsBalance: expenseForm.affectsBalance !== false, receiptPhoto: keptPhoto, hasReceipt: !!keptPhoto, pending: true },
           ...prev,
         ]);
       }
       cancelEditExpense();
       setSubmitting(false);
-      showToast("Saved — will sync once you're back online", "📥");
+      showToast(
+        queued.droppedPhoto ? "Saved without the photo (storage full) — will sync once online" : "Saved — will sync once you're back online",
+        "📥"
+      );
       return;
     }
 
@@ -562,7 +585,7 @@ export default function Page() {
 
   function cancelEditTopup() {
     setEditingTopupId(null);
-    setTopupForm(emptyTopupForm);
+    setTopupForm(getEmptyTopupForm());
     setShowTopup(false);
     setTopupError("");
   }
@@ -697,7 +720,7 @@ export default function Page() {
 
   async function quickAdd(c) {
     vibrate(12);
-    const payload = { type: "expenses", amount: c.amount, category: c.category, note: c.note, date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "" };
+    const payload = { type: "expenses", clientRequestId: newRequestId(), amount: c.amount, category: c.category, note: c.note, date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "" };
     try {
       const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       if (!res.ok) throw new Error();
@@ -705,7 +728,7 @@ export default function Page() {
       showToast(`${c.note || c.category} ${fmt(c.amount)} logged`, "✅");
     } catch {
       queueRequest({ url: "/api/data", method: "POST", body: payload });
-      setExpenses((prev) => [{ id: `pending-${Date.now()}`, ...c, date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "", pending: true }, ...prev]);
+      setExpenses((prev) => [{ id: `pending-${Date.now()}`, ...c, date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, hasReceipt: false, pending: true }, ...prev]);
       showToast("Saved — will sync once you're back online", "📥");
     }
   }
@@ -792,9 +815,9 @@ export default function Page() {
           <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
             Track where your money goes, one entry at a time.
           </div>
-          <a href="/insights" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 500 }}>
+          <Link href="/insights" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 500 }}>
             Patterns →
-          </a>
+          </Link>
         </div>
         <div ref={moreMenuRef} style={{ position: "relative", flexShrink: 0 }}>
           <button
@@ -858,14 +881,14 @@ export default function Page() {
 
       {/* Daily snapshot: money, movies, diet in one glance */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
-        <a href="/sugar-challenge" className={`story-chip${currentStreak > 0 ? "" : " idle"}`} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
+        <Link href="/sugar-challenge" className={`story-chip${currentStreak > 0 ? "" : " idle"}`} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
           <Flame size={13} color={currentStreak > 0 ? "#C98A2C" : "#C4BDAC"} className={currentStreak > 0 ? "pulse-flame" : ""} />
           {challengeMeta ? `${currentStreak}-day streak` : "No challenge running"}
-        </a>
-        <a href="/movies" className={`story-chip${moviesThisMonth > 0 ? "" : " idle"}`} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
+        </Link>
+        <Link href="/movies" className={`story-chip${moviesThisMonth > 0 ? "" : " idle"}`} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
           <Clapperboard size={13} color="#7A3E56" />
           {moviesThisMonth} movie{moviesThisMonth !== 1 ? "s" : ""} this month
-        </a>
+        </Link>
         <span className={`story-chip${overallBreach || categoryBreaches.length > 0 ? " idle" : ""}`} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
           {overallBreach || categoryBreaches.length > 0 ? <ShieldAlert size={13} color="#A34A38" /> : <ShieldCheck size={13} color="#2F6F5E" />}
           {overallBreach || categoryBreaches.length > 0 ? "Over a budget rule" : "On budget"}
@@ -1054,7 +1077,7 @@ export default function Page() {
               </span>
             ))}
           </span>
-          <a href="/budget" style={{ color: "#A34A38", fontSize: 12, textDecoration: "underline" }}>Adjust rules →</a>
+          <Link href="/budget" style={{ color: "#A34A38", fontSize: 12, textDecoration: "underline" }}>Adjust rules →</Link>
         </div>
       )}
 
@@ -1139,11 +1162,17 @@ export default function Page() {
               </button>
             </div>
             {receiptUploading && <div style={{ fontSize: 11, color: "#8a8477", marginTop: -6 }}>Processing photo…</div>}
-            {expenseForm.receiptPhoto && !receiptUploading && (
+            {(expenseForm.receiptPhoto || (expenseForm.receiptPhoto === null && expenseForm.hasReceipt)) && !receiptUploading && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -4 }}>
-                <img src={expenseForm.receiptPhoto} alt="Receipt" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #D9D2C2" }} />
+                {expenseForm.receiptPhoto ? (
+                  <img src={expenseForm.receiptPhoto} alt="Receipt" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #D9D2C2" }} />
+                ) : (
+                  <button type="button" onClick={() => openReceipt({ id: editingExpenseId })} style={{ background: "none", border: "none", color: "#5f5a4f", fontSize: 11, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
+                    View
+                  </button>
+                )}
                 <span style={{ fontSize: 11, color: "#8a8477" }}>Receipt attached</span>
-                <button type="button" onClick={() => setExpenseForm({ ...expenseForm, receiptPhoto: "" })} style={{ background: "none", border: "none", color: "#A34A38", fontSize: 11, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
+                <button type="button" onClick={() => setExpenseForm({ ...expenseForm, receiptPhoto: "", hasReceipt: false })} style={{ background: "none", border: "none", color: "#A34A38", fontSize: 11, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
                   Remove
                 </button>
               </div>
@@ -1248,13 +1277,16 @@ export default function Page() {
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EAE5D9", gap: 12, background: "#FBF8F2" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                             <CategoryIcon category={x.category} color={catColor(x.category)} size={34} />
-                            {x.receiptPhoto && (
-                              <img
-                                src={x.receiptPhoto}
-                                alt="Receipt"
-                                onClick={() => window.open(x.receiptPhoto, "_blank")}
-                                style={{ width: 26, height: 26, objectFit: "cover", borderRadius: 5, flexShrink: 0, cursor: "pointer" }}
-                              />
+                            {x.hasReceipt && (
+                              <button
+                                type="button"
+                                onClick={() => openReceipt(x)}
+                                aria-label="View receipt"
+                                title="View receipt"
+                                style={{ width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 5, flexShrink: 0, cursor: "pointer", background: "#F1ECDF", border: "1px solid #D9D2C2", color: "#5f5a4f", padding: 0 }}
+                              >
+                                <Receipt size={14} />
+                              </button>
                             )}
                             <div style={{ minWidth: 0 }}>
                               <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -1280,9 +1312,9 @@ export default function Page() {
                               </>
                             )}
                             {x.pending && <span style={{ fontSize: 10, color: "#C98A2C" }}>syncing…</span>}
-                            {x.isRecurringPending && <a href="/settings" style={{ fontSize: 11, color: "#8a8477", textDecoration: "none" }}>edit in Settings →</a>}
+                            {x.isRecurringPending && <Link href="/settings" style={{ fontSize: 11, color: "#8a8477", textDecoration: "none" }}>edit in Settings →</Link>}
                             {isMovie && (
-                              <a href="/movies" style={{ fontSize: 11, color: "#8a8477", textDecoration: "none" }}>edit on Movies →</a>
+                              <Link href="/movies" style={{ fontSize: 11, color: "#8a8477", textDecoration: "none" }}>edit on Movies →</Link>
                             )}
                           </div>
                         </div>
@@ -1301,6 +1333,28 @@ export default function Page() {
           </PullToRefresh>
         </div>
       </div>
+      {receiptView && (
+        <div
+          role="dialog"
+          aria-label="Receipt"
+          onClick={() => setReceiptView(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(20,17,14,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+        >
+          {receiptView === "loading" ? (
+            <span style={{ color: "#FBF8F2", fontSize: 13 }}>Loading receipt…</span>
+          ) : (
+            <img src={receiptView} alt="Receipt" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 6 }} />
+          )}
+          <button
+            type="button"
+            onClick={() => setReceiptView(null)}
+            aria-label="Close"
+            style={{ position: "absolute", top: 16, right: 16, background: "rgba(251,248,242,0.15)", border: "none", borderRadius: 999, color: "#FBF8F2", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

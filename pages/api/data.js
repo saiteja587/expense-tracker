@@ -1,6 +1,5 @@
-import crypto from "crypto";
 import * as db from "../../lib/db";
-import { getPinHash, issueSession, clearSessionCookie, hasValidSession } from "../../lib/auth";
+import { getPinHash, issueSession, clearSessionCookie, hasValidSession, hashPin, verifyPin } from "../../lib/auth";
 
 // Calls the lock screen needs before the user has unlocked. Everything else
 // requires a valid session cookie whenever a PIN is set.
@@ -74,6 +73,17 @@ export default async function handler(req, res) {
       if (type === "pin-status") {
         return res.status(200).json({ hasPin: !!pinHash });
       }
+      // Receipt photos by expense id: ?type=receipts&ids=1,2,3 (max 10 per call,
+      // keeping the response well under Vercel's ~4.5MB limit).
+      if (type === "receipts") {
+        const ids = String(req.query.ids || "").split(",").map((n) => parseInt(n, 10)).filter((n) => !isNaN(n)).slice(0, 10);
+        const receipts = {};
+        for (const id of ids) receipts[id] = await db.getExpenseReceipt(id);
+        return res.status(200).json({ receipts });
+      }
+      // Everything except receipt photos (they'd blow past the response size
+      // limit). The client fetches those separately via ?type=receipts, using
+      // has_receipt on each expense, and merges them into the backup file.
       if (type === "export-all") {
         const [expenses, movies, topups, rules, recurring, recurringIncome, ious, watchlist] = await Promise.all([
           db.listExpenses(), db.listMovies(), db.listTopups(), db.listBudgetRules(), db.listRecurring(),
@@ -82,12 +92,20 @@ export default async function handler(req, res) {
         const challengeMeta = await db.getChallengeMeta();
         const challengeDays = await db.listChallengeDays();
         const challengeHistory = await db.listChallengeHistory();
-        const categoriesRaw = await db.getSetting("custom_categories");
+        const setting = async (key) => {
+          const raw = await db.getSetting(key);
+          return raw ? JSON.parse(raw) : null;
+        };
         return res.status(200).json({
           exportedAt: new Date().toISOString(),
+          formatVersion: 2,
           expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious, watchlist,
           sugarChallenge: { meta: challengeMeta, days: challengeDays, history: challengeHistory },
-          customCategories: categoriesRaw ? JSON.parse(categoriesRaw) : [],
+          customCategories: (await setting("custom_categories")) || [],
+          theatres: await setting("custom_theatres"),
+          ottPlatforms: await setting("custom_ott_platforms"),
+          savingsGoal: await setting("savings_goal"),
+          milestoneRewards: (await setting("milestone_rewards")) || {},
         });
       }
       return err(res, "Unknown type");
@@ -102,7 +120,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!body.date) return err(res, "Date is required");
-        const expense = await db.createExpense({ amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto });
+        const expense = await db.createExpense({ amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, clientRequestId: body.clientRequestId });
         return res.status(201).json({ expense });
       }
 
@@ -118,6 +136,7 @@ export default async function handler(req, res) {
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
           venueType: body.venueType, venueName: (body.venueName || "").trim(), genre: (body.genre || "").trim(),
+          clientRequestId: body.clientRequestId,
         });
         return res.status(201).json({ movie });
       }
@@ -167,7 +186,7 @@ export default async function handler(req, res) {
         const dayOfMonth = parseInt(body.dayOfMonth, 10);
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
-        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) return err(res, "Day of month must be between 1 and 28");
+        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
         const recurring = await db.createRecurring({ amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance });
         return res.status(201).json({ recurring });
       }
@@ -176,7 +195,7 @@ export default async function handler(req, res) {
         const amount = parseFloat(body.amount);
         const dayOfMonth = parseInt(body.dayOfMonth, 10);
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
-        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) return err(res, "Day of month must be between 1 and 28");
+        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
         const recurringIncome = await db.createRecurringIncome({ amount, note: body.note, dayOfMonth });
         return res.status(201).json({ recurringIncome });
       }
@@ -249,7 +268,7 @@ export default async function handler(req, res) {
 
       if (type === "set-pin") {
         if (body.pin && !/^[0-9]{4,8}$/.test(body.pin)) return err(res, "PIN must be 4-8 digits");
-        const hash = body.pin ? crypto.createHash("sha256").update(body.pin).digest("hex") : "";
+        const hash = body.pin ? hashPin(body.pin) : "";
         await db.setSetting("app_pin_hash", hash);
         await db.setSetting("pin_failed_attempts", "0");
         await db.setSetting("pin_locked_until", "0");
@@ -272,11 +291,17 @@ export default async function handler(req, res) {
           return res.status(200).json({ ok: false, locked: true, waitSeconds: Math.ceil((lockedUntil - Date.now()) / 1000) });
         }
 
-        const inputHash = crypto.createHash("sha256").update(body.pin || "").digest("hex");
-        if (inputHash === pinHash) {
+        const check = verifyPin(String(body.pin || ""), pinHash);
+        if (check.ok) {
           await db.setSetting("pin_failed_attempts", "0");
           await db.setSetting("pin_locked_until", "0");
-          await issueSession(res, pinHash);
+          let currentHash = pinHash;
+          if (check.needsUpgrade) {
+            // One-time move from the old unsalted SHA-256 to scrypt.
+            currentHash = hashPin(String(body.pin));
+            await db.setSetting("app_pin_hash", currentHash);
+          }
+          await issueSession(res, currentHash);
           return res.status(200).json({ ok: true });
         }
 
@@ -353,7 +378,7 @@ export default async function handler(req, res) {
         const dayOfMonth = parseInt(body.dayOfMonth, 10);
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
-        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) return err(res, "Day of month must be between 1 and 28");
+        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
         const recurring = await db.updateRecurring(numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance });
         return res.status(200).json({ recurring });
       }
@@ -362,7 +387,7 @@ export default async function handler(req, res) {
         const amount = parseFloat(body.amount);
         const dayOfMonth = parseInt(body.dayOfMonth, 10);
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
-        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 28) return err(res, "Day of month must be between 1 and 28");
+        if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
         const recurringIncome = await db.updateRecurringIncome(numId, { amount, note: body.note, dayOfMonth });
         return res.status(200).json({ recurringIncome });
       }
@@ -400,7 +425,13 @@ export default async function handler(req, res) {
 
     return err(res, "Method not allowed", 405);
   } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "Server error" });
+    const where = `${req.method} ${req.query?.type || req.body?.type || "?"}`;
+    console.error(`[api/data] ${where} failed:`, e);
+    // Postgres class 22 = bad input data (invalid date, number too large, …):
+    // that's the request's fault, so say what was wrong instead of a bare 500.
+    if (e && typeof e.code === "string" && e.code.startsWith("22")) {
+      return err(res, `Invalid value: ${e.message}`, 400);
+    }
+    return res.status(500).json({ error: `Server error (${where}) — details are in the Vercel function logs` });
   }
 }

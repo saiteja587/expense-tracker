@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { ArrowLeft, Pencil, Trash2, Check, X, Plus } from "lucide-react";
 import CountUp from "../components/CountUp";
+import { fmt, todayISO } from "../lib/format";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -14,16 +16,6 @@ const CATEGORIES = [
   { name: "Other", color: "#6B6558" },
   { name: "Movies", color: "#7A3E56" },
 ];
-
-function fmt(n) {
-  return "₹" + Math.round(n).toLocaleString("en-IN");
-}
-
-function todayISO() {
-  const d = new Date();
-  const off = d.getTimezoneOffset() * 60000;
-  return new Date(d - off).toISOString().slice(0, 10);
-}
 
 function ProgressBar({ spent, limit }) {
   const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
@@ -299,9 +291,9 @@ export default function BudgetPage() {
       )}
 
       <div style={{ marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
+        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
-        </a>
+        </Link>
         <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
           Money Rules
         </div>

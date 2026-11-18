@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3, Bookmark, Sparkles } from "lucide-react";
-import { queueRequest } from "../lib/offlineQueue";
+import { queueRequest, newRequestId } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
 import CountUp from "../components/CountUp";
+import { fmt, todayISO } from "../lib/format";
 
 const TAKES = [
   { value: "loved", label: "Loved it", score: 3, color: "#2F6F5E" },
@@ -12,16 +14,6 @@ const TAKES = [
 ];
 
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
-function fmt(n) {
-  return "₹" + Math.round(n).toLocaleString("en-IN");
-}
-
-function todayISO() {
-  const d = new Date();
-  const off = d.getTimezoneOffset() * 60000;
-  return new Date(d - off).toISOString().slice(0, 10);
-}
 
 function nowTimeHHMM() {
   const d = new Date();
@@ -258,6 +250,7 @@ export default function MoviesPage() {
       venueType: form.venueType,
       venueName: resolvedVenueName,
       genre: form.genre,
+      ...(isEdit ? {} : { clientRequestId: newRequestId() }),
     };
 
     let res;
@@ -474,9 +467,9 @@ export default function MoviesPage() {
 
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
+          <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
             <ArrowLeft size={12} /> Expense ledger
-          </a>
+          </Link>
           <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
             Movie Nights
           </div>

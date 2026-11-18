@@ -1,17 +1,11 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, Pencil, Check, X, HandCoins } from "lucide-react";
 import { showToast } from "../lib/toast";
+import { fmt, todayISO } from "../lib/format";
 
-function fmt(n) {
-  return "₹" + Math.round(n).toLocaleString("en-IN");
-}
-function todayISO() {
-  const d = new Date();
-  const off = d.getTimezoneOffset() * 60000;
-  return new Date(d - off).toISOString().slice(0, 10);
-}
 const emptyForm = { personName: "", amount: "", direction: "owed_to_me", note: "", dueDate: "" };
 
 export default function IousPage() {
@@ -147,9 +141,9 @@ export default function IousPage() {
   return (
     <div className="page-container" style={{ maxWidth: 680, margin: "0 auto", padding: "40px 24px 64px" }}>
       <div style={{ marginBottom: 28, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
+        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
-        </a>
+        </Link>
         <div className="lora" style={{ fontSize: 24, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
           <HandCoins size={22} color="#A34A38" /> <span className="gradient-title">Who owes what</span>
         </div>

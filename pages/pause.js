@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 const MESSAGES = [
@@ -74,9 +75,9 @@ export default function PausePage() {
   return (
     <div className="page-container" style={{ maxWidth: 480, margin: "0 auto", padding: "40px 24px 64px", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <div style={{ marginBottom: 32 }}>
-        <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none" }}>
+        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none" }}>
           <ArrowLeft size={12} /> Back
-        </a>
+        </Link>
       </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 28 }}>

@@ -1,17 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import Link from "next/link";
 import { ArrowLeft, Check, X, Flame, Trophy, RotateCcw, Share2 } from "lucide-react";
 import { queueRequest } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
 import { celebrateMilestone, popHeart } from "../lib/celebrate";
 import CountUp from "../components/CountUp";
+import { todayISO } from "../lib/format";
 
 const SLIP_REASONS = ["Stress", "Social occasion", "Craving", "Travel", "Tiredness", "Other"];
-
-function todayISO() {
-  const d = new Date();
-  const off = d.getTimezoneOffset() * 60000;
-  return new Date(d - off).toISOString().slice(0, 10);
-}
 
 function addDays(iso, n) {
   const d = new Date(iso + "T00:00:00");
@@ -351,9 +347,9 @@ export default function SugarChallengePage() {
       )}
 
       <div style={{ marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
+        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
-        </a>
+        </Link>
         <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
           No-Sugar Challenge
         </div>

@@ -1,62 +1,71 @@
 # Expense Ledger
 
-A personal expense tracker: Next.js app + Postgres, deployed on Vercel — 
-entirely on free tiers. Every add/delete hits a real database via API
-routes, so your data persists and is reachable from any device, not just
-the browser you added expenses in.
+A personal money-and-habits tracker you install on your phone as an app (PWA). Built with
+Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free tiers.
 
-## Free-tier footprint
-- **Vercel Hobby plan** — free for personal, non-commercial projects.
-  100GB bandwidth/month, generous function invocations — an app used by
-  one person logging expenses won't come close.
-- **Neon Postgres free tier** (connected through Vercel's Storage tab) —
-  0.5GB storage, no time limit, no card required. An expense ledger is
-  tiny (a few hundred bytes per row), so you'd need well over a million
-  entries to approach that cap.
-- Nothing in this project needs a paid add-on. If Vercel ever prompts you
-  to "upgrade" during setup, that's for features you don't need here —
-  skip it.
+## Features
+- **Ledger:** log expenses by typing, voice, quick-add, or with a receipt photo. Wallet balance
+  (top-ups or "set balance"), recurring expenses and income, budget rules, a savings goal.
+- **Movies:** what you watched, ticket and snack costs, theatre or streaming service, your
+  opinion vs. the public's, and a watchlist.
+- **Sugar challenge:** a daily no-sugar streak with savings and history.
+- **IOUs**, search, insights, a monthly report and a year in review.
+- **Phone-app features:** installable, works offline (changes queue and sync later), push
+  notifications, PIN lock with optional fingerprint/face unlock, light and dark themes.
+- **Backup:** export everything (receipts included) to JSON from Settings, and import it
+  again. Import skips records you already have, so it's safe to run more than once.
 
-## What's inside
-- `app/page.js` — the UI (add expense, monthly total, category chart, transaction list)
-- `app/api/expenses/route.js` — GET (list) and POST (create)
-- `app/api/expenses/[id]/route.js` — DELETE
-- `lib/db.js` — Postgres queries via `@neondatabase/serverless` (auto-creates the `expenses` table on first request)
-- `schema.sql` — same table, if you'd rather run it by hand in the Neon console
+## Project layout
+| Path | What it is |
+|---|---|
+| `pages/*.js` | One file per screen. `_app.js` is the shell: bottom nav, lock screen, offline sync. |
+| `pages/api/data.js` | The single data API. `?type=` / `body.type` picks the resource; GET/POST/PUT/DELETE. |
+| `pages/api/cron-*.js` | Daily jobs run by Vercel Cron (see `vercel.json`). |
+| `pages/api/notify-water.js` | Water/sugar reminders, called by an external scheduler with `?secret=`. |
+| `lib/db.js` | All SQL. Creates and migrates tables automatically (see `SCHEMA_VERSION`). |
+| `lib/auth.js` | PIN hashing and the session cookie. |
+| `lib/dates.js` | Server-side "today" in the app's timezone. |
+| `lib/offlineQueue.js` | Browser-side queue for changes made offline. |
+| `public/sw.js` | Service worker: offline fallback and push notifications. |
+| `schema.sql` | Reference copy of the table definitions (the app applies them itself). |
+| `TODO.md` | Known issues and their status. |
 
-## Deploy it (10 minutes)
+## Security model
+- Set a **PIN** in Settings. After a correct PIN, the server sets a signed, HttpOnly session
+  cookie (30 days, renewed while you use the app). Every API call without it gets `401`.
+- Changing the PIN signs out every other device.
+- The PIN is stored as a salted scrypt hash.
+- **With no PIN set, the API is open to anyone who has the URL**, so set one.
+- Cron endpoints only run when called with Vercel's `CRON_SECRET`.
 
-1. **Push this folder to a GitHub repo.**
-   ```
-   cd expense-tracker
-   git init
-   git add .
-   git commit -m "Initial commit"
-   ```
-   Create a new repo on GitHub, then `git remote add origin <your-repo-url>` and `git push -u origin main`.
+## Environment variables
+| Name | Required | Purpose |
+|---|---|---|
+| `DATABASE_URL` | yes | Neon Postgres connection string (set automatically by the Vercel ↔ Neon integration). |
+| `CRON_SECRET` | yes, for cron jobs | Any long random string. Vercel sends it to cron endpoints automatically; without it the daily jobs refuse to run. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | for push | Generate with `npx web-push generate-vapid-keys`. |
+| `WATER_NOTIFY_SECRET` | for water reminders | Shared secret for `/api/notify-water?secret=…`. |
+| `AUTH_SECRET` | no | Session signing secret. If unset, one is generated and stored in the database. |
+| `APP_TIMEZONE` | no | Defaults to `Asia/Kolkata`. Decides when "today" starts for recurring items and reminders. |
 
-2. **Import it into Vercel.**
-   vercel.com → Add New → Project → import the GitHub repo. Framework preset auto-detects as Next.js. Deploy — it'll fail once, harmlessly, because there's no database yet. That's expected.
-
-3. **Add a Neon database (free).**
-   In the Vercel project → Storage tab → Create Database → choose **Neon** (Postgres) from the Marketplace → pick the **Free** plan. Once created, click **Connect** and select this project. Vercel automatically sets `DATABASE_URL` as an environment variable — no copy-pasting.
-
-4. **Redeploy.**
-   Deployments tab → redeploy the latest one so it picks up the new env var.
-
-5. Open the deployed URL. The `expenses` table is created automatically the first time the app hits the database — no manual migration step.
+## Deploy
+1. Push the repo to GitHub, then on vercel.com: **Add New → Project** and import it.
+2. In the project, go to **Storage → Create Database → Neon (Free)** and connect it. This sets `DATABASE_URL`.
+3. Under **Settings → Environment Variables**, add `CRON_SECRET` (and the push variables if you want notifications).
+4. Redeploy. Tables are created on the first request.
+5. Open the app, go to **Settings**, and **set a PIN**.
 
 ## Local development
 ```
 npm install
+cp .env.example .env.local   # paste DATABASE_URL (and any other variables) into it
+npm run dev                  # http://localhost:3000
+npm test                     # unit tests (vitest)
+npm run lint                 # ESLint (next/core-web-vitals)
 ```
-Copy `.env.example` to `.env.local` and paste in the connection string from Vercel (Settings → Environment Variables → reveal `DATABASE_URL`) or straight from the Neon console. Then:
-```
-npm run dev
-```
-Runs at `http://localhost:3000`.
 
 ## Notes
-- Categories are fixed in `CATEGORIES` at the top of `app/page.js` — edit that array to add/remove/rename categories and their colors.
-- Currency is hardcoded to ₹ (Indian Rupee) via the `fmt()` function in `app/page.js` — change the symbol there if needed.
-- No login/auth — anyone with the URL can see and edit the data. Fine for personal use with a private URL; if you want it locked down, Vercel's Hobby plan includes password-protecting a deployment under Settings → Deployment Protection.
+- Built-in categories live in `CATEGORIES` at the top of `pages/index.js`. You can add custom ones in Settings.
+- Currency formatting (₹, Indian digit grouping) lives in `fmt()` in `lib/format.js`.
+- Receipt photos are compressed on the phone (`lib/receiptImage.js`) and stored in the
+  database. The expense list only loads them when you open one.

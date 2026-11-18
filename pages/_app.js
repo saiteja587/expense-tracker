@@ -3,6 +3,7 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import "../styles/globals.css";
 import { flushQueue, getQueue } from "../lib/offlineQueue";
+import { showToast } from "../lib/toast";
 import { isSessionValid, extendSession, clearSession } from "../lib/unlockSession";
 import { vibrate } from "../lib/haptics";
 import { applyTheme, getTheme } from "../lib/theme";
@@ -481,6 +482,16 @@ export default function App({ Component, pageProps }) {
     setPendingCount(getQueue().length);
   }
 
+  // Send queued offline changes; tell the user about any the server rejected
+  // (those are dropped rather than retried forever).
+  async function syncQueue() {
+    const { dropped } = await flushQueue();
+    refreshPending();
+    if (dropped.length > 0) {
+      showToast(`${dropped.length} offline change${dropped.length !== 1 ? "s" : ""} couldn't be saved: ${dropped[0].error}`, "⚠️");
+    }
+  }
+
   useEffect(() => {
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -488,12 +499,11 @@ export default function App({ Component, pageProps }) {
 
     setIsOnline(navigator.onLine);
     refreshPending();
-    flushQueue().then(refreshPending);
+    syncQueue();
 
     const handleOnline = async () => {
       setIsOnline(true);
-      await flushQueue();
-      refreshPending();
+      await syncQueue();
     };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
@@ -605,7 +615,7 @@ export default function App({ Component, pageProps }) {
           onUnlock={() => {
             setLocked(false);
             // Anything saved while locked out was rejected; send it now.
-            flushQueue().then(refreshPending);
+            syncQueue();
           }}
         />
       ) : (

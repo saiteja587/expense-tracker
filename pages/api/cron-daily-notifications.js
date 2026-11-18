@@ -1,5 +1,7 @@
 import { listMovies, listRecurring, listExpenses, listChallengeDays } from "../../lib/db";
 import { sendToAllDevices } from "../../lib/push";
+import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
+import { localDateParts, effectiveDay, addDaysISO } from "../../lib/dates";
 
 function toISODate(v) {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -9,9 +11,11 @@ function toISODate(v) {
 // Runs once a day via Vercel Cron (see vercel.json). Checks for anything
 // due TODAY and sends one notification per thing found.
 export default async function handler(req, res) {
+  if (!isAuthorizedCron(req)) return rejectCron(res);
   try {
-    const now = new Date();
-    const today = now.toISOString().slice(0, 10);
+    // All "today" logic uses the app's local date (IST), not the server's UTC.
+    const local = localDateParts();
+    const today = local.iso;
     const sentItems = [];
 
     const movies = await listMovies();
@@ -27,9 +31,9 @@ export default async function handler(req, res) {
     }
 
     const recurring = await listRecurring();
-    const day = now.getDate();
+    const day = local.day;
     for (const r of recurring) {
-      if (r.day_of_month === day) {
+      if (effectiveDay(r.day_of_month, local.year, local.month) === day) {
         await sendToAllDevices({
           title: "💳 Recurring expense today",
           body: `${r.note || r.category} — ₹${Math.round(r.amount)} is due today.`,
@@ -42,8 +46,8 @@ export default async function handler(req, res) {
     // On the 1st of each month, last month is fully closed out — nudge to
     // go read the report instead of it just sitting there unopened.
     if (day === 1) {
-      const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const lastMonthName = lastMonthDate.toLocaleDateString("en-US", { month: "long" });
+      const lastMonthDate = new Date(Date.UTC(local.year, local.month - 2, 1));
+      const lastMonthName = lastMonthDate.toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
       await sendToAllDevices({
         title: "📊 Your monthly report is ready",
         body: `${lastMonthName}'s money, movies, and diet — all in one place.`,
@@ -54,10 +58,8 @@ export default async function handler(req, res) {
 
     // Once a week (Sunday), send a single digest instead of only daily pings —
     // a short recap of money, movies, and diet for the week just finished.
-    if (now.getDay() === 0) {
-      const weekAgo = new Date(now);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      const weekAgoStr = weekAgo.toISOString().slice(0, 10);
+    if (local.weekday === 0) {
+      const weekAgoStr = addDaysISO(today, -7);
 
       const allExpenses = await listExpenses();
       const weekSpend = allExpenses

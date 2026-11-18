@@ -1,14 +1,12 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { fmt } from "../lib/format";
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function fmt(n) {
-  return "₹" + Math.round(n).toLocaleString("en-IN");
-}
 
 export default function YearPage() {
   const [expenses, setExpenses] = useState([]);
@@ -163,9 +161,9 @@ export default function YearPage() {
     <div className="page-container" style={{ maxWidth: 920, margin: "0 auto", padding: "40px 24px 64px" }}>
       <div style={{ marginBottom: 28, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
+          <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
             <ArrowLeft size={12} /> Expense ledger
-          </a>
+          </Link>
           <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Year view</div>
           <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Money, movies and diet across the whole year.</div>
         </div>

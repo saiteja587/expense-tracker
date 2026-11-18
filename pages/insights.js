@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { ArrowLeft, TrendingUp, TrendingDown, Minus } from "lucide-react";
-
-function fmt(n) {
-  return "₹" + Math.round(n).toLocaleString("en-IN");
-}
+import { fmt } from "../lib/format";
 
 function InsightRow({ label, aVal, aLabel, bVal, bLabel, direction }) {
   const diff = aVal - bVal;
@@ -116,9 +114,9 @@ export default function InsightsPage() {
   return (
     <div className="page-container" style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px 64px" }}>
       <div style={{ marginBottom: 28, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <a href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
+        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
           <ArrowLeft size={12} /> Expense ledger
-        </a>
+        </Link>
         <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Patterns</div>
         <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
           Real connections between your money, movies, and diet — things a single-purpose app could never show you.
