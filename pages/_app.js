@@ -16,6 +16,29 @@ const NAV_ITEMS = [
   { href: "/settings", label: "Settings", Icon: SettingsIcon },
 ];
 
+// The API answers 401 once the server-side session is missing or expired
+// (e.g. the PIN was changed on another device). Watch every API call in one
+// place and tell the app to show the lock screen, instead of each page
+// having to handle it.
+const AUTH_REQUIRED_EVENT = "ledger:auth-required";
+if (typeof window !== "undefined" && !window.__ledgerFetchWrapped) {
+  window.__ledgerFetchWrapped = true;
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (input, init) => {
+    const res = await originalFetch(input, init);
+    const url = typeof input === "string" ? input : input?.url || "";
+    if (res.status === 401 && url.includes("/api/data")) {
+      window.dispatchEvent(new Event(AUTH_REQUIRED_EVENT));
+    }
+    return res;
+  };
+}
+
+async function fetchSession() {
+  const r = await fetch("/api/data?type=session");
+  return r.json(); // { hasPin, authenticated }
+}
+
 // Which way the next page should slide in. Set just before navigating by
 // a tab tap or a swipe, read when the new page mounts.
 let navDirection = "";
@@ -310,6 +333,13 @@ function LockScreen({ onUnlock }) {
         },
       });
       if (assertion) {
+        // Biometrics only unlock this screen; the server still needs a valid
+        // session cookie from an earlier PIN entry (good for 30 days).
+        const s = await fetchSession().catch(() => null);
+        if (s && !s.authenticated) {
+          setError("Please enter your PIN once to sign this device back in.");
+          return;
+        }
         extendSession();
         onUnlock();
       }
@@ -474,14 +504,26 @@ export default function App({ Component, pageProps }) {
       document.documentElement.setAttribute("data-theme", "dark");
     }
 
-    if (isSessionValid()) {
-      setLocked(false);
-    } else {
-      fetch("/api/data?type=pin-status")
-        .then((r) => r.json())
-        .then((d) => setLocked(!!d.hasPin))
-        .catch(() => setLocked(false));
+    // Open straight away if this device was recently unlocked, then confirm
+    // with the server in the background; the server's answer wins.
+    const recentlyUnlocked = isSessionValid();
+    if (recentlyUnlocked) setLocked(false);
+    fetchSession()
+      .then((s) => {
+        if (s.hasPin && (!s.authenticated || !recentlyUnlocked)) {
+          clearSession();
+          setLocked(true);
+        } else {
+          setLocked(false);
+        }
+      })
+      .catch(() => setLocked(false)); // offline: nothing to fetch anyway
+
+    function onAuthRequired() {
+      clearSession();
+      setLocked(true);
     }
+    window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
 
     // While unlocked, any touch/click/key activity pushes the session
     // forward (see lib/unlockSession) so a normal day of use never
@@ -537,6 +579,7 @@ export default function App({ Component, pageProps }) {
       document.removeEventListener("touchend", onTouchEnd);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
       clearInterval(interval);
       clearInterval(expiryCheck);
       activityEvents.forEach((ev) => window.removeEventListener(ev, extendIfUnlocked));
@@ -558,7 +601,13 @@ export default function App({ Component, pageProps }) {
         <meta name="apple-mobile-web-app-title" content="Ledger" />
       </Head>
       {locked === null ? null : locked ? (
-        <LockScreen onUnlock={() => setLocked(false)} />
+        <LockScreen
+          onUnlock={() => {
+            setLocked(false);
+            // Anything saved while locked out was rejected; send it now.
+            flushQueue().then(refreshPending);
+          }}
+        />
       ) : (
         <>
           {(!isOnline || pendingCount > 0) && (

@@ -1,4 +1,13 @@
+import crypto from "crypto";
 import * as db from "../../lib/db";
+import { getPinHash, issueSession, clearSessionCookie, hasValidSession } from "../../lib/auth";
+
+// Calls the lock screen needs before the user has unlocked. Everything else
+// requires a valid session cookie whenever a PIN is set.
+const PUBLIC_TYPES = {
+  GET: new Set(["pin-status", "session", "vapid-public-key"]),
+  POST: new Set(["verify-pin", "logout"]),
+};
 
 // Receipt photos arrive as a compressed base64 string in the JSON body,
 // which can run a few hundred KB — comfortably over the framework's 1MB
@@ -17,8 +26,19 @@ function err(res, msg, status = 400) {
 
 export default async function handler(req, res) {
   try {
+    const pinHash = await getPinHash();
+    const reqType = req.method === "GET" || req.method === "DELETE" ? req.query.type : req.body?.type;
+    const isPublic = PUBLIC_TYPES[req.method]?.has(reqType);
+    if (pinHash && !isPublic && !(await hasValidSession(req, res, pinHash))) {
+      return err(res, "Locked — enter your PIN", 401);
+    }
+
     if (req.method === "GET") {
       const { type } = req.query;
+      if (type === "session") {
+        const authenticated = !pinHash || (await hasValidSession(req, null, pinHash));
+        return res.status(200).json({ hasPin: !!pinHash, authenticated });
+      }
       if (type === "expenses") return res.status(200).json({ expenses: await db.listExpenses() });
       if (type === "movies") return res.status(200).json({ movies: await db.listMovies() });
       if (type === "balance") return res.status(200).json({ topups: await db.listTopups() });
@@ -52,8 +72,7 @@ export default async function handler(req, res) {
         return res.status(200).json({ key: process.env.VAPID_PUBLIC_KEY || null });
       }
       if (type === "pin-status") {
-        const hash = await db.getSetting("app_pin_hash");
-        return res.status(200).json({ hasPin: !!hash });
+        return res.status(200).json({ hasPin: !!pinHash });
       }
       if (type === "export-all") {
         const [expenses, movies, topups, rules, recurring, recurringIncome, ious, watchlist] = await Promise.all([
@@ -230,28 +249,34 @@ export default async function handler(req, res) {
 
       if (type === "set-pin") {
         if (body.pin && !/^[0-9]{4,8}$/.test(body.pin)) return err(res, "PIN must be 4-8 digits");
-        const crypto = require("crypto");
         const hash = body.pin ? crypto.createHash("sha256").update(body.pin).digest("hex") : "";
         await db.setSetting("app_pin_hash", hash);
         await db.setSetting("pin_failed_attempts", "0");
         await db.setSetting("pin_locked_until", "0");
+        // The new PIN invalidates every other device's session; keep this one signed in.
+        if (hash) await issueSession(res, hash);
+        else clearSessionCookie(res);
         return res.status(201).json({ ok: true });
       }
 
+      if (type === "logout") {
+        clearSessionCookie(res);
+        return res.status(200).json({ ok: true });
+      }
+
       if (type === "verify-pin") {
-        const storedHash = await db.getSetting("app_pin_hash");
-        if (!storedHash) return res.status(200).json({ ok: true });
+        if (!pinHash) return res.status(200).json({ ok: true });
 
         const lockedUntil = parseInt((await db.getSetting("pin_locked_until")) || "0", 10);
         if (Date.now() < lockedUntil) {
           return res.status(200).json({ ok: false, locked: true, waitSeconds: Math.ceil((lockedUntil - Date.now()) / 1000) });
         }
 
-        const crypto = require("crypto");
         const inputHash = crypto.createHash("sha256").update(body.pin || "").digest("hex");
-        if (inputHash === storedHash) {
+        if (inputHash === pinHash) {
           await db.setSetting("pin_failed_attempts", "0");
           await db.setSetting("pin_locked_until", "0");
+          await issueSession(res, pinHash);
           return res.status(200).json({ ok: true });
         }
 
