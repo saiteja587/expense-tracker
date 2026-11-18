@@ -1,178 +1,136 @@
-"use client";
-
-import { useState, useEffect, useMemo } from "react";
+// Insights tab: this month vs last, where the money went, plain-language
+// observations, and the money × movies × diet patterns. Links out to the
+// monthly report, year view and Wrapped.
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { fmt } from "../lib/format";
+import { ChevronLeft, ChevronRight, FileText, CalendarRange, Sparkles } from "lucide-react";
+import { useLedger } from "../lib/useLedger";
+import { itemsInMonth, byCategory, ymOf, compareToUsual } from "../lib/ledger";
+import { generateInsights, prevMonth } from "../lib/insights";
+import { fmt, todayISO } from "../lib/format";
+import PatternsSection from "../components/PatternsSection";
 
-function InsightRow({ label, aVal, aLabel, bVal, bLabel, direction }) {
-  const diff = aVal - bVal;
-  const meaningful = Math.abs(diff) >= 8; // ignore noise under 8 percentage points
-  return (
-    <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 12 }}>
-      <div style={{ fontSize: 14, marginBottom: 10, lineHeight: 1.5 }}>{label}</div>
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-end" }}>
-        <div>
-          <div className="tabnum" style={{ fontSize: 22, fontWeight: 600, color: direction === "bad" && aVal > bVal ? "#A34A38" : "#241F1A" }}>{aVal}%</div>
-          <div style={{ fontSize: 11, color: "#8a8477" }}>{aLabel}</div>
-        </div>
-        <div style={{ fontSize: 18, color: "#C4BDAC" }}>vs</div>
-        <div>
-          <div className="tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{bVal}%</div>
-          <div style={{ fontSize: 11, color: "#8a8477" }}>{bLabel}</div>
-        </div>
-        {meaningful && (
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: diff > 0 ? "#A34A38" : "#2F6F5E" }}>
-            {diff > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            {Math.abs(diff)}pt difference
-          </div>
-        )}
-      </div>
-    </div>
-  );
+const monthName = (ym) => new Date(ym + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+function nextMonth(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
 }
 
 export default function InsightsPage() {
-  const [expenses, setExpenses] = useState([]);
-  const [movies, setMovies] = useState([]);
-  const [challengeDays, setChallengeDays] = useState([]);
-  const [loaded, setLoaded] = useState(false);
+  const { data, derived, today, loaded } = useLedger();
+  const [ym, setYm] = useState(() => ymOf(todayISO()));
 
-  useEffect(() => {
-    Promise.all([
-      fetch("/api/data?type=expenses"),
-      fetch("/api/data?type=movies"),
-      fetch("/api/data?type=challenge"),
-    ]).then(async ([e, m, c]) => {
-      if (e.ok) setExpenses((await e.json()).expenses.map((x) => ({ amount: parseFloat(x.amount), date: x.expense_date.slice(0, 10) })));
-      if (m.ok) setMovies((await m.json()).movies.map((x) => ({ date: x.watched_date.slice(0, 10) })));
-      if (c.ok) {
-        const data = await c.json();
-        setChallengeDays((data.days || []).map((d) => ({ date: d.day_date.slice(0, 10), completed: d.completed })));
-      }
-    }).finally(() => setLoaded(true));
-  }, []);
+  const view = useMemo(() => {
+    if (!derived) return null;
+    const spent = derived.items.filter((x) => !x.isRecurringPending || x.date <= today);
+    const now = itemsInMonth(spent, ym);
+    const last = itemsInMonth(spent, prevMonth(ym));
+    const total = now.reduce((s, x) => s + x.amount, 0);
+    const lastTotal = last.reduce((s, x) => s + x.amount, 0);
+    const cats = byCategory(now, data.customCategories);
+    const lastCats = Object.fromEntries(byCategory(last, data.customCategories).map((c) => [c.name, c.value]));
+    const days = new Set(now.map((x) => x.date)).size;
+    return { total, lastTotal, cats, lastCats, days, cmp: compareToUsual(total, lastTotal) };
+  }, [derived, data, ym, today]);
 
-  const movieDates = useMemo(() => new Set(movies.map((m) => m.date)), [movies]);
+  const insights = useMemo(
+    () => (derived ? generateInsights({ items: derived.items, movies: data.movies, todayIso: today }) : []),
+    [derived, data, today]
+  );
 
-  const dailySpend = useMemo(() => {
-    const map = {};
-    for (const x of expenses) map[x.date] = (map[x.date] || 0) + x.amount;
-    return map;
-  }, [expenses]);
-
-  const avgDailySpend = useMemo(() => {
-    const vals = Object.values(dailySpend);
-    if (vals.length === 0) return 0;
-    return vals.reduce((s, v) => s + v, 0) / vals.length;
-  }, [dailySpend]);
-
-  const highSpendDates = useMemo(() => {
-    const set = new Set();
-    for (const [date, amt] of Object.entries(dailySpend)) {
-      if (amt > avgDailySpend * 1.3) set.add(date);
-    }
-    return set;
-  }, [dailySpend, avgDailySpend]);
-
-  const stats = useMemo(() => {
-    if (challengeDays.length < 6) return null;
-
-    const movieDays = challengeDays.filter((d) => movieDates.has(d.date));
-    const nonMovieDays = challengeDays.filter((d) => !movieDates.has(d.date));
-    const highSpendDays = challengeDays.filter((d) => highSpendDates.has(d.date));
-    const normalSpendDays = challengeDays.filter((d) => !highSpendDates.has(d.date));
-
-    const slipRate = (arr) => (arr.length === 0 ? null : Math.round((arr.filter((d) => d.completed === false).length / arr.length) * 100));
-
-    // "Cost of a slip": average same-day spend on days you slipped vs. days
-    // you stayed sugar-free — do slips tend to come with extra spending?
-    const slipDays = challengeDays.filter((d) => d.completed === false);
-    const cleanDays = challengeDays.filter((d) => d.completed === true);
-    const avgSpend = (arr) => (arr.length === 0 ? null : arr.reduce((s, d) => s + (dailySpend[d.date] || 0), 0) / arr.length);
-
-    return {
-      movieSlipRate: slipRate(movieDays),
-      nonMovieSlipRate: slipRate(nonMovieDays),
-      movieDaysCount: movieDays.length,
-      nonMovieDaysCount: nonMovieDays.length,
-      highSpendSlipRate: slipRate(highSpendDays),
-      normalSpendSlipRate: slipRate(normalSpendDays),
-      highSpendDaysCount: highSpendDays.length,
-      normalSpendDaysCount: normalSpendDays.length,
-      avgSpendSlipDays: avgSpend(slipDays),
-      avgSpendCleanDays: avgSpend(cleanDays),
-      slipDaysCount: slipDays.length,
-      cleanDaysCount: cleanDays.length,
-    };
-  }, [challengeDays, movieDates, highSpendDates, dailySpend]);
-
-  if (!loaded) {
-    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>Loading…</div>;
+  if (!loaded || !view) {
+    return (
+      <div className="page-container" style={{ maxWidth: 640, margin: "0 auto", padding: "32px 20px 100px" }}>
+        <div className="skeleton" style={{ height: 28, width: 140, marginBottom: 20 }} />
+        <div className="skeleton" style={{ height: 120, borderRadius: 20, marginBottom: 16 }} />
+        <div className="skeleton" style={{ height: 220, borderRadius: 20 }} />
+      </div>
+    );
   }
 
+  const isCurrent = ym === ymOf(today);
+  const top = view.cats[0]?.value || 1;
+
   return (
-    <div className="page-container" style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px 64px" }}>
-      <div style={{ marginBottom: 28, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
-          <ArrowLeft size={12} /> Expense ledger
-        </Link>
-        <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Patterns</div>
-        <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
-          Real connections between your money, movies, and diet — things a single-purpose app could never show you.
+    <div className="page-container" style={{ maxWidth: 640, margin: "0 auto", padding: "28px 20px 100px" }}>
+      <header style={{ marginBottom: 18 }}>
+        <h1 className="lora gradient-title" style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>Insights</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8 }}>
+          <button type="button" className="icon-btn" aria-label="Previous month" onClick={() => setYm(prevMonth(ym))}><ChevronLeft size={20} /></button>
+          <div style={{ fontWeight: 600, minWidth: 150, textAlign: "center" }}>{monthName(ym)}</div>
+          <button type="button" className="icon-btn" aria-label="Next month" disabled={isCurrent} onClick={() => setYm(nextMonth(ym))}><ChevronRight size={20} /></button>
+        </div>
+      </header>
+
+      <div className="card" style={{ padding: 18, borderRadius: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, color: "var(--muted)" }}>{isCurrent ? "Spent so far" : "Spent"}</div>
+        <div className="lora tabnum" style={{ fontSize: 34, fontWeight: 700 }}>{fmt(view.total)}</div>
+        <div style={{ fontSize: 13, color: "var(--text-2)" }}>
+          {view.lastTotal > 0 ? (
+            view.cmp.kind === "pct"
+              ? <><b style={{ color: view.cmp.up ? "var(--danger)" : "var(--success)" }}>{view.cmp.up ? "▲" : "▼"} {Math.abs(view.cmp.pct)}%</b> vs {fmt(view.lastTotal)} last month{isCurrent ? " (whole month)" : ""}</>
+              : <>{view.cmp.up ? "+" : "−"}{fmt(Math.abs(view.cmp.diff))} vs last month</>
+          ) : "No spending logged the month before."}
+          {" · "}{view.days} day{view.days !== 1 ? "s" : ""} with spending
         </div>
       </div>
 
-      {!stats ? (
-        <div style={{ border: "1px dashed #D9D2C2", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "#8a8477", fontSize: 14 }}>
-          Not enough days logged yet to find real patterns — keep marking your sugar challenge daily and this page will fill in on its own.
-        </div>
-      ) : (
-        <>
-          {stats.movieSlipRate !== null && stats.nonMovieSlipRate !== null && (
-            <InsightRow
-              label={`Your sugar slip-rate on days you watched a movie, vs. days you didn't.`}
-              aVal={stats.movieSlipRate}
-              aLabel={`slip rate on movie days (${stats.movieDaysCount})`}
-              bVal={stats.nonMovieSlipRate}
-              bLabel={`slip rate on other days (${stats.nonMovieDaysCount})`}
-              direction="bad"
-            />
-          )}
-
-          {stats.highSpendSlipRate !== null && stats.normalSpendSlipRate !== null && (
-            <InsightRow
-              label={`Your sugar slip-rate on days you spent well above your average, vs. normal-spend days.`}
-              aVal={stats.highSpendSlipRate}
-              aLabel={`slip rate on big-spend days (${stats.highSpendDaysCount})`}
-              bVal={stats.normalSpendSlipRate}
-              bLabel={`slip rate on normal days (${stats.normalSpendDaysCount})`}
-              direction="bad"
-            />
-          )}
-
-          {stats.avgSpendSlipDays !== null && stats.avgSpendCleanDays !== null && stats.slipDaysCount >= 3 && (
-            <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 12 }}>
-              <div style={{ fontSize: 14, marginBottom: 10, lineHeight: 1.5 }}>The cost of a slip — average spend on days you slipped vs. days you stayed sugar-free.</div>
-              <div style={{ display: "flex", gap: 24, alignItems: "flex-end" }}>
-                <div>
-                  <div className="tabnum" style={{ fontSize: 22, fontWeight: 600, color: stats.avgSpendSlipDays > stats.avgSpendCleanDays ? "#A34A38" : "#241F1A" }}>{fmt(stats.avgSpendSlipDays)}</div>
-                  <div style={{ fontSize: 11, color: "#8a8477" }}>avg. spend on slip days ({stats.slipDaysCount})</div>
-                </div>
-                <div style={{ fontSize: 18, color: "#C4BDAC" }}>vs</div>
-                <div>
-                  <div className="tabnum" style={{ fontSize: 22, fontWeight: 600 }}>{fmt(stats.avgSpendCleanDays)}</div>
-                  <div style={{ fontSize: 11, color: "#8a8477" }}>avg. spend on sugar-free days ({stats.cleanDaysCount})</div>
-                </div>
+      {insights.length > 0 && isCurrent && (
+        <section aria-label="Observations" style={{ marginBottom: 16 }}>
+          <h2 className="section-title">What stands out</h2>
+          <div style={{ display: "grid", gap: 10 }}>
+            {insights.map((i) => (
+              <div key={i.id} className="card" style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "14px 16px", borderRadius: 16 }}>
+                <span style={{ fontSize: 22 }} aria-hidden="true">{i.emoji}</span>
+                <div style={{ fontSize: 14, lineHeight: 1.45, color: i.tone === "warn" ? "var(--danger)" : "var(--ink)" }}>{i.text}</div>
               </div>
-            </div>
-          )}
-
-          <div style={{ fontSize: 11, color: "#8a8477", marginTop: 20, lineHeight: 1.6 }}>
-            "Big-spend day" means a day you spent over 130% of your average daily spend ({fmt(avgDailySpend)}/day so far). This page only counts days you've actually marked on the No-Sugar Challenge, and differences under 8 points are treated as noise, not shown as a pattern — small samples can look meaningful by chance.
+            ))}
           </div>
-        </>
+        </section>
       )}
+
+      <section aria-label="By category" className="card" style={{ padding: 18, borderRadius: 20, marginBottom: 16 }}>
+        <h2 className="section-title">Where it went</h2>
+        {view.cats.length === 0 ? (
+          <div style={{ color: "var(--muted)", fontSize: 14 }}>Nothing logged this month.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 12 }}>
+            {view.cats.map((c) => {
+              const prev = view.lastCats[c.name] || 0;
+              return (
+                <div key={c.name}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, marginBottom: 5, gap: 8 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 7 }}><span style={{ width: 9, height: 9, borderRadius: 5, background: c.color }} />{c.name}</span>
+                    <span className="tabnum" style={{ color: "var(--text-2)", whiteSpace: "nowrap" }}>
+                      {fmt(c.value)} <span style={{ color: "var(--muted)", fontSize: 12 }}>{Math.round((c.value / view.total) * 100)}%</span>
+                    </span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 5, background: "var(--line)", overflow: "hidden" }}>
+                    <div className="bar-grow" style={{ width: `${(c.value / top) * 100}%`, height: "100%", background: c.color, borderRadius: 5 }} />
+                  </div>
+                  {prev > 0 && (
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>{fmt(prev)} last month</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10, marginBottom: 8 }}>
+        {[
+          { href: "/wrapped", label: "Wrapped", Icon: Sparkles },
+          { href: "/report", label: "Monthly report", Icon: FileText },
+          { href: "/year", label: "Year view", Icon: CalendarRange },
+        ].map(({ href, label, Icon }) => (
+          <Link key={href} href={href} className="card" style={{ textDecoration: "none", color: "var(--ink)", padding: "14px 10px", borderRadius: 16, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, textAlign: "center" }}>
+            <Icon size={20} color="var(--accent-solid)" /> {label}
+          </Link>
+        ))}
+      </div>
+
+      <PatternsSection />
     </div>
   );
 }

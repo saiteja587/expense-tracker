@@ -32,5 +32,12 @@ Ordered by priority. Tick items off as they're fixed.
 - [x] **18. Server uses UTC.** Recurring generation and daily notifications use `APP_TIMEZONE` (default `Asia/Kolkata`).
 - [x] **19. Top-up form default date is stale** after midnight. Computed when the form opens.
 
+## Redesign (Nov 2026) — done
+- [x] Phase 1: colour tokens + real dark mode, one button style, labelled bottom bar (Home · Insights · ＋ · Movies · Me), keypad lock screen, grouped Settings, 40px icon buttons, ≥11.5px text, labelled dates, chart legends, no silly percentages, "−₹" negatives.
+- [x] Phase 2: quick-add sheet, new Home, Transactions page, Insights tab, shared data hook (`lib/useLedger.js`) + tested maths (`lib/ledger.js`).
+- [x] Phase 3: Wrapped stories, badges & levels, mini challenges, plain-language insights.
+- [x] Phase 4: movie posters (TMDB), WhatsApp IOU reminders, bill splitting, SMS paste, app-icon shortcuts, first-run welcome.
+
 ## Open follow-ups
+- [ ] Movie cards feel cramped next to the poster on narrow phones; consider moving edit/delete into a ⋯ menu.
 - [ ] Remaining lint warnings (9): React hook dependency warnings and `<img>` for receipt previews. Harmless, but worth a look during the #14 split.

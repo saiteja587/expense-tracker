@@ -149,20 +149,20 @@ export default function ReportPage() {
 
   return (
     <div className="page-container" style={{ maxWidth: 720, margin: "0 auto", padding: "40px 24px 64px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 28, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, flexWrap: "wrap", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 28, borderBottom: "1px solid var(--line-strong)", paddingBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
-            <ArrowLeft size={12} /> Expense ledger
+          <Link href="/insights" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--muted)", textDecoration: "none", marginBottom: 6 }}>
+            <ArrowLeft size={13} /> Insights
           </Link>
           <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Monthly Report</div>
-          <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Money, movies, and diet — one end-of-month picture.</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Money, movies, and diet — one end-of-month picture.</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-          <button onClick={() => goMonth(-1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }}><ChevronLeft size={18} /></button>
+          <button onClick={() => goMonth(-1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }}><ChevronLeft size={18} /></button>
           <div className="tabnum" style={{ fontSize: 14, fontWeight: 500, minWidth: 130, textAlign: "center" }}>{MONTH_NAMES[month]} {year}</div>
-          <button onClick={() => goMonth(1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }}><ChevronRight size={18} /></button>
+          <button onClick={() => goMonth(1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }}><ChevronRight size={18} /></button>
           {hasAnyData && (
-            <button onClick={downloadCsv} style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 20, padding: "6px 12px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginLeft: 6 }}>
+            <button onClick={downloadCsv} style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 20, padding: "6px 12px", fontSize: 12, color: "var(--text-2)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, marginLeft: 6 }}>
               <Download size={13} /> CSV
             </button>
           )}
@@ -170,31 +170,31 @@ export default function ReportPage() {
       </div>
 
       {!hasAnyData ? (
-        <div style={{ border: "1px dashed #D9D2C2", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "#8a8477", fontSize: 14 }}>
+        <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
           Nothing logged for {MONTH_NAMES[month]} {year} yet.
         </div>
       ) : (
         <>
           {/* Headline */}
-          <div className="panel-soft" style={{ background: "#F1ECDF", borderRadius: 6, padding: "20px 22px", marginBottom: 24 }}>
-            <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>Total spent, money + movies</div>
+          <div className="panel-soft" style={{ background: "var(--surface-2)", borderRadius: 6, padding: "20px 22px", marginBottom: 24 }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Total spent, money + movies</div>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 14, flexWrap: "wrap" }}>
               <div className="lora tabnum" style={{ fontSize: "clamp(30px, 8vw, 40px)", fontWeight: 600, lineHeight: 1 }}>{fmt(totalSpend)}</div>
               {spendChangePct !== null && (
-                <div style={{ fontSize: 13, color: spendChangePct > 0 ? "#A34A38" : "#2F6F5E", display: "flex", alignItems: "center", gap: 4, paddingBottom: 6 }}>
+                <div style={{ fontSize: 13, color: spendChangePct > 0 ? "var(--danger)" : "var(--success)", display: "flex", alignItems: "center", gap: 4, paddingBottom: 6 }}>
                   {spendChangePct > 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                   {Math.abs(spendChangePct)}% vs {MONTH_NAMES[new Date(year, month - 1, 1).getMonth()]}
                 </div>
               )}
             </div>
-            <div style={{ fontSize: 12, color: "#5f5a4f", marginTop: 10 }}>
+            <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 10 }}>
               {fmt(monthAdded)} added · net {netChange >= 0 ? "+" : ""}{fmt(netChange)} this month
             </div>
           </div>
 
           {/* By category */}
           {byCategory.length > 0 && (
-            <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "18px 20px", marginBottom: 20 }}>
+            <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "18px 20px", marginBottom: 20 }}>
               <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Where it went</div>
               {byCategory.map(([name, value]) => {
                 const color = name === MOVIE_CAT ? "#7A3E56" : allCategories.find((c) => c.name === name)?.color || "#6B6558";
@@ -205,7 +205,7 @@ export default function ReportPage() {
                       <span>{name}</span>
                       <span className="tabnum">{fmt(value)} · {Math.round(pct)}%</span>
                     </div>
-                    <div style={{ height: 6, background: "#EAE5D9", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ height: 6, background: "var(--line)", borderRadius: 4, overflow: "hidden" }}>
                       <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 4 }} />
                     </div>
                   </div>
@@ -216,15 +216,15 @@ export default function ReportPage() {
 
           {/* Money rules performance */}
           {(overallRule || categoryRules.length > 0) && (
-            <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "18px 20px", marginBottom: 20 }}>
+            <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "18px 20px", marginBottom: 20 }}>
               <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Money rules</div>
               {overallRule && (
-                <div style={{ fontSize: 13, color: overallBroken ? "#A34A38" : "#2F6F5E", marginBottom: 6 }}>
+                <div style={{ fontSize: 13, color: overallBroken ? "var(--danger)" : "var(--success)", marginBottom: 6 }}>
                   {overallBroken ? `Over your overall limit by ${fmt(totalSpend - overallRule.amount)}` : `Stayed within your overall limit (${fmt(overallRule.amount)})`}
                 </div>
               )}
               {categoryRules.length > 0 && (
-                <div style={{ fontSize: 13, color: brokenCategories.length > 0 ? "#A34A38" : "#2F6F5E" }}>
+                <div style={{ fontSize: 13, color: brokenCategories.length > 0 ? "var(--danger)" : "var(--success)" }}>
                   {brokenCategories.length === 0
                     ? `Kept all ${categoryRules.length} category limit${categoryRules.length !== 1 ? "s" : ""}`
                     : `Broke ${brokenCategories.length} of ${categoryRules.length} category limits: ${brokenCategories.map((r) => `${r.category} (+${fmt(r.spent - r.amount)})`).join(", ")}`}
@@ -235,9 +235,9 @@ export default function ReportPage() {
 
           {/* Movies summary */}
           {monthMovies.length > 0 && (
-            <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "18px 20px", marginBottom: 20 }}>
+            <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "18px 20px", marginBottom: 20 }}>
               <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Movies</div>
-              <div style={{ fontSize: 13, color: "#5f5a4f", lineHeight: 1.8 }}>
+              <div style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.8 }}>
                 <div><span className="tabnum">{totalViewings}</span> viewing{totalViewings !== 1 ? "s" : ""} · <span className="tabnum">{fmt(totalMovieSpend)}</span> spent{rewatches.length > 0 && <> · {rewatches.length} rewatched</>}</div>
                 <div>Agreed with the public on <span className="tabnum">{monthMovies.length > 0 ? Math.round((matchedTaste / monthMovies.length) * 100) : 0}%</span> of what you watched</div>
               </div>
@@ -246,25 +246,25 @@ export default function ReportPage() {
 
           {/* Diet summary */}
           {monthChallengeDays.length > 0 && (
-            <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "18px 20px", marginBottom: 20 }}>
+            <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "18px 20px", marginBottom: 20 }}>
               <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>No-Sugar Challenge</div>
-              <div style={{ fontSize: 13, color: "#5f5a4f" }}>
-                <span className="tabnum" style={{ color: "#2F6F5E", fontWeight: 600 }}>{completedDays}</span> sugar-free day{completedDays !== 1 ? "s" : ""}
-                {slippedDays > 0 && <> · <span className="tabnum" style={{ color: "#A34A38" }}>{slippedDays}</span> slip{slippedDays !== 1 ? "s" : ""}</>}
+              <div style={{ fontSize: 13, color: "var(--text-2)" }}>
+                <span className="tabnum" style={{ color: "var(--success)", fontWeight: 600 }}>{completedDays}</span> sugar-free day{completedDays !== 1 ? "s" : ""}
+                {slippedDays > 0 && <> · <span className="tabnum" style={{ color: "var(--danger)" }}>{slippedDays}</span> slip{slippedDays !== 1 ? "s" : ""}</>}
               </div>
             </div>
           )}
 
           {/* Worth a look — wastage / attention flags */}
           {(brokenCategories.length > 0 || otherExpenses.length > 0 || biggestExpenses.length > 0) && (
-            <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "18px 20px" }}>
+            <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "18px 20px" }}>
               <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                <AlertTriangle size={15} color="#A3763F" /> Worth a look
+                <AlertTriangle size={15} color="var(--amber)" /> Worth a look
               </div>
 
               {biggestExpenses.length > 0 && (
                 <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 6 }}>Your biggest single expenses this month</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Your biggest single expenses this month</div>
                   {biggestExpenses.map((x, i) => (
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "4px 0" }}>
                       <span>{x.note || x.category}</span>
@@ -276,7 +276,7 @@ export default function ReportPage() {
 
               {otherExpenses.length > 0 && (
                 <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>
                     Logged as "Other" — <span className="tabnum">{fmt(otherExpenses.reduce((s, x) => s + x.amount, 0))}</span> total, worth a second look since these didn't fit anywhere specific
                   </div>
                   {otherExpenses.slice(0, 5).map((x, i) => (
@@ -289,7 +289,7 @@ export default function ReportPage() {
               )}
 
               {rewatches.length > 0 && (
-                <div style={{ fontSize: 12, color: "#8a8477" }}>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>
                   {rewatches.length} movie{rewatches.length !== 1 ? "s" : ""} rewatched this month — {rewatches.map((m) => `${m.title} (×${m.quantity})`).join(", ")}
                 </div>
               )}

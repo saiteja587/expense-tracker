@@ -2,7 +2,17 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, Plus, Trash2, Pencil, Check, X, HandCoins } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Pencil, Check, X, HandCoins, MessageCircle } from "lucide-react";
+
+// A friendly, ready-to-send WhatsApp message for an IOU.
+function whatsappText(i) {
+  const amount = "₹" + Math.round(i.amount).toLocaleString("en-IN");
+  const what = i.note ? ` for ${i.note}` : "";
+  const due = i.dueDate ? ` (due ${new Date(i.dueDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })})` : "";
+  return i.direction === "owed_to_me"
+    ? `Hey ${i.personName}! Quick reminder about the ${amount}${what}${due} 🙂 No rush — UPI whenever you get a moment. Thanks!`
+    : `Hey ${i.personName}! I owe you ${amount}${what}${due} — sending it soon. Thanks for covering! 🙏`;
+}
 import { showToast } from "../lib/toast";
 import { fmt, todayISO } from "../lib/format";
 
@@ -135,34 +145,34 @@ export default function IousPage() {
   }
 
   if (!loaded) {
-    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>Loading…</div>;
+    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>Loading…</div>;
   }
 
   return (
     <div className="page-container" style={{ maxWidth: 680, margin: "0 auto", padding: "40px 24px 64px" }}>
-      <div style={{ marginBottom: 28, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
-          <ArrowLeft size={12} /> Expense ledger
+      <div style={{ marginBottom: 28, borderBottom: "1px solid var(--line-strong)", paddingBottom: 20 }}>
+        <Link href="/me" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--muted)", textDecoration: "none", marginBottom: 6 }}>
+          <ArrowLeft size={13} /> Me
         </Link>
         <div className="lora" style={{ fontSize: 24, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-          <HandCoins size={22} color="#A34A38" /> <span className="gradient-title">Who owes what</span>
+          <HandCoins size={22} color="var(--danger)" /> <span className="gradient-title">Who owes what</span>
         </div>
-        <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Track money owed to you and money you owe others. Doesn't touch your balance.</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Track money owed to you and money you owe others. Doesn't touch your balance.</div>
       </div>
 
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
-        <div className="panel-soft" style={{ flex: 1, borderRadius: 6, padding: "14px 16px", background: "#EAF3EF" }}>
-          <div style={{ fontSize: 11, color: "#4d7a68" }}>Owed to you</div>
-          <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600, color: "#2F6F5E" }}>{fmt(owedToMe)}</div>
+        <div className="panel-soft" style={{ flex: 1, borderRadius: 6, padding: "14px 16px", background: "var(--success-bg)" }}>
+          <div style={{ fontSize: 12, color: "#4d7a68" }}>Owed to you</div>
+          <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600, color: "var(--success)" }}>{fmt(owedToMe)}</div>
         </div>
-        <div className="panel-soft" style={{ flex: 1, borderRadius: 6, padding: "14px 16px", background: "#FAECE7" }}>
-          <div style={{ fontSize: 11, color: "#a15436" }}>You owe</div>
-          <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600, color: "#A34A38" }}>{fmt(iOwe)}</div>
+        <div className="panel-soft" style={{ flex: 1, borderRadius: 6, padding: "14px 16px", background: "var(--danger-bg)" }}>
+          <div style={{ fontSize: 12, color: "#a15436" }}>You owe</div>
+          <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600, color: "var(--danger)" }}>{fmt(iOwe)}</div>
         </div>
       </div>
 
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 24 }}>
-        {editingId && <div style={{ fontSize: 11, color: "#A3763F", marginBottom: 8 }}>Editing — change values below and Save, or Cancel.</div>}
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 24 }}>
+        {editingId && <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8 }}>Editing — change values below and Save, or Cancel.</div>}
         <form onSubmit={submit} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input type="text" placeholder="Person's name" value={form.personName} onChange={(e) => setForm({ ...form, personName: e.target.value })} style={{ width: 150 }} maxLength={80} />
           <input type="number" placeholder="Amount (₹)" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ width: 110 }} />
@@ -171,52 +181,65 @@ export default function IousPage() {
             <option value="i_owe">I owe them</option>
           </select>
           <input type="text" placeholder="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} style={{ width: 150 }} maxLength={140} />
-          <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} style={{ width: 150 }} min={todayISO()} />
-          <button type="submit" disabled={submitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12, color: "var(--muted)" }}>
+            Due date (optional)
+            <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} style={{ width: 160 }} min={todayISO()} />
+          </label>
+          <button type="submit" disabled={submitting} className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
             <Plus size={13} /> {editingId ? "Save changes" : "Add"}
           </button>
           {editingId && (
-            <button type="button" onClick={cancelEdit} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <button type="button" onClick={cancelEdit} style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
               <X size={13} /> Cancel
             </button>
           )}
         </form>
-        {error && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{error}</div>}
+        {error && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>{error}</div>}
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-        <div style={{ fontSize: 12, color: "#8a8477" }}>{visible.length} entr{visible.length !== 1 ? "ies" : "y"}</div>
-        <label style={{ fontSize: 12, color: "#8a8477", display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-          <input type="checkbox" checked={showSettled} onChange={(e) => setShowSettled(e.target.checked)} />
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>{visible.length} entr{visible.length !== 1 ? "ies" : "y"}</div>
+        <label style={{ fontSize: 13, color: "var(--text-2)", display: "flex", alignItems: "center", gap: 8, cursor: "pointer", whiteSpace: "nowrap" }}>
+          <input type="checkbox" checked={showSettled} onChange={(e) => setShowSettled(e.target.checked)} style={{ width: 18, height: 18, margin: 0 }} />
           Show settled
         </label>
       </div>
 
       {visible.length === 0 ? (
-        <div style={{ border: "1px dashed #D9D2C2", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "#8a8477", fontSize: 14 }}>
+        <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
           Nothing here yet — add who owes you, or who you owe.
         </div>
       ) : (
         <div>
           {visible.map((i) => (
-            <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #EAE5D9", opacity: i.settled ? 0.5 : 1 }}>
+            <div key={i.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--line)", opacity: i.settled ? 0.5 : 1 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, textDecoration: i.settled ? "line-through" : "none" }}>
                   {i.personName}{i.note ? ` — ${i.note}` : ""}
                 </div>
-                <div style={{ fontSize: 11, color: "#8a8477" }}>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>
                   {i.direction === "owed_to_me" ? "owes you" : "you owe"}
                   {i.dueDate && ` · due ${new Date(i.dueDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`}
                   {i.settled && " · settled"}
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                <span className="tabnum" style={{ fontSize: 14, fontWeight: 500, color: i.direction === "owed_to_me" ? "#2F6F5E" : "#A34A38" }}>{fmt(i.amount)}</span>
-                <button onClick={() => toggleSettled(i)} title={i.settled ? "Mark unsettled" : "Mark settled"} style={{ background: "none", border: "none", cursor: "pointer", color: i.settled ? "#C4BDAC" : "#2F6F5E", display: "flex" }}>
-                  <Check size={15} />
+              <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                <span className="tabnum" style={{ fontSize: 15, fontWeight: 600, color: i.direction === "owed_to_me" ? "var(--success)" : "var(--danger)", marginRight: 4 }}>{fmt(i.amount)}</span>
+                {!i.settled && (
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(whatsappText(i))}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="icon-btn" aria-label={`Send ${i.personName} a WhatsApp reminder`} title="Remind on WhatsApp"
+                    style={{ color: "#1FA855" }}
+                  >
+                    <MessageCircle size={18} />
+                  </a>
+                )}
+                <button onClick={() => toggleSettled(i)} className="icon-btn" aria-label={i.settled ? "Mark unsettled" : "Mark settled"} title={i.settled ? "Mark unsettled" : "Mark settled"} style={{ color: i.settled ? "var(--muted)" : "var(--success)" }}>
+                  <Check size={18} />
                 </button>
-                <button onClick={() => startEdit(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Pencil size={13} /></button>
-                <button onClick={() => remove(i.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Trash2 size={14} /></button>
+                <button onClick={() => startEdit(i)} className="icon-btn" aria-label="Edit"><Pencil size={17} /></button>
+                <button onClick={() => remove(i.id)} className="icon-btn danger" aria-label="Delete"><Trash2 size={17} /></button>
               </div>
             </div>
           ))}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
+import Poster from "../components/Poster";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3, Bookmark, Sparkles } from "lucide-react";
 import { queueRequest, newRequestId } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
@@ -7,10 +8,10 @@ import CountUp from "../components/CountUp";
 import { fmt, todayISO } from "../lib/format";
 
 const TAKES = [
-  { value: "loved", label: "Loved it", score: 3, color: "#2F6F5E" },
+  { value: "loved", label: "Loved it", score: 3, color: "var(--success)" },
   { value: "liked", label: "Liked it", score: 2, color: "#3F6E5B" },
-  { value: "okay", label: "It was okay", score: 1, color: "#A3763F" },
-  { value: "disliked", label: "Didn't like it", score: 0, color: "#A34A38" },
+  { value: "okay", label: "It was okay", score: 1, color: "var(--amber)" },
+  { value: "disliked", label: "Didn't like it", score: 0, color: "var(--danger)" },
 ];
 
 const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -43,13 +44,13 @@ function whereToWatchUrl(title) {
 function QuantityStepper({ value, onChange }) {
   return (
     <div>
-      <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Times watched</label>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, border: "1px solid #D9D2C2", borderRadius: 8, padding: "6px 10px", width: "fit-content" }}>
+      <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Times watched</label>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, border: "1px solid var(--line-strong)", borderRadius: 8, padding: "6px 10px", width: "fit-content" }}>
         <button
           type="button"
           onClick={() => onChange(Math.max(1, value - 1))}
           aria-label="Decrease"
-          style={{ background: "#EAE5D9", border: "none", borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#241F1A" }}
+          style={{ background: "var(--line)", border: "none", borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--ink)" }}
         >
           <Minus size={14} />
         </button>
@@ -58,7 +59,7 @@ function QuantityStepper({ value, onChange }) {
           type="button"
           onClick={() => onChange(Math.min(20, value + 1))}
           aria-label="Increase"
-          style={{ background: "#241F1A", border: "none", borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#FBF8F2" }}
+          style={{ background: "var(--ink)", border: "none", borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--bg)" }}
         >
           <Plus size={14} />
         </button>
@@ -451,7 +452,7 @@ export default function MoviesPage() {
 
   if (!loaded) {
     return (
-      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
         Loading your movie log…
       </div>
     );
@@ -460,68 +461,65 @@ export default function MoviesPage() {
   return (
     <div className="page-container" style={{ maxWidth: 920, margin: "0 auto", padding: "40px 24px 64px" }}>
       {loadError && (
-        <div style={{ background: "#FAECE7", border: "1px solid #D85A30", color: "#712B13", padding: "10px 14px", borderRadius: 4, fontSize: 13, marginBottom: 20 }}>
+        <div style={{ background: "var(--danger-bg)", border: "1px solid #D85A30", color: "#712B13", padding: "10px 14px", borderRadius: 4, fontSize: 13, marginBottom: 20 }}>
           {loadError}
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, flexWrap: "wrap", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 32, borderBottom: "1px solid var(--line-strong)", paddingBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
-            <ArrowLeft size={12} /> Expense ledger
-          </Link>
           <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
             Movie Nights
           </div>
-          <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
             Tickets, snacks, who you went with, and whether the crowd agreed with you.
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <button onClick={() => setViewDate(new Date(year, month - 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }} aria-label="Previous month">
+          <button onClick={() => setViewDate(new Date(year, month - 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }} aria-label="Previous month">
             <ChevronLeft size={18} />
           </button>
           <div className="tabnum" style={{ fontSize: 14, fontWeight: 500, minWidth: 130, textAlign: "center" }}>
             {MONTH_NAMES[month]} {year}
           </div>
-          <button onClick={() => setViewDate(new Date(year, month + 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }} aria-label="Next month">
+          <button onClick={() => setViewDate(new Date(year, month + 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }} aria-label="Next month">
             <ChevronRight size={18} />
           </button>
         </div>
       </div>
 
       {movieCountGuideline && monthMovies.length > movieCountGuideline && (
-        <div style={{ fontSize: 13, color: "#C98A2C", marginBottom: 16, background: "#F7EEDD", borderRadius: 4, padding: "8px 12px" }}>
+        <div style={{ fontSize: 13, color: "var(--warn)", marginBottom: 16, background: "var(--warn-bg)", borderRadius: 4, padding: "8px 12px" }}>
           You've watched {monthMovies.length} this month — {monthMovies.length - movieCountGuideline} over your usual {movieCountGuideline}. Just a heads-up, not a stop sign.
         </div>
       )}
 
       <div style={{ display: "flex", gap: 40, marginBottom: 40, flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>Spent in {MONTH_NAMES[month]}</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Spent in {MONTH_NAMES[month]}</div>
           <div className="lora tabnum" style={{ fontSize: "clamp(28px, 8vw, 44px)", fontWeight: 600, lineHeight: 1 }}>
             {fmt(totalSpend)}
           </div>
-          <div style={{ fontSize: 12, color: "#8a8477", marginTop: 6 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
             {fmt(ticketSpend)} tickets · {fmt(canteenSpend)} canteen
           </div>
         </div>
         <div>
-          <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>Movies watched</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Movies watched</div>
           <div className="lora tabnum" style={{ fontSize: "clamp(28px, 8vw, 44px)", fontWeight: 600, lineHeight: 1 }}>
             {viewingsCount}
           </div>
           {viewingsCount !== monthMovies.length && (
-            <div style={{ fontSize: 11, color: "#8a8477", marginTop: 6 }}>{monthMovies.length} titles, some rewatched</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>{monthMovies.length} titles, some rewatched</div>
           )}
         </div>
         {monthMovies.length > 0 && (
           <div>
-            <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>You vs the crowd</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>You vs the crowd</div>
             <div style={{ fontSize: 14, marginTop: 10 }}>
-              <span style={{ color: "#2F6F5E", fontWeight: 500 }}>{matchedCount} matched</span>
-              <span style={{ color: "#8a8477" }}> · </span>
-              <span style={{ color: "#A34A38", fontWeight: 500 }}>{divergedCount} you disagreed</span>
+              <span style={{ color: "var(--success)", fontWeight: 500 }}>{matchedCount} matched</span>
+              <span style={{ color: "var(--muted)" }}> · </span>
+              <span style={{ color: "var(--danger)", fontWeight: 500 }}>{divergedCount} you disagreed</span>
             </div>
           </div>
         )}
@@ -532,47 +530,47 @@ export default function MoviesPage() {
           <button
             className="story-chip"
             onClick={() => setShowAllTime((v) => !v)}
-            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 20, padding: "7px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 20, padding: "7px 14px", fontSize: 12, color: "var(--text-2)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
           >
             <BarChart3 size={13} /> {showAllTime ? "Hide" : "Show"} all-time stats
           </button>
           {showAllTime && (
-            <div className="panel-soft" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginTop: 14, padding: "16px 18px", background: "#F1ECDF", borderRadius: 6 }}>
+            <div className="panel-soft" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginTop: 14, padding: "16px 18px", background: "var(--surface-2)", borderRadius: 6 }}>
               <div>
-                <div style={{ fontSize: 11, color: "#8a8477" }}>Titles logged</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Titles logged</div>
                 <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalTitles} /></div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: "#8a8477" }}>Total viewings</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Total viewings</div>
                 <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalViewings} /></div>
-                {allTimeStats.rewatches > 0 && <div style={{ fontSize: 10, color: "#8a8477" }}>{allTimeStats.rewatches} rewatched</div>}
+                {allTimeStats.rewatches > 0 && <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{allTimeStats.rewatches} rewatched</div>}
               </div>
               <div>
-                <div style={{ fontSize: 11, color: "#8a8477" }}>Spent all-time</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Spent all-time</div>
                 <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalSpend} format={fmt} /></div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: "#8a8477" }}>Avg. per viewing</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Avg. per viewing</div>
                 <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.avgCost} format={fmt} /></div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: "#8a8477" }}>Agree with public</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Agree with public</div>
                 <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.agreementRate} />%</div>
               </div>
               {allTimeStats.topCompanion && (
                 <div>
-                  <div style={{ fontSize: 11, color: "#8a8477" }}>Most watched with</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Most watched with</div>
                   <div className="lora" style={{ fontSize: 16, fontWeight: 600 }}>{allTimeStats.topCompanion[0]}</div>
-                  <div style={{ fontSize: 10, color: "#8a8477" }}>{allTimeStats.topCompanion[1]} times</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{allTimeStats.topCompanion[1]} times</div>
                 </div>
               )}
               <div>
-                <div style={{ fontSize: 11, color: "#8a8477" }}>Rewatch rate</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Rewatch rate</div>
                 <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.rewatchRate} />%</div>
               </div>
               {allTimeStats.topGenres.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, color: "#8a8477" }}>Top genres</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Top genres</div>
                   <div style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>
                     {allTimeStats.topGenres.map(([g, c]) => `${g} (${c})`).join(", ")}
                   </div>
@@ -580,11 +578,11 @@ export default function MoviesPage() {
               )}
               {ticketTrend && (
                 <div>
-                  <div style={{ fontSize: 11, color: "#8a8477" }}>Ticket price trend</div>
-                  <div className="lora tabnum" style={{ fontSize: 18, fontWeight: 600, color: ticketTrend.pct > 0 ? "#A34A38" : "#2F6F5E" }}>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Ticket price trend</div>
+                  <div className="lora tabnum" style={{ fontSize: 18, fontWeight: 600, color: ticketTrend.pct > 0 ? "var(--danger)" : "var(--success)" }}>
                     {ticketTrend.pct > 0 ? "↑" : ticketTrend.pct < 0 ? "↓" : "→"} {Math.abs(ticketTrend.pct)}%
                   </div>
-                  <div style={{ fontSize: 10, color: "#8a8477" }}>vs. 3 months ago ({fmt(ticketTrend.past)} → {fmt(ticketTrend.current)})</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>vs. 3 months ago ({fmt(ticketTrend.past)} → {fmt(ticketTrend.current)})</div>
                 </div>
               )}
             </div>
@@ -596,44 +594,44 @@ export default function MoviesPage() {
         <div style={{ marginBottom: 32 }}>
           <button
             onClick={() => setShowWrapUp((v) => !v)}
-            style={{ background: "none", border: "1px solid #D9D2C2", borderRadius: 8, padding: "7px 14px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, padding: "7px 14px", fontSize: 12, color: "var(--text-2)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
           >
             <Sparkles size={13} /> {showWrapUp ? "Hide" : "Show"} {currentYear} wrap-up
           </button>
           {showWrapUp && (
-            <div className="panel-soft" style={{ marginTop: 14, padding: "20px 22px", borderRadius: 6, background: "linear-gradient(135deg, #A34A38 0%, #8C4470 50%, #2F6F5E 100%)", color: "#FBF8F2" }}>
+            <div className="panel-soft" style={{ marginTop: 14, padding: "20px 22px", borderRadius: 6, background: "linear-gradient(135deg, var(--danger) 0%, #8C4470 50%, var(--success) 100%)", color: "var(--bg)" }}>
               <div className="lora" style={{ fontSize: 18, fontWeight: 600, marginBottom: 14 }}>Your {currentYear} in movies</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16 }}>
                 <div>
-                  <div style={{ fontSize: 11, opacity: 0.8 }}>Titles watched</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Titles watched</div>
                   <div className="lora tabnum" style={{ fontSize: 26, fontWeight: 600 }}>{yearWrapUp.titles}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, opacity: 0.8 }}>Total viewings</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Total viewings</div>
                   <div className="lora tabnum" style={{ fontSize: 26, fontWeight: 600 }}>{yearWrapUp.viewings}</div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, opacity: 0.8 }}>Spent on movies</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Spent on movies</div>
                   <div className="lora tabnum" style={{ fontSize: 26, fontWeight: 600 }}>{fmt(yearWrapUp.totalSpend)}</div>
                 </div>
                 {yearWrapUp.topGenre && (
                   <div>
-                    <div style={{ fontSize: 11, opacity: 0.8 }}>Top genre</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Top genre</div>
                     <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>{yearWrapUp.topGenre[0]}</div>
-                    <div style={{ fontSize: 10, opacity: 0.8 }}>{yearWrapUp.topGenre[1]} times</div>
+                    <div style={{ fontSize: 11.5, opacity: 0.8 }}>{yearWrapUp.topGenre[1]} times</div>
                   </div>
                 )}
                 {yearWrapUp.topCompanion && (
                   <div>
-                    <div style={{ fontSize: 11, opacity: 0.8 }}>Watched most with</div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Watched most with</div>
                     <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>{yearWrapUp.topCompanion[0]}</div>
-                    <div style={{ fontSize: 10, opacity: 0.8 }}>{yearWrapUp.topCompanion[1]} times</div>
+                    <div style={{ fontSize: 11.5, opacity: 0.8 }}>{yearWrapUp.topCompanion[1]} times</div>
                   </div>
                 )}
                 <div>
-                  <div style={{ fontSize: 11, opacity: 0.8 }}>Biggest movie month</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Biggest movie month</div>
                   <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>{yearWrapUp.bestMonth}</div>
-                  <div style={{ fontSize: 10, opacity: 0.8 }}>{yearWrapUp.bestMonthCount} viewings</div>
+                  <div style={{ fontSize: 11.5, opacity: 0.8 }}>{yearWrapUp.bestMonthCount} viewings</div>
                 </div>
               </div>
             </div>
@@ -649,26 +647,27 @@ export default function MoviesPage() {
         <form onSubmit={addToWatchlist} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           <input type="text" placeholder="Movie to watch" value={watchlistForm.title} onChange={(e) => setWatchlistForm({ ...watchlistForm, title: e.target.value })} maxLength={100} style={{ flex: "1 1 160px" }} />
           <input type="text" placeholder="Note (optional)" value={watchlistForm.note} onChange={(e) => setWatchlistForm({ ...watchlistForm, note: e.target.value })} maxLength={100} style={{ flex: "1 1 140px" }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+          <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
             <Plus size={13} /> Add
           </button>
         </form>
-        {watchlistError && <div style={{ fontSize: 12, color: "#A34A38", marginBottom: 8 }}>{watchlistError}</div>}
+        {watchlistError && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 8 }}>{watchlistError}</div>}
         {watchlist.length === 0 ? (
-          <div style={{ fontSize: 13, color: "#8a8477" }}>Nothing on your watchlist yet.</div>
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing on your watchlist yet.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {watchlist.map((w) => (
-              <div key={w.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #EAE5D9", gap: 12 }}>
-                <div style={{ minWidth: 0 }}>
+              <div key={w.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
+                <Poster title={w.title} width={40} radius={7} />
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 14 }}>{w.title}</div>
-                  {w.note && <div style={{ fontSize: 11, color: "#8a8477" }}>{w.note}</div>}
+                  {w.note && <div style={{ fontSize: 12, color: "var(--muted)" }}>{w.note}</div>}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                  <button type="button" onClick={() => moveToWatched(w)} style={{ background: "#F1ECDF", border: "none", borderRadius: 20, padding: "5px 12px", fontSize: 11, fontWeight: 500, color: "#5f5a4f", cursor: "pointer" }}>
+                  <button type="button" onClick={() => moveToWatched(w)} style={{ background: "var(--surface-2)", border: "none", borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 500, color: "var(--text-2)", cursor: "pointer" }}>
                     Watched it →
                   </button>
-                  <button onClick={() => removeFromWatchlist(w.id)} aria-label="Remove" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Trash2 size={13} /></button>
+                  <button onClick={() => removeFromWatchlist(w.id)} aria-label="Remove" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--faint)", display: "flex" }}><Trash2 size={13} /></button>
                 </div>
               </div>
             ))}
@@ -684,7 +683,7 @@ export default function MoviesPage() {
           <form onSubmit={submitMovie} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <input ref={titleInputRef} type="text" placeholder="Movie title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} />
             <div>
-              <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Watched via</label>
+              <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Watched via</label>
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                 {["Theatre", "OTT"].map((vt) => (
                   <button
@@ -696,9 +695,9 @@ export default function MoviesPage() {
                     }}
                     style={{
                       flex: 1, fontSize: 13, padding: "8px 10px", borderRadius: 8, cursor: "pointer",
-                      border: "1px solid " + (form.venueType === vt ? "#241F1A" : "#D9D2C2"),
-                      background: form.venueType === vt ? "#241F1A" : "transparent",
-                      color: form.venueType === vt ? "#FBF8F2" : "#5f5a4f",
+                      border: "1px solid " + (form.venueType === vt ? "var(--ink)" : "var(--line-strong)"),
+                      background: form.venueType === vt ? "var(--ink)" : "transparent",
+                      color: form.venueType === vt ? "var(--bg)" : "var(--text-2)",
                     }}
                   >
                     {vt === "OTT" ? "OTT / Streaming" : "Theatre"}
@@ -729,10 +728,10 @@ export default function MoviesPage() {
               <input type="number" inputMode="decimal" placeholder="Ticket (₹)" value={form.ticketPrice} onChange={(e) => setForm({ ...form, ticketPrice: e.target.value })} step="0.01" min="0" />
               <input type="number" inputMode="decimal" placeholder="Canteen (₹)" value={form.canteenPrice} onChange={(e) => setForm({ ...form, canteenPrice: e.target.value })} step="0.01" min="0" />
             </div>
-            <div style={{ fontSize: 11, color: "#8a8477", marginTop: -4 }}>Per-viewing price — total below accounts for rewatches</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4 }}>Per-viewing price — total below accounts for rewatches</div>
             <QuantityStepper value={form.quantity} onChange={(v) => setForm({ ...form, quantity: v })} />
             {form.quantity > 1 && (
-              <div style={{ fontSize: 12, color: "#5f5a4f" }}>
+              <div style={{ fontSize: 12, color: "var(--text-2)" }}>
                 Total for this entry: {fmt((parseFloat(form.ticketPrice) || 0) * form.quantity + (parseFloat(form.canteenPrice) || 0) * form.quantity)}
               </div>
             )}
@@ -740,14 +739,14 @@ export default function MoviesPage() {
               <>
                 <input type="text" placeholder="Who you went with (optional)" value={form.companions} onChange={(e) => setForm({ ...form, companions: e.target.value })} maxLength={120} />
                 <div>
-                  <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Genre (optional)</label>
+                  <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Genre (optional)</label>
                   <select value={form.genre} onChange={(e) => setForm({ ...form, genre: e.target.value })}>
                     <option value="">Not set</option>
                     {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>Your take</label>
+                  <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Your take</label>
                   <select value={form.myTake} onChange={(e) => setForm({ ...form, myTake: e.target.value })}>
                     {TAKES.map((t) => (
                       <option key={t.value} value={t.value}>{t.label}</option>
@@ -755,7 +754,7 @@ export default function MoviesPage() {
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, color: "#8a8477", display: "block", marginBottom: 4 }}>How the public/critics received it</label>
+                  <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>How the public/critics received it</label>
                   <select value={form.publicTake} onChange={(e) => setForm({ ...form, publicTake: e.target.value })}>
                     {TAKES.map((t) => (
                       <option key={t.value} value={t.value}>{t.label}</option>
@@ -763,32 +762,32 @@ export default function MoviesPage() {
                   </select>
                 </div>
                 <input type="text" placeholder="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} maxLength={140} />
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#5f5a4f", cursor: "pointer" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-2)", cursor: "pointer" }}>
                   <input type="checkbox" checked={form.affectsBalance} onChange={(e) => setForm({ ...form, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
                   Deduct from balance
                 </label>
                 {!editingId && (
-                  <button type="button" onClick={() => setMoreDetailsOpen(false)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "#8a8477", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
+                  <button type="button" onClick={() => setMoreDetailsOpen(false)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "var(--muted)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
                     Hide extra details
                   </button>
                 )}
               </>
             ) : (
-              <button type="button" onClick={() => setMoreDetailsOpen(true)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "#8a8477", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
+              <button type="button" onClick={() => setMoreDetailsOpen(true)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "var(--muted)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
                 Who with, genre, ratings, note →
               </button>
             )}
-            {formError && <div style={{ fontSize: 12, color: "#A34A38" }}>{formError}</div>}
+            {formError && <div style={{ fontSize: 12, color: "var(--danger)" }}>{formError}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="submit"
                 disabled={submitting}
-                style={{ flex: 1, marginTop: 4, background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                style={{ flex: 1, marginTop: 4, background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
               >
                 <Plus size={16} /> {submitting ? "Saving…" : editingId ? "Save changes" : "Add movie"}
               </button>
               {editingId && (
-                <button type="button" onClick={cancelEdit} style={{ marginTop: 4, background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
+                <button type="button" onClick={cancelEdit} style={{ marginTop: 4, background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
                   Cancel
                 </button>
               )}
@@ -801,7 +800,7 @@ export default function MoviesPage() {
             Watched this month
           </div>
           {sorted.length === 0 ? (
-            <div style={{ border: "1px dashed #D9D2C2", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "#8a8477", fontSize: 14 }}>
+            <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
               <Clapperboard size={22} style={{ marginBottom: 8, opacity: 0.5 }} />
               <div>No movies logged for {MONTH_NAMES[month]} yet.</div>
               <div style={{ fontSize: 12, marginTop: 2 }}>Add your first one on the left.</div>
@@ -814,18 +813,20 @@ export default function MoviesPage() {
                 const total = (m.ticketPrice + m.canteenPrice) * m.quantity;
                 const mismatch = diverges(m);
                 return (
-                  <div key={m.id} className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 4, padding: "14px 16px" }}>
+                  <div key={m.id} className="card" style={{ border: "1px solid var(--line)", borderRadius: 4, padding: "14px 16px", display: "flex", gap: 14 }}>
+                    <Poster title={m.title} width={64} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                       <div style={{ minWidth: 0 }}>
                         <div className="lora" style={{ fontSize: 16, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
                           {m.title}
                           {m.quantity > 1 && (
-                            <span style={{ fontSize: 11, fontWeight: 500, color: "#7A3E56", background: "#7A3E561A", padding: "2px 7px", borderRadius: 20 }}>
+                            <span style={{ fontSize: 12, fontWeight: 500, color: "#7A3E56", background: "#7A3E561A", padding: "2px 7px", borderRadius: 20 }}>
                               ×{m.quantity}
                             </span>
                           )}
                         </div>
-                        <div style={{ fontSize: 12, color: "#8a8477", marginTop: 2 }}>
+                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
                           {new Date(m.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                           {m.time && <> · {m.time}</>}
                           {m.venueName && <> · {m.venueName}{m.venueType === "OTT" ? " (OTT)" : ""}</>}
@@ -834,7 +835,7 @@ export default function MoviesPage() {
                           {m.affectsBalance === false && <> · not deducted from balance</>}
                           {m.pending && <> · pending sync</>}
                           {!m.pending && (
-                            <> · <a href={whereToWatchUrl(m.title)} target="_blank" rel="noopener noreferrer" style={{ color: "#A34A38", textDecoration: "none" }}>where to watch →</a></>
+                            <> · <a href={whereToWatchUrl(m.title)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--danger)", textDecoration: "none" }}>where to watch →</a></>
                           )}
                         </div>
                       </div>
@@ -842,35 +843,36 @@ export default function MoviesPage() {
                         <span className="tabnum" style={{ fontSize: 15, fontWeight: 500 }}>{fmt(total)}</span>
                         {!m.pending && (
                           <>
-                            <button onClick={() => startEdit(m)} aria-label="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#5f5a4f")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
-                              <Pencil size={14} />
+                            <button onClick={() => startEdit(m)} aria-label="Edit" className="icon-btn">
+                              <Pencil size={17} />
                             </button>
-                            <button onClick={() => removeMovie(m.id)} aria-label="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#A34A38")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
-                              <Trash2 size={14} />
+                            <button onClick={() => removeMovie(m.id)} aria-label="Delete" className="icon-btn danger">
+                              <Trash2 size={17} />
                             </button>
                           </>
                         )}
                       </div>
                     </div>
-                    <div style={{ fontSize: 11, color: "#8a8477", marginTop: 4 }}>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
                       {fmt(m.ticketPrice)} ticket · {fmt(m.canteenPrice)} canteen{m.quantity > 1 && <> · ×{m.quantity} viewings</>}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
-                      <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 20, background: mine.color + "1A", color: mine.color, fontWeight: 500 }}>
+                      <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 20, background: mine.color + "1A", color: mine.color, fontWeight: 500 }}>
                         You: {mine.label}
                       </span>
-                      <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 20, background: pub.color + "1A", color: pub.color, fontWeight: 500 }}>
+                      <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 20, background: pub.color + "1A", color: pub.color, fontWeight: 500 }}>
                         Public: {pub.label}
                       </span>
                       {mismatch && (
-                        <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 20, background: "#5B3A5C1A", color: "#5B3A5C", fontWeight: 500 }}>
+                        <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 20, background: "#5B3A5C1A", color: "#5B3A5C", fontWeight: 500 }}>
                           You disagreed with the crowd
                         </span>
                       )}
                     </div>
                     {m.note && (
-                      <div style={{ fontSize: 12, color: "#5f5a4f", marginTop: 8, fontStyle: "italic" }}>{m.note}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 8, fontStyle: "italic" }}>{m.note}</div>
                     )}
+                    </div>
                   </div>
                 );
               })}

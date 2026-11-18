@@ -75,24 +75,24 @@ export default function PausePage() {
   return (
     <div className="page-container" style={{ maxWidth: 480, margin: "0 auto", padding: "40px 24px 64px", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <div style={{ marginBottom: 32 }}>
-        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none" }}>
-          <ArrowLeft size={12} /> Back
+        <Link href="/me" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--muted)", textDecoration: "none" }}>
+          <ArrowLeft size={13} /> Me
         </Link>
       </div>
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 28 }}>
         {!message ? (
           <>
-            <div className="lora" style={{ fontSize: 20, fontWeight: 600, color: "#241F1A" }}>
+            <div className="lora" style={{ fontSize: 20, fontWeight: 600, color: "var(--ink)" }}>
               Need a moment?
             </div>
-            <div style={{ fontSize: 13, color: "#8a8477", maxWidth: 320 }}>
+            <div style={{ fontSize: 13, color: "var(--muted)", maxWidth: 320 }}>
               Tap below. A sound will interrupt the moment, and something to read will come up. Nothing here is saved or tracked.
             </div>
             <button
               onClick={handlePause}
               style={{
-                width: 160, height: 160, borderRadius: "50%", background: "#241F1A", color: "#FBF8F2",
+                width: 160, height: 160, borderRadius: "50%", background: "var(--ink)", color: "var(--bg)",
                 border: "none", fontSize: 15, fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 20px rgba(36,31,26,0.25)",
               }}
             >
@@ -103,19 +103,19 @@ export default function PausePage() {
           <>
             <div
               style={{
-                width: 90, height: 90, borderRadius: "50%", border: "2px solid #A34A38",
+                width: 90, height: 90, borderRadius: "50%", border: "2px solid var(--danger)",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 animation: breathing ? "pauseBreathe 4s ease-in-out infinite" : "none",
               }}
             >
-              <span style={{ fontSize: 12, color: "#A34A38" }}>breathe</span>
+              <span style={{ fontSize: 12, color: "var(--danger)" }}>breathe</span>
             </div>
-            <div className="lora" style={{ fontSize: 18, fontWeight: 600, color: "#241F1A", maxWidth: 340, lineHeight: 1.5 }}>
+            <div className="lora" style={{ fontSize: 18, fontWeight: 600, color: "var(--ink)", maxWidth: 340, lineHeight: 1.5 }}>
               {message}
             </div>
             <button
               onClick={handlePause}
-              style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, cursor: "pointer" }}
+              style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, cursor: "pointer" }}
             >
               Again
             </button>

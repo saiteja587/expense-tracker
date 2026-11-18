@@ -5,7 +5,7 @@ import Link from "next/link";
 import { THEMES, getTheme, saveTheme } from "../lib/theme";
 import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy, Fingerprint } from "lucide-react";
 
-const BASE_CATEGORY_COLORS = ["#B5533C", "#C98A2C", "#3F6E5B", "#5B3A5C", "#2F4858", "#A3763F", "#6B7A3E", "#8A4B6B", "#6B6558"];
+const BASE_CATEGORY_COLORS = ["#B5533C", "var(--warn)", "#3F6E5B", "#5B3A5C", "#2F4858", "var(--amber)", "#6B7A3E", "#8A4B6B", "#6B6558"];
 
 export default function SettingsPage() {
   const [accent, setAccent] = useState("sunset");
@@ -593,57 +593,66 @@ export default function SettingsPage() {
   }
 
   if (!loaded) {
-    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>Loading…</div>;
+    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>Loading…</div>;
   }
 
   return (
     <div className="page-container" style={{ maxWidth: 640, margin: "0 auto", padding: "40px 24px 64px" }}>
-      <div style={{ marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
-          <ArrowLeft size={12} /> Expense ledger
+      <div style={{ marginBottom: 32, borderBottom: "1px solid var(--line-strong)", paddingBottom: 20 }}>
+        <Link href="/me" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--muted)", textDecoration: "none", marginBottom: 6 }}>
+          <ArrowLeft size={13} /> Me
         </Link>
         <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Settings</div>
       </div>
 
+      <details className="settings-group">
+        <summary>💾 Backup & restore</summary>
+        <div className="settings-body">
       {/* Data backup */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Back up your data</div>
-          <div style={{ fontSize: 11, color: "#8a8477" }}>Downloads everything — expenses, movies, balance, budget rules, challenge history — as one file.</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Downloads everything — expenses, movies, balance, budget rules, challenge history — as one file.</div>
         </div>
-        <button onClick={exportData} disabled={exporting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: exporting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+        <button onClick={exportData} disabled={exporting} className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: exporting ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
           <Download size={13} /> {exporting ? "Exporting…" : "Export"}
         </button>
       </div>
 
       {/* Data restore */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Restore from a backup</div>
-            <div style={{ fontSize: 11, color: "#8a8477" }}>Adds the records from an exported .json file back into this database. Anything already here is skipped, so it's safe to import the same backup again.</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>Adds the records from an exported .json file back into this database. Anything already here is skipped, so it's safe to import the same backup again.</div>
           </div>
-          <label style={{ background: importing ? "#EAE5D9" : "#241F1A", color: importing ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: importing ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+          <label style={{ background: importing ? "var(--line)" : "var(--ink)", color: importing ? "var(--ink)" : "var(--bg)", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: importing ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
             <Upload size={13} /> {importing ? "Importing…" : "Import"}
             <input type="file" accept="application/json" onChange={handleImportFile} disabled={importing} style={{ display: "none" }} />
           </label>
         </div>
         {importResult && (
-          <div style={{ fontSize: 12, color: "#2F6F5E", marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: "var(--success)", marginTop: 10 }}>
             Added {importResult.expenses || 0} expenses, {importResult.movies || 0} movies, {importResult.topups || 0} top-ups, {importResult.ious || 0} IOUs, {importResult.recurring || 0} recurring, {importResult.challengeDays || 0} challenge days (anything already here was skipped).
           </div>
         )}
-        {importError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 10 }}>{importError}</div>}
+        {importError && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 10 }}>{importError}</div>}
       </div>
 
+        </div>
+      </details>
+
+      <details className="settings-group">
+        <summary>🔔 Notifications</summary>
+        <div className="settings-body">
       {/* Notifications */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Bell size={16} />
             <div>
               <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Notifications</div>
-              <div style={{ fontSize: 11, color: "#8a8477" }}>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
                 {notifStatus === "unsupported" && "Not supported in this browser."}
                 {notifStatus === "denied" && "Blocked — allow notifications for this site in your browser settings to turn this on."}
                 {notifStatus === "off" && "Off. Turn on to get real device notifications, even with the app closed."}
@@ -656,50 +665,57 @@ export default function SettingsPage() {
             <button
               onClick={notifStatus === "on" ? disableNotifications : enableNotifications}
               disabled={notifBusy}
-              style={{ background: notifStatus === "on" ? "#EAE5D9" : "#241F1A", color: notifStatus === "on" ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: notifBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
+              style={{ background: notifStatus === "on" ? "var(--line)" : "var(--ink)", color: notifStatus === "on" ? "var(--ink)" : "var(--bg)", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: notifBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
             >
               {notifBusy ? "Working…" : notifStatus === "on" ? "Turn off" : "Turn on"}
             </button>
           )}
         </div>
-        {notifError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 10 }}>{notifError}</div>}
+        {notifError && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 10 }}>{notifError}</div>}
 
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #EAE5D9" }}>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Water reminder every 1.5 hours</div>
-          <div style={{ fontSize: 11, color: "#8a8477", lineHeight: 1.6, marginBottom: 10 }}>
+        <details style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+          <summary style={{ fontSize: 13, fontWeight: 600, cursor: "pointer", color: "var(--text-2)" }}>Advanced: water reminders every 1.5 hours</summary>
+          <div style={{ height: 8 }} />
+          <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.6, marginBottom: 10 }}>
             Vercel's free plan can only run scheduled checks once a day — not frequently enough for a water reminder. To get one every 90 minutes at no cost, use a free external scheduler (e.g. cron-job.org): create an account, add a new cron job set to run every 90 minutes, and point it at the URL below. Replace YOUR_WATER_NOTIFY_SECRET with the actual value of the WATER_NOTIFY_SECRET environment variable you set on Vercel.
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <code style={{ fontSize: 11, background: "#F1ECDF", padding: "8px 10px", borderRadius: 8, flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
+            <code style={{ fontSize: 12, background: "var(--surface-2)", padding: "8px 10px", borderRadius: 8, flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
               {typeof window !== "undefined" ? window.location.origin : ""}/api/notify-water?secret=YOUR_WATER_NOTIFY_SECRET
             </code>
-            <button onClick={copyWaterUrl} style={{ background: "#EAE5D9", border: "none", borderRadius: 8, padding: "8px 10px", cursor: "pointer", display: "flex" }}>
+            <button onClick={copyWaterUrl} style={{ background: "var(--line)", border: "none", borderRadius: 8, padding: "8px 10px", cursor: "pointer", display: "flex" }}>
               <Copy size={13} />
             </button>
           </div>
-          {copied && <div style={{ fontSize: 11, color: "#2F6F5E", marginTop: 6 }}>Copied</div>}
-          <div style={{ fontSize: 10, color: "#8a8477", marginTop: 8 }}>This same schedule also nudges you about the sugar challenge if it's past 8pm and today isn't marked yet.</div>
-        </div>
+          {copied && <div style={{ fontSize: 12, color: "var(--success)", marginTop: 6 }}>Copied</div>}
+          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>This same schedule also nudges you about the sugar challenge if it's past 8pm and today isn't marked yet.</div>
+        </details>
       </div>
 
+        </div>
+      </details>
+
+      <details className="settings-group">
+        <summary>🎨 Appearance</summary>
+        <div className="settings-body">
       {/* Dark mode */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {darkMode ? <Moon size={16} /> : <Sun size={16} />}
           <div>
             <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Dark mode</div>
-            <div style={{ fontSize: 11, color: "#8a8477" }}>Applied as a color filter, not a full redesign — simple, reversible.</div>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>Applied as a color filter, not a full redesign — simple, reversible.</div>
           </div>
         </div>
-        <button onClick={toggleDarkMode} style={{ background: darkMode ? "#241F1A" : "#EAE5D9", color: darkMode ? "#FBF8F2" : "#241F1A", border: "none", borderRadius: 20, padding: "6px 16px", fontSize: 12, cursor: "pointer" }}>
+        <button onClick={toggleDarkMode} style={{ background: darkMode ? "var(--ink)" : "var(--line)", color: darkMode ? "var(--bg)" : "var(--ink)", border: "none", borderRadius: 20, padding: "6px 16px", fontSize: 12, cursor: "pointer" }}>
           {darkMode ? "On" : "Off"}
         </button>
       </div>
 
       {/* Accent theme */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Colour theme</div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 14 }}>Changes the buttons, titles, glow and highlights everywhere.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Changes the buttons, titles, glow and highlights everywhere.</div>
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
           {Object.entries(THEMES).map(([key, t]) => (
             <div key={key} style={{ textAlign: "center" }}>
@@ -710,35 +726,41 @@ export default function SettingsPage() {
                 onClick={() => pickAccent(key)}
                 style={{ background: t.gradient }}
               />
-              <div style={{ fontSize: 11, marginTop: 6, color: accent === key ? "#241F1A" : "#8a8477", fontWeight: accent === key ? 600 : 400 }}>{t.label}</div>
+              <div style={{ fontSize: 12, marginTop: 6, color: accent === key ? "var(--ink)" : "var(--muted)", fontWeight: accent === key ? 600 : 400 }}>{t.label}</div>
             </div>
           ))}
         </div>
       </div>
 
+        </div>
+      </details>
+
+      <details className="settings-group" open>
+        <summary>🔒 Security</summary>
+        <div className="settings-body">
       {/* PIN lock */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <Lock size={16} />
           <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>App lock</div>
         </div>
-        <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
           {hasPin ? "A PIN is set. Change it below, or clear the field and save to remove it." : "No PIN set — anyone who opens this can see everything. Set one below."}
         </div>
         <form onSubmit={savePin} style={{ display: "flex", gap: 8 }}>
           <input type="password" inputMode="numeric" placeholder={hasPin ? "New PIN (blank to remove)" : "4-8 digit PIN"} value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))} maxLength={8} style={{ width: 180 }} />
-          <button type="submit" disabled={pinSaving} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer" }}>{pinSaving ? "Saving…" : "Save"}</button>
+          <button type="submit" disabled={pinSaving} className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer" }}>{pinSaving ? "Saving…" : "Save"}</button>
         </form>
-        {pinError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{pinError}</div>}
+        {pinError && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>{pinError}</div>}
 
         {bioSupported && hasPin && (
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #EAE5D9" }}>
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <Fingerprint size={16} />
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 500 }}>Fingerprint / Face unlock</div>
-                  <div style={{ fontSize: 11, color: "#8a8477" }}>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
                     {bioEnabled ? "On for this device — checked locally, nothing is sent to a server." : "Skip typing your PIN on this device."}
                   </div>
                 </div>
@@ -747,23 +769,29 @@ export default function SettingsPage() {
                 onClick={bioEnabled ? disableBiometric : enableBiometric}
                 disabled={bioBusy}
                 className="pill"
-                style={{ background: bioEnabled ? "#EAE5D9" : "#241F1A", color: bioEnabled ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: bioBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
+                style={{ background: bioEnabled ? "var(--line)" : "var(--ink)", color: bioEnabled ? "var(--ink)" : "var(--bg)", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: bioBusy ? "default" : "pointer", whiteSpace: "nowrap" }}
               >
                 {bioBusy ? "Working…" : bioEnabled ? "Turn off" : "Set up"}
               </button>
             </div>
-            {bioError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{bioError}</div>}
+            {bioError && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>{bioError}</div>}
           </div>
         )}
         {!bioSupported && hasPin && (
-          <div style={{ fontSize: 11, color: "#8a8477", marginTop: 12, paddingTop: 12, borderTop: "1px solid #EAE5D9" }}>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
             Fingerprint/Face unlock isn't available on this device or browser.
           </div>
         )}
       </div>
 
+        </div>
+      </details>
+
+      <details className="settings-group">
+        <summary>🏷️ Categories, theatres & platforms</summary>
+        <div className="settings-body">
       {/* Custom categories */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Custom categories</div>
         {categories.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
@@ -777,52 +805,58 @@ export default function SettingsPage() {
         )}
         <form onSubmit={addCategory} style={{ display: "flex", gap: 8 }}>
           <input type="text" placeholder="e.g. Gym, Gifts" value={newCat} onChange={(e) => setNewCat(e.target.value)} maxLength={30} style={{ width: 200 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
+          <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
         </form>
       </div>
 
       {/* Theatres */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Theatres</div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 10 }}>Shows up in the "Watched via: Theatre" dropdown on the Movies page.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Shows up in the "Watched via: Theatre" dropdown on the Movies page.</div>
         {theatres.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
             {theatres.map((t) => (
-              <span key={t} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 10px", borderRadius: 20, background: "#F1ECDF", color: "#5f5a4f", fontWeight: 500 }}>
+              <span key={t} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 10px", borderRadius: 20, background: "var(--surface-2)", color: "var(--text-2)", fontWeight: 500 }}>
                 {t}
-                <button onClick={() => removeTheatre(t)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", display: "flex", padding: 0 }}><Trash2 size={11} /></button>
+                <button onClick={() => removeTheatre(t)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", display: "flex", padding: 0 }}><Trash2 size={11} /></button>
               </span>
             ))}
           </div>
         )}
         <form onSubmit={addTheatre} style={{ display: "flex", gap: 8 }}>
           <input type="text" placeholder="e.g. Prasads IMAX" value={newTheatre} onChange={(e) => setNewTheatre(e.target.value)} maxLength={60} style={{ width: 200 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
+          <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
         </form>
       </div>
 
       {/* OTT Platforms */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>OTT platforms</div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 10 }}>Shows up in the "Watched via: OTT" dropdown on the Movies page.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Shows up in the "Watched via: OTT" dropdown on the Movies page.</div>
         {ottPlatforms.length > 0 && (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
             {ottPlatforms.map((o) => (
-              <span key={o} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 10px", borderRadius: 20, background: "#F1ECDF", color: "#5f5a4f", fontWeight: 500 }}>
+              <span key={o} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "5px 10px", borderRadius: 20, background: "var(--surface-2)", color: "var(--text-2)", fontWeight: 500 }}>
                 {o}
-                <button onClick={() => removeOtt(o)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", display: "flex", padding: 0 }}><Trash2 size={11} /></button>
+                <button onClick={() => removeOtt(o)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", display: "flex", padding: 0 }}><Trash2 size={11} /></button>
               </span>
             ))}
           </div>
         )}
         <form onSubmit={addOtt} style={{ display: "flex", gap: 8 }}>
           <input type="text" placeholder="e.g. Aha, Lionsgate Play" value={newOtt} onChange={(e) => setNewOtt(e.target.value)} maxLength={60} style={{ width: 200 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
+          <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Plus size={13} /> Add</button>
         </form>
       </div>
 
+        </div>
+      </details>
+
+      <details className="settings-group">
+        <summary>🔁 Recurring expenses & income</summary>
+        <div className="settings-body">
       {/* Recurring expenses */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px" }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
           <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Recurring expenses</div>
           {recurring.length > 0 && (
@@ -830,29 +864,29 @@ export default function SettingsPage() {
               <div className="tabnum" style={{ fontSize: 16, fontWeight: 600 }}>
                 ₹{recurring.reduce((s, r) => s + parseFloat(r.amount), 0).toLocaleString("en-IN")}/mo
               </div>
-              <div style={{ fontSize: 10, color: "#8a8477" }}>total committed</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>total committed</div>
             </div>
           )}
         </div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>Logged automatically each month on the day you set — e.g. rent or an EMI. Shows on your Expense Ledger as "scheduled" before the actual day arrives.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Logged automatically each month on the day you set — e.g. rent or an EMI. Shows on your Expense Ledger as "scheduled" before the actual day arrives.</div>
 
         {recurring.length > 0 && (
           <div style={{ marginBottom: 14 }}>
             {recurring.map((r) => (
-              <div key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid #EAE5D9" }}>
+              <div key={r.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13 }}>
                   <span>{r.note || r.category} · day {r.day_of_month} · ₹{Math.round(parseFloat(r.amount)).toLocaleString("en-IN")}</span>
                   <span style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => startEditRecurring(r)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Pencil size={13} /></button>
-                    <button onClick={() => removeRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Trash2 size={14} /></button>
+                    <button onClick={() => startEditRecurring(r)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--faint)", display: "flex" }}><Pencil size={13} /></button>
+                    <button onClick={() => removeRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--faint)", display: "flex" }}><Trash2 size={14} /></button>
                   </span>
                 </div>
                 {isQuietRecurring(r) && (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#F7EEDD", borderRadius: 4, padding: "6px 10px", marginTop: 6, fontSize: 11, color: "#A3763F" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--warn-bg)", borderRadius: 4, padding: "6px 10px", marginTop: 6, fontSize: 12, color: "var(--amber)" }}>
                     <span>It's been {daysSince(recurringConfirmations[r.id] || (r.created_at || "").slice(0, 10))} days — still using this?</span>
                     <span style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => confirmStillUsingRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#2F6F5E", fontSize: 11, fontWeight: 600 }}>Yes, keep it</button>
-                      <button onClick={() => removeRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#A34A38", fontSize: 11, fontWeight: 600 }}>No, remove it</button>
+                      <button onClick={() => confirmStillUsingRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--success)", fontSize: 12, fontWeight: 600 }}>Yes, keep it</button>
+                      <button onClick={() => removeRecurring(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--danger)", fontSize: 12, fontWeight: 600 }}>No, remove it</button>
                     </span>
                   </div>
                 )}
@@ -861,90 +895,96 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {editingRecId && <div style={{ fontSize: 11, color: "#A3763F", marginBottom: 8 }}>Editing — change values below and Save, or Cancel.</div>}
+        {editingRecId && <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8 }}>Editing — change values below and Save, or Cancel.</div>}
         <form onSubmit={addRecurring} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input type="number" placeholder="Amount (₹)" value={recForm.amount} onChange={(e) => setRecForm({ ...recForm, amount: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Category" value={recForm.category} onChange={(e) => setRecForm({ ...recForm, category: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Note (e.g. Rent)" value={recForm.note} onChange={(e) => setRecForm({ ...recForm, note: e.target.value })} style={{ width: 130 }} />
           <input type="number" placeholder="Day (1-31)" title="29–31 fall on the last day of shorter months" value={recForm.dayOfMonth} onChange={(e) => setRecForm({ ...recForm, dayOfMonth: e.target.value })} min="1" max="31" style={{ width: 100 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingRecId ? "Save changes" : "Save"}</button>
+          <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingRecId ? "Save changes" : "Save"}</button>
           {editingRecId && (
-            <button type="button" onClick={cancelEditRecurring} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
+            <button type="button" onClick={cancelEditRecurring} style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
           )}
         </form>
-        {recError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{recError}</div>}
+        {recError && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>{recError}</div>}
       </div>
 
       {/* Recurring income */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px" }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
           <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Recurring income</div>
           {recurringIncome.length > 0 && (
             <div style={{ textAlign: "right" }}>
-              <div className="tabnum" style={{ fontSize: 16, fontWeight: 600, color: "#2F6F5E" }}>
+              <div className="tabnum" style={{ fontSize: 16, fontWeight: 600, color: "var(--success)" }}>
                 ₹{recurringIncome.reduce((s, r) => s + parseFloat(r.amount), 0).toLocaleString("en-IN")}/mo
               </div>
-              <div style={{ fontSize: 10, color: "#8a8477" }}>total expected</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>total expected</div>
             </div>
           )}
         </div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>Added automatically to your balance each month on the day you set — e.g. salary or a regular payout.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>Added automatically to your balance each month on the day you set — e.g. salary or a regular payout.</div>
 
         {recurringIncome.length > 0 && (
           <div style={{ marginBottom: 14 }}>
             {recurringIncome.map((r) => (
-              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "8px 0", borderBottom: "1px solid #EAE5D9" }}>
+              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
                 <span>{r.note || "Income"} · day {r.day_of_month} · ₹{Math.round(parseFloat(r.amount)).toLocaleString("en-IN")}</span>
                 <span style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => startEditRecurringIncome(r)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Pencil size={13} /></button>
-                  <button onClick={() => removeRecurringIncome(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", display: "flex" }}><Trash2 size={14} /></button>
+                  <button onClick={() => startEditRecurringIncome(r)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--faint)", display: "flex" }}><Pencil size={13} /></button>
+                  <button onClick={() => removeRecurringIncome(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--faint)", display: "flex" }}><Trash2 size={14} /></button>
                 </span>
               </div>
             ))}
           </div>
         )}
 
-        {editingIncId && <div style={{ fontSize: 11, color: "#A3763F", marginBottom: 8 }}>Editing — change values below and Save, or Cancel.</div>}
+        {editingIncId && <div style={{ fontSize: 12, color: "var(--amber)", marginBottom: 8 }}>Editing — change values below and Save, or Cancel.</div>}
         <form onSubmit={addRecurringIncome} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input type="number" placeholder="Amount (₹)" value={incForm.amount} onChange={(e) => setIncForm({ ...incForm, amount: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Note (e.g. Salary)" value={incForm.note} onChange={(e) => setIncForm({ ...incForm, note: e.target.value })} style={{ width: 150 }} />
           <input type="number" placeholder="Day (1-31)" title="29–31 fall on the last day of shorter months" value={incForm.dayOfMonth} onChange={(e) => setIncForm({ ...incForm, dayOfMonth: e.target.value })} min="1" max="31" style={{ width: 100 }} />
-          <button type="submit" className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingIncId ? "Save changes" : "Save"}</button>
+          <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><Check size={13} /> {editingIncId ? "Save changes" : "Save"}</button>
           {editingIncId && (
-            <button type="button" onClick={cancelEditRecurringIncome} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
+            <button type="button" onClick={cancelEditRecurringIncome} style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}><X size={13} /> Cancel</button>
           )}
         </form>
-        {incError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{incError}</div>}
+        {incError && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>{incError}</div>}
       </div>
 
+        </div>
+      </details>
+
+      <details className="settings-group">
+        <summary>🎯 Goals & rewards</summary>
+        <div className="settings-body">
       {/* Savings goal — a long-term target with a date, separate from the
           monthly savings rule under Money Rules. */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginTop: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginTop: 16 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Savings goal</div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>A bigger target with a date — e.g. "₹50,000 by December." Tracked against your current balance on the home screen.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>A bigger target with a date — e.g. "₹50,000 by December." Tracked against your current balance on the home screen.</div>
         <form onSubmit={saveGoal} style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input type="text" placeholder="What for? (optional)" value={goalForm.label} onChange={(e) => setGoalForm({ ...goalForm, label: e.target.value })} maxLength={60} style={{ width: 160 }} />
           <input type="number" placeholder="Target (₹)" value={goalForm.targetAmount} onChange={(e) => setGoalForm({ ...goalForm, targetAmount: e.target.value })} style={{ width: 130 }} />
           <input type="date" value={goalForm.targetDate} onChange={(e) => setGoalForm({ ...goalForm, targetDate: e.target.value })} style={{ width: 150 }} />
-          <button type="submit" disabled={goalSaving} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+          <button type="submit" disabled={goalSaving} className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
             <Check size={13} /> {goalSaving ? "Saving…" : "Save"}
           </button>
           {savingsGoal && (
-            <button type="button" onClick={clearGoal} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove goal</button>
+            <button type="button" onClick={clearGoal} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 12 }}>Remove goal</button>
           )}
         </form>
-        {goalError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{goalError}</div>}
+        {goalError && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 8 }}>{goalError}</div>}
       </div>
 
       {/* Custom milestone rewards — what you promise yourself for hitting a
           sugar-free streak, shown on the No-Sugar Challenge page. */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginTop: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginTop: 16 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Milestone rewards</div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 12 }}>What you'll get yourself for hitting each sugar-free streak milestone. Leave blank to skip one.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>What you'll get yourself for hitting each sugar-free streak milestone. Leave blank to skip one.</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {MILESTONE_DAYS.map((day) => (
             <div key={day} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="tabnum" style={{ fontSize: 12, color: "#8a8477", width: 56, flexShrink: 0 }}>{day} days</span>
+              <span className="tabnum" style={{ fontSize: 12, color: "var(--muted)", width: 56, flexShrink: 0 }}>{day} days</span>
               <input
                 type="text"
                 placeholder="e.g. New shoes, a movie night…"
@@ -956,20 +996,23 @@ export default function SettingsPage() {
             </div>
           ))}
         </div>
-        {rewardSaving && <div style={{ fontSize: 11, color: "#8a8477", marginTop: 8 }}>Saving…</div>}
+        {rewardSaving && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>Saving…</div>}
       </div>
 
+        </div>
+      </details>
+
       {/* About */}
-      <div style={{ textAlign: "center", marginTop: 32, paddingTop: 24, borderTop: "1px solid #EAE5D9" }}>
+      <div style={{ textAlign: "center", marginTop: 32, paddingTop: 24, borderTop: "1px solid var(--line)" }}>
         <div
           style={{
             width: 44, height: 44, borderRadius: 12, margin: "0 auto 10px",
-            background: "linear-gradient(135deg, #A34A38 0%, #8C4470 50%, #2F6F5E 100%)",
+            background: "linear-gradient(135deg, var(--danger) 0%, #8C4470 50%, var(--success) 100%)",
           }}
         />
         <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Expense Ledger</div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginTop: 2 }}>Version 2.0 · Money, Movies & Diet, together</div>
-        <div style={{ fontSize: 10, color: "#C4BDAC", marginTop: 8 }}>Built for one person. No ads, no accounts, your own database.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Version 2.0 · Money, Movies & Diet, together</div>
+        <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 8 }}>Built for one person. No ads, no accounts, your own database.</div>
       </div>
     </div>
   );

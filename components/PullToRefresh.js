@@ -69,7 +69,7 @@ export default function PullToRefresh({ onRefresh, children }) {
         {(pull > 4 || refreshing) && (
           <RefreshCw
             size={18}
-            color="#A34A38"
+            color="var(--danger)"
             style={{
               opacity: progress,
               transform: `rotate(${refreshing ? 0 : progress * 360}deg)`,

@@ -7,15 +7,32 @@ import { showToast } from "../lib/toast";
 import { isSessionValid, extendSession, clearSession } from "../lib/unlockSession";
 import { vibrate } from "../lib/haptics";
 import { applyTheme, getTheme } from "../lib/theme";
-import { Home, Clapperboard, PiggyBank, Flame, Settings as SettingsIcon, Download, X } from "lucide-react";
+import { Home, Clapperboard, BarChart3, UserRound, Plus, Download, X, Fingerprint, Delete } from "lucide-react";
+import QuickAddSheet, { openQuickAdd } from "../components/QuickAddSheet";
+import { parseExpenseText } from "../lib/smsParse";
+import { todayISO } from "../lib/format";
+import { notifyLedgerChanged } from "../lib/useLedger";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Ledger", Icon: Home },
+  { href: "/", label: "Home", Icon: Home },
+  { href: "/insights", label: "Insights", Icon: BarChart3 },
   { href: "/movies", label: "Movies", Icon: Clapperboard },
-  { href: "/budget", label: "Rules", Icon: PiggyBank },
-  { href: "/sugar-challenge", label: "Diet", Icon: Flame },
-  { href: "/settings", label: "Settings", Icon: SettingsIcon },
+  { href: "/me", label: "Me", Icon: UserRound },
 ];
+
+// Which tab a page belongs to, so sub-pages keep their parent tab lit.
+const TAB_FOR_PATH = {
+  "/transactions": "/",
+  "/report": "/insights", "/year": "/insights", "/wrapped": "/insights",
+  "/budget": "/me", "/sugar-challenge": "/me", "/settings": "/me", "/ious": "/me",
+  "/search": "/me", "/pause": "/me", "/badges": "/me", "/challenges": "/me",
+};
+// Full-screen pages with no nav bar or top bar.
+const IMMERSIVE = new Set(["/wrapped", "/welcome"]);
+
+export function tabFor(path) {
+  return TAB_FOR_PATH[path] || path;
+}
 
 // The API answers 401 once the server-side session is missing or expired
 // (e.g. the PIN was changed on another device). Watch every API call in one
@@ -156,12 +173,13 @@ function BottomNav({ currentPath, router }) {
   const navRef = useRef(null);
   const itemRefs = useRef([]);
   const [highlight, setHighlight] = useState(null);
-  const activeIndex = NAV_ITEMS.findIndex((i) => i.href === currentPath);
+  const currentTab = tabFor(currentPath);
+  const activeIndex = NAV_ITEMS.findIndex((i) => i.href === currentTab);
 
   useEffect(() => {
     function measure() {
       const el = itemRefs.current[activeIndex];
-      if (!el || !navRef.current) return;
+      if (!el || !navRef.current) { setHighlight(null); return; }
       const navRect = navRef.current.getBoundingClientRect();
       const rect = el.getBoundingClientRect();
       setHighlight({ left: rect.left - navRect.left, width: rect.width });
@@ -171,36 +189,41 @@ function BottomNav({ currentPath, router }) {
     return () => window.removeEventListener("resize", measure);
   }, [activeIndex]);
 
+  function tab({ href, label, Icon }, i) {
+    const active = currentTab === href;
+    return (
+      <a
+        key={href}
+        href={href}
+        ref={(el) => (itemRefs.current[i] = el)}
+        className={active ? "active" : ""}
+        aria-current={active ? "page" : undefined}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+          e.preventDefault();
+          if (currentPath !== href) goToTab(router, href, currentPath);
+        }}
+      >
+        <Icon size={21} strokeWidth={active ? 2.3 : 1.8} />
+        <span className="nav-label">{label}</span>
+      </a>
+    );
+  }
+
   return (
     <div className="bottom-nav-wrap">
-      <nav className="bottom-nav" ref={navRef}>
+      <nav className="bottom-nav" ref={navRef} aria-label="Main">
         {highlight && <span className="bottom-nav-highlight" style={{ left: highlight.left, width: highlight.width }} />}
-        {NAV_ITEMS.map(({ href, label, Icon }, i) => {
-          const active = currentPath === href;
-          return (
-            <a
-              key={href}
-              href={href}
-              ref={(el) => (itemRefs.current[i] = el)}
-              className={active ? "active" : ""}
-              aria-label={label}
-              onClick={(e) => {
-                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
-                e.preventDefault();
-                if (!active) goToTab(router, href, currentPath);
-              }}
-            >
-              <Icon size={22} strokeWidth={active ? 2.3 : 1.7} />
-              <span className="nav-dot" />
-            </a>
-          );
-        })}
+        {NAV_ITEMS.slice(0, 2).map((item, i) => tab(item, i))}
+        <button type="button" className="nav-fab" aria-label="Add an expense" onClick={() => { vibrate(10); openQuickAdd(); }}>
+          <Plus size={26} strokeWidth={2.4} />
+        </button>
+        {NAV_ITEMS.slice(2).map((item, i) => tab(item, i + 2))}
       </nav>
     </div>
   );
 }
 
-// Title shrinks into a slim glass bar once the page's big title scrolls away.
 function CollapsingBar({ pathname }) {
   const [title, setTitle] = useState("");
   const [show, setShow] = useState(false);
@@ -280,7 +303,7 @@ function CelebrationHost() {
           ))}
           <div className="celebrate-card" onClick={(e) => e.stopPropagation()}>
             <div className="celebrate-trophy">🏆</div>
-            <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 24, fontWeight: 700, marginTop: 10, color: "#241F1A" }}>
+            <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 24, fontWeight: 700, marginTop: 10, color: "var(--ink)" }}>
               {party.day}-day streak!
             </div>
             {party.reward ? (
@@ -292,7 +315,7 @@ function CelebrationHost() {
             )}
             <button
               onClick={() => setParty(null)}
-              style={{ marginTop: 18, background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 999, padding: "10px 26px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+              style={{ marginTop: 18, background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 999, padding: "10px 26px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
             >
               Yay!
             </button>
@@ -351,8 +374,10 @@ function LockScreen({ onUnlock }) {
     }
   }
 
-  async function submit(e) {
-    e.preventDefault();
+  const [shake, setShake] = useState(false);
+
+  async function submit() {
+    if (pin.length < 4 || checking) return;
     setChecking(true);
     setError("");
     try {
@@ -363,15 +388,22 @@ function LockScreen({ onUnlock }) {
       });
       const data = await res.json();
       if (data.ok) {
+        vibrate(15);
         extendSession();
         onUnlock();
-      } else if (data.locked) {
-        setError(`Too many wrong attempts — wait ${data.waitSeconds}s and try again.`);
-        setPin("");
-      } else {
-        setError(data.attemptsLeft !== undefined ? `Wrong PIN — ${data.attemptsLeft} attempt${data.attemptsLeft !== 1 ? "s" : ""} left before a cooldown.` : "Wrong PIN");
-        setPin("");
+        return;
       }
+      vibrate([30, 40, 30]);
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
+      setPin("");
+      setError(
+        data.locked
+          ? `Too many wrong attempts — wait ${data.waitSeconds}s and try again.`
+          : data.attemptsLeft !== undefined
+            ? `Wrong PIN — ${data.attemptsLeft} attempt${data.attemptsLeft !== 1 ? "s" : ""} left before a cooldown.`
+            : "Wrong PIN"
+      );
     } catch {
       setError("Couldn't check PIN. Try again.");
     } finally {
@@ -379,34 +411,51 @@ function LockScreen({ onUnlock }) {
     }
   }
 
+  function press(k) {
+    setError("");
+    vibrate(5);
+    if (k === "del") setPin((p) => p.slice(0, -1));
+    else setPin((p) => (p.length < 8 ? p + k : p));
+  }
+
+  // Physical keyboards still work.
+  useEffect(() => {
+    function onKey(e) {
+      if (/^\d$/.test(e.key)) press(e.key);
+      else if (e.key === "Backspace") press("del");
+      else if (e.key === "Enter") submit();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const dots = Math.max(4, pin.length);
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#FBF8F2", fontFamily: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" }}>
-      <form onSubmit={submit} style={{ textAlign: "center" }}>
-        <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 20, fontWeight: 600, marginBottom: 16, color: "#241F1A" }}>Enter PIN</div>
-        {bioAvailable && (
-          <button
-            type="button"
-            onClick={tryBiometric}
-            disabled={bioTrying}
-            style={{ display: "block", margin: "0 auto 16px", background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 999, padding: "10px 20px", fontSize: 13, cursor: bioTrying ? "default" : "pointer" }}
-          >
-            {bioTrying ? "Checking…" : "🔓 Unlock with fingerprint / face"}
-          </button>
-        )}
-        <input
-          type="password"
-          inputMode="numeric"
-          autoFocus
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))}
-          maxLength={8}
-          style={{ fontSize: 24, textAlign: "center", letterSpacing: 8, width: 180, padding: "10px 12px", border: "1px solid #D9D2C2", borderRadius: 4, background: "#fff" }}
-        />
-        {error && <div style={{ color: "#A34A38", fontSize: 12, marginTop: 10 }}>{error}</div>}
-        <button type="submit" disabled={checking} style={{ display: "block", margin: "16px auto 0", background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "10px 22px", fontSize: 14, cursor: "pointer" }}>
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg)", padding: "24px 16px" }}>
+      <div style={{ textAlign: "center", width: "100%", maxWidth: 320 }} role="form" aria-label="Unlock">
+        <img src="/icon-192.png" alt="" width={64} height={64} style={{ borderRadius: 18, boxShadow: "var(--shadow-md)" }} />
+        <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 700, marginTop: 12 }}>Expense Ledger</div>
+        <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 4 }}>Enter your PIN</div>
+        <div className={`pin-dots${shake ? " shake" : ""}`} aria-label={`${pin.length} digits entered`}>
+          {Array.from({ length: dots }, (_, i) => <span key={i} className={`pin-dot${i < pin.length ? " filled" : ""}`} />)}
+        </div>
+        <div role="alert" style={{ minHeight: 20, color: "var(--danger)", fontSize: 13 }}>{error}</div>
+        <div className="pin-pad">
+          {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((k) => (
+            <button key={k} type="button" className="pin-key" onClick={() => press(k)}>{k}</button>
+          ))}
+          {bioAvailable ? (
+            <button type="button" className="pin-key ghost" onClick={tryBiometric} disabled={bioTrying} aria-label="Unlock with fingerprint or face">
+              <Fingerprint size={28} />
+            </button>
+          ) : <span />}
+          <button type="button" className="pin-key" onClick={() => press("0")}>0</button>
+          <button type="button" className="pin-key ghost" onClick={() => press("del")} aria-label="Delete digit"><Delete size={24} /></button>
+        </div>
+        <button type="button" className="btn btn-primary btn-block" onClick={submit} disabled={checking || pin.length < 4} style={{ marginTop: 22, minHeight: 50 }}>
           {checking ? "Checking…" : "Unlock"}
         </button>
-      </form>
+      </div>
     </div>
   );
 }
@@ -446,7 +495,7 @@ function InstallBanner() {
     <div
       style={{
         position: "fixed", left: 12, right: 12, bottom: "calc(78px + env(safe-area-inset-bottom, 0px))", zIndex: 45,
-        background: "#241F1A", color: "#FBF8F2", borderRadius: 14, padding: "12px 14px",
+        background: "var(--ink)", color: "var(--bg)", borderRadius: 14, padding: "12px 14px",
         display: "flex", alignItems: "center", gap: 10, boxShadow: "0 8px 20px rgba(36,31,26,0.25)",
       }}
     >
@@ -456,11 +505,11 @@ function InstallBanner() {
       </div>
       <button
         onClick={install}
-        style={{ background: "#FBF8F2", color: "#241F1A", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+        style={{ background: "var(--bg)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
       >
         Install
       </button>
-      <button onClick={dismiss} aria-label="Dismiss" style={{ background: "none", border: "none", color: "#C4BDAC", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0 }}>
+      <button onClick={dismiss} aria-label="Dismiss" style={{ background: "none", border: "none", color: "var(--faint)", cursor: "pointer", padding: 2, display: "flex", flexShrink: 0 }}>
         <X size={16} />
       </button>
     </div>
@@ -470,6 +519,31 @@ function InstallBanner() {
 export default function App({ Component, pageProps }) {
   const router = useRouter();
   const [locked, setLocked] = useState(null); // null = checking, true/false once known
+
+  // App-icon shortcuts and the phone's Share sheet land on a URL with a hint
+  // (?quickadd=expense, ?mark=sugar, ?shared_text=…). Act on it once unlocked.
+  useEffect(() => {
+    if (locked !== false) return;
+    const params = new URLSearchParams(window.location.search);
+    const shared = params.get("shared_text") || params.get("shared_title");
+    const hinted = params.get("quickadd") === "expense" || params.get("mark") === "sugar" || shared;
+    if (!hinted) return;
+    window.history.replaceState({}, "", window.location.pathname);
+    if (shared) {
+      const p = parseExpenseText(shared);
+      openQuickAdd(p && !p.isCredit ? { amount: p.amount, note: p.note, category: p.category || "" } : {});
+    } else if (params.get("quickadd") === "expense") {
+      openQuickAdd();
+    } else {
+      fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "challenge-day", date: todayISO(), completed: true }) })
+        .then((r) => {
+          if (!r.ok) throw new Error();
+          showToast("Today marked sugar-free 🔥", "✅");
+          notifyLedgerChanged();
+        })
+        .catch(() => showToast("Couldn't mark today — open the Diet page", "⚠️"));
+    }
+  }, [locked]);
   const [isOnline, setIsOnline] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -603,7 +677,7 @@ export default function App({ Component, pageProps }) {
         <meta name="description" content="Personal expense tracker" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#241F1A" />
+        <meta name="theme-color" content="var(--ink)" />
         <link rel="icon" href="/icon-192.png" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -621,20 +695,25 @@ export default function App({ Component, pageProps }) {
       ) : (
         <>
           {(!isOnline || pendingCount > 0) && (
-            <div style={{ position: "sticky", top: 0, zIndex: 50, background: !isOnline ? "#A34A38" : "#C98A2C", color: "#FBF8F2", fontSize: 12, textAlign: "center", padding: "6px 12px" }}>
+            <div style={{ position: "sticky", top: 0, zIndex: 50, background: !isOnline ? "var(--danger)" : "var(--warn)", color: "var(--bg)", fontSize: 12, textAlign: "center", padding: "6px 12px" }}>
               {!isOnline
                 ? `You're offline${pendingCount > 0 ? ` — ${pendingCount} change${pendingCount !== 1 ? "s" : ""} will sync automatically` : ""}`
                 : `Syncing ${pendingCount} change${pendingCount !== 1 ? "s" : ""}…`}
             </div>
           )}
-          <CollapsingBar pathname={router.pathname} />
+          {!IMMERSIVE.has(router.pathname) && <CollapsingBar pathname={router.pathname} />}
           <div key={router.pathname} className={`route-wrap ${navDirection}`}>
             <Component {...pageProps} />
           </div>
           <ToastHost />
           <CelebrationHost />
-          <InstallBanner />
-          <BottomNav currentPath={router.pathname} router={router} />
+          {!IMMERSIVE.has(router.pathname) && (
+            <>
+              <InstallBanner />
+              <BottomNav currentPath={router.pathname} router={router} />
+            </>
+          )}
+          <QuickAddSheet />
         </>
       )}
     </>

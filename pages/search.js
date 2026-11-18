@@ -61,27 +61,27 @@ export default function SearchPage() {
   const total = results.reduce((s, x) => s + x.amount, 0);
 
   if (!loaded) {
-    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>Loading…</div>;
+    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>Loading…</div>;
   }
 
   return (
     <div className="page-container" style={{ maxWidth: 680, margin: "0 auto", padding: "40px 24px 64px" }}>
-      <div style={{ marginBottom: 28, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
-          <ArrowLeft size={12} /> Expense ledger
+      <div style={{ marginBottom: 28, borderBottom: "1px solid var(--line-strong)", paddingBottom: 20 }}>
+        <Link href="/me" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--muted)", textDecoration: "none", marginBottom: 6 }}>
+          <ArrowLeft size={13} /> Me
         </Link>
         <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Search</div>
-        <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Across every expense, movie, and diet note you've logged.</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Across every expense, movie, and diet note you've logged.</div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, border: "1px solid #D9D2C2", borderRadius: 4, padding: "8px 12px" }}>
-        <SearchIcon size={15} color="#8a8477" />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, border: "1.5px solid var(--line-strong)", borderRadius: 14, padding: "4px 14px", background: "var(--surface)" }}>
+        <SearchIcon size={17} color="var(--muted)" />
         <input
           type="text"
           placeholder="Search by note, title, or category…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ border: "none", padding: 0, flex: 1 }}
+          style={{ border: "none", padding: "8px 0", flex: 1, background: "transparent", boxShadow: "none", transform: "none" }}
         />
       </div>
 
@@ -90,30 +90,36 @@ export default function SearchPage() {
           <option value="">All categories</option>
           {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={{ width: 150 }} />
-        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={{ width: 150 }} />
+        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12, color: "var(--muted)" }}>
+          From
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={{ width: 150 }} />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12, color: "var(--muted)" }}>
+          To
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={{ width: 150 }} />
+        </label>
         {(query || category || fromDate || toDate) && (
-          <button onClick={() => { setQuery(""); setCategory(""); setFromDate(""); setToDate(""); }} style={{ background: "#EAE5D9", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>
+          <button onClick={() => { setQuery(""); setCategory(""); setFromDate(""); setToDate(""); }} style={{ background: "var(--line)", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12, cursor: "pointer" }}>
             Clear filters
           </button>
         )}
       </div>
 
-      <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 12 }}>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
         {results.length} result{results.length !== 1 ? "s" : ""} · <span className="tabnum">{fmt(total)}</span> total (money entries only)
       </div>
 
       {results.length === 0 ? (
-        <div style={{ border: "1px dashed #D9D2C2", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "#8a8477", fontSize: 14 }}>
+        <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
           Nothing matches. Try a different search or clear the filters.
         </div>
       ) : (
         <div>
           {results.map((x) => (
-            <div key={`${x.type}-${x.id}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #EAE5D9" }}>
+            <div key={`${x.type}-${x.id}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14 }}>{x.note || x.category}</div>
-                <div style={{ fontSize: 11, color: "#8a8477" }}>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>
                   {new Date(x.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })} · {x.category}
                   {x.type === "movie" && " · movie"}
                   {x.type === "diet" && " · diet"}

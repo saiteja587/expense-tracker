@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Pencil, Trash2, Check, X, Plus } from "lucide-react";
 import CountUp from "../components/CountUp";
 import { fmt, todayISO } from "../lib/format";
+import { describeChange } from "../lib/ledger";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -20,9 +21,9 @@ const CATEGORIES = [
 function ProgressBar({ spent, limit }) {
   const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
   const over = spent > limit;
-  const color = over ? "#A34A38" : pct > 75 ? "#C98A2C" : "#2F6F5E";
+  const color = over ? "var(--danger)" : pct > 75 ? "var(--warn)" : "var(--success)";
   return (
-    <div style={{ height: 6, background: "#EAE5D9", borderRadius: 4, overflow: "hidden", marginTop: 6 }}>
+    <div style={{ height: 6, background: "var(--line)", borderRadius: 4, overflow: "hidden", marginTop: 6 }}>
       <div className="bar-grow" style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 4, transition: "width 0.6s var(--ease-fluid)" }} />
     </div>
   );
@@ -176,8 +177,10 @@ export default function BudgetPage() {
       const priorValues = monthsBack.map((ym) => (totalsByMonthCat[ym] || {})[category] || 0).filter((v) => v > 0);
       if (priorValues.length === 0) continue;
       const avg = priorValues.reduce((s, v) => s + v, 0) / priorValues.length;
-      if (avg > 0 && spend > avg * 1.15) {
-        jumps.push({ category, spend, avg, pct: Math.round(((spend - avg) / avg) * 100) });
+      // Only flag jumps against a meaningful baseline (₹500+ a month) and by at
+      // least ₹300 — a ₹40 → ₹3,840 jump used to read "up 9500%".
+      if (avg >= 500 && spend > avg * 1.15 && spend - avg >= 300) {
+        jumps.push({ category, spend, avg, change: describeChange(spend, avg) });
       }
     }
     return jumps;
@@ -276,7 +279,7 @@ export default function BudgetPage() {
 
   if (!loaded) {
     return (
-      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
         Loading your money rules…
       </div>
     );
@@ -285,30 +288,30 @@ export default function BudgetPage() {
   return (
     <div className="page-container" style={{ maxWidth: 720, margin: "0 auto", padding: "40px 24px 64px" }}>
       {loadError && (
-        <div style={{ background: "#FAECE7", border: "1px solid #D85A30", color: "#712B13", padding: "10px 14px", borderRadius: 4, fontSize: 13, marginBottom: 20 }}>
+        <div style={{ background: "var(--danger-bg)", border: "1px solid #D85A30", color: "#712B13", padding: "10px 14px", borderRadius: 4, fontSize: 13, marginBottom: 20 }}>
           {loadError}
         </div>
       )}
 
-      <div style={{ marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20 }}>
-        <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
-          <ArrowLeft size={12} /> Expense ledger
+      <div style={{ marginBottom: 32, borderBottom: "1px solid var(--line-strong)", paddingBottom: 20 }}>
+        <Link href="/me" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--muted)", textDecoration: "none", marginBottom: 6 }}>
+          <ArrowLeft size={13} /> Me
         </Link>
         <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
           Money Rules
         </div>
-        <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
           Set limits for yourself and see if you're keeping to them, this month.
         </div>
       </div>
 
-      {saveError && <div style={{ fontSize: 12, color: "#A34A38", marginBottom: 16 }}>{saveError}</div>}
+      {saveError && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 16 }}>{saveError}</div>}
 
       {categoryJumps.length > 0 && (
-        <div style={{ background: "#FAECE7", border: "1px solid #D85A30", color: "#712B13", padding: "10px 14px", borderRadius: 4, fontSize: 13, marginBottom: 16 }}>
+        <div style={{ background: "var(--danger-bg)", border: "1px solid #D85A30", color: "#712B13", padding: "10px 14px", borderRadius: 4, fontSize: 13, marginBottom: 16 }}>
           {categoryJumps.map((j, i) => (
             <div key={j.category} style={{ marginBottom: i < categoryJumps.length - 1 ? 4 : 0 }}>
-              <strong>{j.category}</strong> is up {j.pct}% this month ({fmt(j.spend)} vs. a usual {fmt(j.avg)}) — worth a look.
+              <strong>{j.category}</strong> is up {j.change} this month ({fmt(j.spend)} vs. a usual {fmt(j.avg)}) — worth a look.
             </div>
           ))}
         </div>
@@ -318,43 +321,43 @@ export default function BudgetPage() {
       {(expectedIncome > 0 || categoryRules.length > 0) && (
         <div className="card panel-soft" style={{ borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
           <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>This month's plan</div>
-          <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 10 }}>Expected income (recurring income + balance added this month) vs. what your category limits below add up to.</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Expected income (recurring income + balance added this month) vs. what your category limits below add up to.</div>
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontSize: 11, color: "#8a8477" }}>Expected income</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>Expected income</div>
               <div className="tabnum" style={{ fontSize: 18, fontWeight: 600 }}>{fmt(expectedIncome)}</div>
             </div>
             <div>
-              <div style={{ fontSize: 11, color: "#8a8477" }}>Assigned to limits</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>Assigned to limits</div>
               <div className="tabnum" style={{ fontSize: 18, fontWeight: 600 }}>{fmt(totalAssigned)}</div>
             </div>
             <div>
-              <div style={{ fontSize: 11, color: "#8a8477" }}>{unassigned >= 0 ? "Left to assign" : "Over-assigned by"}</div>
-              <div className="tabnum" style={{ fontSize: 18, fontWeight: 600, color: unassigned >= 0 ? "#2F6F5E" : "#A34A38" }}>{fmt(Math.abs(unassigned))}</div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>{unassigned >= 0 ? "Left to assign" : "Over-assigned by"}</div>
+              <div className="tabnum" style={{ fontSize: 18, fontWeight: 600, color: unassigned >= 0 ? "var(--success)" : "var(--danger)" }}>{fmt(Math.abs(unassigned))}</div>
             </div>
           </div>
         </div>
       )}
 
       {/* Overall limit */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div style={{ flex: 1 }}>
             <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Overall monthly limit</div>
             {overallRule ? (
               <>
-                <div style={{ fontSize: 13, color: "#5f5a4f", marginTop: 4 }}>
+                <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
                   <span className="tabnum"><CountUp value={overallSpent} format={fmt} /></span> of <span className="tabnum">{fmt(overallRule.amount)}</span> spent this month
-                  {overallSpent > overallRule.amount && <span style={{ color: "#A34A38", fontWeight: 500 }}> — over by {fmt(overallSpent - overallRule.amount)}</span>}
+                  {overallSpent > overallRule.amount && <span style={{ color: "var(--danger)", fontWeight: 500 }}> — over by {fmt(overallSpent - overallRule.amount)}</span>}
                 </div>
                 <ProgressBar spent={overallSpent} limit={overallRule.amount} />
               </>
             ) : (
-              <div style={{ fontSize: 13, color: "#8a8477", marginTop: 4 }}>No limit set — spending is unrestricted.</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>No limit set — spending is unrestricted.</div>
             )}
           </div>
           {!editingOverall && (
-            <button onClick={() => { setEditingOverall(true); setOverallInput(overallRule ? String(overallRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}>
+            <button onClick={() => { setEditingOverall(true); setOverallInput(overallRule ? String(overallRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
               <Pencil size={14} />
             </button>
           )}
@@ -362,37 +365,37 @@ export default function BudgetPage() {
         {editingOverall && (
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <input type="number" inputMode="decimal" placeholder="Monthly limit (₹)" value={overallInput} onChange={(e) => setOverallInput(e.target.value)} style={{ width: 160 }} />
-            <button onClick={submitOverall} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
-            <button onClick={() => { setEditingOverall(false); setOverallInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            <button onClick={submitOverall} className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
+            <button onClick={() => { setEditingOverall(false); setOverallInput(""); }} style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {overallRule && (
-              <button onClick={() => { removeRule(overallRule.id); setEditingOverall(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove limit</button>
+              <button onClick={() => { removeRule(overallRule.id); setEditingOverall(false); }} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 12 }}>Remove limit</button>
             )}
           </div>
         )}
       </div>
 
       {/* Savings goal */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div style={{ flex: 1 }}>
             <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Savings goal this month</div>
             {savingsRule ? (
               <>
-                <div style={{ fontSize: 13, color: "#5f5a4f", marginTop: 4 }}>
-                  Saved <span className="tabnum" style={{ color: savedSoFar >= savingsRule.amount ? "#2F6F5E" : "#241F1A" }}>{fmt(savedSoFar)}</span> of <span className="tabnum">{fmt(savingsRule.amount)}</span> goal
+                <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
+                  Saved <span className="tabnum" style={{ color: savedSoFar >= savingsRule.amount ? "var(--success)" : "var(--ink)" }}>{fmt(savedSoFar)}</span> of <span className="tabnum">{fmt(savingsRule.amount)}</span> goal
                   {savedSoFar >= savingsRule.amount
-                    ? <span style={{ color: "#2F6F5E", fontWeight: 500 }}> — goal met</span>
-                    : <span style={{ color: "#8a8477" }}> — {fmt(savingsRule.amount - savedSoFar)} to go</span>}
+                    ? <span style={{ color: "var(--success)", fontWeight: 500 }}> — goal met</span>
+                    : <span style={{ color: "var(--muted)" }}> — {fmt(savingsRule.amount - savedSoFar)} to go</span>}
                 </div>
                 <ProgressBar spent={Math.max(0, savedSoFar)} limit={savingsRule.amount} />
-                <div style={{ fontSize: 11, color: "#8a8477", marginTop: 4 }}>Based on money added minus money spent this month</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Based on money added minus money spent this month</div>
               </>
             ) : (
-              <div style={{ fontSize: 13, color: "#8a8477", marginTop: 4 }}>No savings goal set yet.</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>No savings goal set yet.</div>
             )}
           </div>
           {!editingSavings && (
-            <button onClick={() => { setEditingSavings(true); setSavingsInput(savingsRule ? String(savingsRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}>
+            <button onClick={() => { setEditingSavings(true); setSavingsInput(savingsRule ? String(savingsRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
               <Pencil size={14} />
             </button>
           )}
@@ -400,30 +403,30 @@ export default function BudgetPage() {
         {editingSavings && (
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <input type="number" inputMode="decimal" placeholder="Savings goal (₹)" value={savingsInput} onChange={(e) => setSavingsInput(e.target.value)} style={{ width: 160 }} />
-            <button onClick={submitSavings} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
-            <button onClick={() => { setEditingSavings(false); setSavingsInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            <button onClick={submitSavings} className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
+            <button onClick={() => { setEditingSavings(false); setSavingsInput(""); }} style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {savingsRule && (
-              <button onClick={() => { removeRule(savingsRule.id); setEditingSavings(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove goal</button>
+              <button onClick={() => { removeRule(savingsRule.id); setEditingSavings(false); }} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 12 }}>Remove goal</button>
             )}
           </div>
         )}
       </div>
 
       {/* Low balance alert */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div style={{ flex: 1 }}>
             <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Low balance alert</div>
             {lowBalanceRule ? (
-              <div style={{ fontSize: 13, color: "#5f5a4f", marginTop: 4 }}>
+              <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 4 }}>
                 Your balance panel turns amber under <span className="tabnum">{fmt(lowBalanceRule.amount)}</span>, and red if it goes negative.
               </div>
             ) : (
-              <div style={{ fontSize: 13, color: "#8a8477", marginTop: 4 }}>No threshold set — the balance only turns red if it goes negative.</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>No threshold set — the balance only turns red if it goes negative.</div>
             )}
           </div>
           {!editingLowBalance && (
-            <button onClick={() => { setEditingLowBalance(true); setLowBalanceInput(lowBalanceRule ? String(lowBalanceRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}>
+            <button onClick={() => { setEditingLowBalance(true); setLowBalanceInput(lowBalanceRule ? String(lowBalanceRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
               <Pencil size={14} />
             </button>
           )}
@@ -438,35 +441,35 @@ export default function BudgetPage() {
                 const ok = await saveRule("low_balance", null, amt);
                 if (ok) { setEditingLowBalance(false); setLowBalanceInput(""); }
               }}
-              style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
+              style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
             >
               <Check size={14} />
             </button>
-            <button onClick={() => { setEditingLowBalance(false); setLowBalanceInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            <button onClick={() => { setEditingLowBalance(false); setLowBalanceInput(""); }} style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {lowBalanceRule && (
-              <button onClick={() => { removeRule(lowBalanceRule.id); setEditingLowBalance(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove</button>
+              <button onClick={() => { removeRule(lowBalanceRule.id); setEditingLowBalance(false); }} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 12 }}>Remove</button>
             )}
           </div>
         )}
       </div>
 
       {/* Movie count guideline */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div style={{ flex: 1 }}>
             <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Movie count guideline</div>
-            <div style={{ fontSize: 11, color: "#8a8477", marginTop: 2 }}>A gentle heads-up only — this never blocks you from adding a movie.</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>A gentle heads-up only — this never blocks you from adding a movie.</div>
             {movieCountRule ? (
-              <div style={{ fontSize: 13, color: "#5f5a4f", marginTop: 8 }}>
+              <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: 8 }}>
                 <span className="tabnum">{monthMovieCount}</span> of <span className="tabnum">{movieCountRule.amount}</span> watched this month
-                {monthMovieCount > movieCountRule.amount && <span style={{ color: "#C98A2C", fontWeight: 500 }}> — {monthMovieCount - movieCountRule.amount} over your usual</span>}
+                {monthMovieCount > movieCountRule.amount && <span style={{ color: "var(--warn)", fontWeight: 500 }}> — {monthMovieCount - movieCountRule.amount} over your usual</span>}
               </div>
             ) : (
-              <div style={{ fontSize: 13, color: "#8a8477", marginTop: 8 }}>No guideline set.</div>
+              <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 8 }}>No guideline set.</div>
             )}
           </div>
           {!editingMovieCount && (
-            <button onClick={() => { setEditingMovieCount(true); setMovieCountInput(movieCountRule ? String(movieCountRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}>
+            <button onClick={() => { setEditingMovieCount(true); setMovieCountInput(movieCountRule ? String(movieCountRule.amount) : ""); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}>
               <Pencil size={14} />
             </button>
           )}
@@ -481,23 +484,23 @@ export default function BudgetPage() {
                 const ok = await saveRule("movie_count", null, amt);
                 if (ok) { setEditingMovieCount(false); setMovieCountInput(""); }
               }}
-              style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
+              style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}
             >
               <Check size={14} />
             </button>
-            <button onClick={() => { setEditingMovieCount(false); setMovieCountInput(""); }} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+            <button onClick={() => { setEditingMovieCount(false); setMovieCountInput(""); }} style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
             {movieCountRule && (
-              <button onClick={() => { removeRule(movieCountRule.id); setEditingMovieCount(false); }} style={{ background: "none", border: "none", color: "#A34A38", cursor: "pointer", fontSize: 12 }}>Remove</button>
+              <button onClick={() => { removeRule(movieCountRule.id); setEditingMovieCount(false); }} style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 12 }}>Remove</button>
             )}
           </div>
         )}
       </div>
 
       {/* Category limits */}
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px" }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px" }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Category limits</div>
 
-        {categoryRules.length === 0 && <div style={{ fontSize: 13, color: "#8a8477", marginBottom: 12 }}>No category limits set yet.</div>}
+        {categoryRules.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>No category limits set yet.</div>}
 
         {categoryRules.map((r) => {
           const spent = spentByCategory[r.category] || 0;
@@ -506,26 +509,26 @@ export default function BudgetPage() {
           const rollover = rolloverFor(r.category, r.amount);
           const effectiveLimit = r.amount + rollover;
           return (
-            <div key={r.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid #EAE5D9" }}>
+            <div key={r.id} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid var(--line)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: catColor }} />
                   <span style={{ fontSize: 14, fontWeight: 500 }}>{r.category}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tabnum" style={{ fontSize: 13, color: "#5f5a4f" }}><CountUp value={spent} format={fmt} /> / {fmt(effectiveLimit)}</span>
-                  <button onClick={() => { setEditingCategory(r.category); setEditCatAmount(String(r.amount)); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}><Pencil size={13} /></button>
-                  <button onClick={() => removeRule(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8477", padding: 4, display: "flex" }}><Trash2 size={13} /></button>
+                  <span className="tabnum" style={{ fontSize: 13, color: "var(--text-2)" }}><CountUp value={spent} format={fmt} /> / {fmt(effectiveLimit)}</span>
+                  <button onClick={() => { setEditingCategory(r.category); setEditCatAmount(String(r.amount)); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}><Pencil size={13} /></button>
+                  <button onClick={() => removeRule(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex" }}><Trash2 size={13} /></button>
                 </div>
               </div>
-              {rollover > 0 && <div style={{ fontSize: 10, color: "#2F6F5E", marginTop: 2 }}>+{fmt(rollover)} rolled over from last month (limit {fmt(r.amount)})</div>}
-              {spent > effectiveLimit && <div style={{ fontSize: 11, color: "#A34A38", marginTop: 2 }}>Over by {fmt(spent - effectiveLimit)}</div>}
+              {rollover > 0 && <div style={{ fontSize: 11.5, color: "var(--success)", marginTop: 2 }}>+{fmt(rollover)} rolled over from last month (limit {fmt(r.amount)})</div>}
+              {spent > effectiveLimit && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 2 }}>Over by {fmt(spent - effectiveLimit)}</div>}
               <ProgressBar spent={spent} limit={effectiveLimit} />
               {isEditing && (
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <input type="number" inputMode="decimal" value={editCatAmount} onChange={(e) => setEditCatAmount(e.target.value)} style={{ width: 140 }} />
-                  <button onClick={() => submitEditCategoryLimit(r.category)} style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
-                  <button onClick={() => setEditingCategory(null)} style={{ background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
+                  <button onClick={() => submitEditCategoryLimit(r.category)} style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><Check size={14} /></button>
+                  <button onClick={() => setEditingCategory(null)} style={{ background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center" }}><X size={14} /></button>
                 </div>
               )}
             </div>
@@ -541,7 +544,7 @@ export default function BudgetPage() {
               ))}
             </select>
             <input type="number" inputMode="decimal" placeholder="Limit (₹)" value={newCatAmount} onChange={(e) => setNewCatAmount(e.target.value)} style={{ width: 120 }} />
-            <button onClick={submitNewCategoryLimit} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <button onClick={submitNewCategoryLimit} className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
               <Plus size={14} /> Add limit
             </button>
           </div>

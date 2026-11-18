@@ -1,1360 +1,322 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+// Home: one clear story for today. A ring with what's left to spend today,
+// swipeable cards for money / sugar / movies / goal / challenge, the most
+// useful insight, and today's entries. Everything detailed lives one tap away.
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/router";
+import { WELCOMED_KEY } from "../lib/useLedger";
 import Link from "next/link";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Wallet, X, Clock, Flame, Clapperboard, ShieldCheck, ShieldAlert, Mic, MoreHorizontal, Camera, Receipt } from "lucide-react";
-import { queueRequest, newRequestId } from "../lib/offlineQueue";
+import { Search, ChevronRight, Check, X as XIcon, Sparkles, Wallet, Flame, Clapperboard, Target, Trophy } from "lucide-react";
+import { useLedger, notifyLedgerChanged } from "../lib/useLedger";
+import { todayBudget, sugarStreak, loggingStreak, itemsInMonth, ymOf } from "../lib/ledger";
+import { generateInsights } from "../lib/insights";
+import { evaluateChallenge } from "../lib/miniChallenges";
+import { categoryColor } from "../lib/categories";
+import { fmt, greeting, dayLabel } from "../lib/format";
+import { openQuickAdd } from "../components/QuickAddSheet";
+import CategoryIcon from "../components/CategoryIcon";
+import CountUp from "../components/CountUp";
+import PullToRefresh from "../components/PullToRefresh";
 import { showToast } from "../lib/toast";
 import { vibrate } from "../lib/haptics";
-import { fileToCompressedDataUrl } from "../lib/receiptImage";
-import SwipeRow from "../components/SwipeRow";
-import PullToRefresh from "../components/PullToRefresh";
-import CountUp from "../components/CountUp";
-import CategoryIcon from "../components/CategoryIcon";
-import { fmt, todayISO } from "../lib/format";
 
-const CATEGORIES = [
-  { name: "Food", color: "#B5533C" },
-  { name: "Groceries", color: "#C98A2C" },
-  { name: "Transport", color: "#3F6E5B" },
-  { name: "Bills", color: "#5B3A5C" },
-  { name: "Rent", color: "#2F4858" },
-  { name: "Shopping", color: "#A3763F" },
-  { name: "Health", color: "#6B7A3E" },
-  { name: "Entertainment", color: "#8A4B6B" },
-  { name: "Other", color: "#6B6558" },
-];
-
-const MOVIE_CATEGORY = { name: "Movies", color: "#7A3E56" };
-
-const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
-function nowTimeHHMM() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+function Ring({ pct, color, size = 200, stroke = 16, children }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const p = Math.max(0, Math.min(1, pct));
+  return (
+    <div style={{ position: "relative", width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" style={{ stroke: "var(--line)" }} strokeWidth={stroke} />
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} strokeLinecap="round"
+          strokeDasharray={c} strokeDashoffset={c * (1 - p)} transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{ stroke: color, transition: "stroke-dashoffset 0.9s var(--ease-fluid), stroke 0.4s ease" }}
+        />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
+        {children}
+      </div>
+    </div>
+  );
 }
 
-function getEmptyExpenseForm() {
-  return { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "" };
-}
-// A function, not a constant: a constant computed at module load keeps
-// yesterday's date if the app stays open past midnight.
-function getEmptyTopupForm() {
-  return { amount: "", note: "", date: todayISO(), mode: "add" };
-}
-
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 5) return "Still up?";
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  if (h < 21) return "Good evening";
-  return "Good night";
+function Card({ href, icon, title, children, accent, onClick }) {
+  const body = (
+    <div className="card home-card" style={{ padding: 16, minHeight: 132, display: "flex", flexDirection: "column", gap: 6, borderRadius: 20, height: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: accent || "var(--muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        {icon} {title}
+      </div>
+      {children}
+    </div>
+  );
+  if (onClick) return <div onClick={onClick} style={{ cursor: "pointer" }}>{body}</div>;
+  return href ? <Link href={href} style={{ textDecoration: "none", color: "inherit", display: "block", height: "100%" }}>{body}</Link> : body;
 }
 
-// A number that counts up/down to its target instead of snapping — makes the
-// balance feel alive rather than a static database read.
-function useCountUp(target, durationMs = 500) {
-  const [display, setDisplay] = useState(target);
-  const fromRef = useRef(target);
+export default function Home() {
+  const { data, derived, today, loaded, error, refresh } = useLedger();
+  const [marking, setMarking] = useState(false);
+  const router = useRouter();
+
+  // Brand-new user (nothing logged, no balance, never welcomed): set up first.
   useEffect(() => {
-    const from = fromRef.current;
-    const to = target;
-    if (from === to) return;
-    let raf;
-    const start = performance.now();
-    function tick(now) {
-      const t = Math.min(1, (now - start) / durationMs);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setDisplay(from + (to - from) * eased);
-      if (t < 1) raf = requestAnimationFrame(tick);
-      else fromRef.current = to;
-    }
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, durationMs]);
-  return display;
-}
+    if (!data) return;
+    let welcomed = "1";
+    try { welcomed = localStorage.getItem(WELCOMED_KEY); } catch { /* ignore */ }
+    if (!welcomed && data.expenses.length === 0 && data.topups.length === 0 && data.movies.length === 0) router.replace("/welcome");
+  }, [data, router]);
 
-export default function Page() {
-  const [expenses, setExpenses] = useState([]);
-  const [freshIds, setFreshIds] = useState([]);
-  const [removingIds, setRemovingIds] = useState([]);
-  const seenIds = useRef(null);
-  const [movies, setMovies] = useState([]);
-  const [topups, setTopups] = useState([]);
-  const [budgetRules, setBudgetRules] = useState([]);
-  const [customCategories, setCustomCategories] = useState([]);
-  const [recurring, setRecurring] = useState([]);
-  const [challengeMeta, setChallengeMeta] = useState(null);
-  const [challengeDays, setChallengeDays] = useState({});
-  const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [viewDate, setViewDate] = useState(new Date());
+  const view = useMemo(() => {
+    if (!data || !derived) return null;
+    const budget = todayBudget({ items: derived.items, balance: derived.balance, todayIso: today, hasMoney: derived.hasMoney });
+    const ym = ymOf(today);
+    const monthItems = itemsInMonth(derived.items, ym);
+    const todayItems = derived.items.filter((x) => x.date === today).sort((a, b) => (b.time || "").localeCompare(a.time || ""));
+    const upcoming = derived.items.filter((x) => x.date > today && x.date <= ymOf(today) + "-31").sort((a, b) => a.date.localeCompare(b.date)).slice(0, 3);
+    const streak = sugarStreak(data.challengeMeta, data.challengeDays, today);
+    const sugarToday = data.challengeDays[today];
+    const moviesMonth = data.movies.filter((m) => ymOf(m.date) === ym);
+    const insight = generateInsights({ items: derived.items, movies: data.movies, todayIso: today })[0] || null;
+    const challenge = (data.miniChallenges || [])
+      .filter((c) => !c.dismissed)
+      .map((c) => evaluateChallenge(c, derived.items, today))
+      .filter(Boolean)
+      .find((c) => c.status === "active" || c.status === "upcoming") || null;
+    const overall = data.rules.find((r) => r.ruleType === "overall");
+    const overBudget = overall && budget.spentMonth > overall.amount;
+    return { budget, monthItems, todayItems, upcoming, streak, sugarToday, moviesMonth, insight, challenge, overall, overBudget, logStreak: loggingStreak(data.expenses, today) };
+  }, [data, derived, today]);
 
-  const [expenseForm, setExpenseForm] = useState(getEmptyExpenseForm);
-  const [editingExpenseId, setEditingExpenseId] = useState(null);
-  // Most expenses are logged today, right now, deducted normally — so the
-  // date/time/deduct-toggle fields start tucked away and only need a tap
-  // when today's entry is the unusual one (backdated, future, or excluded).
-  const [expenseMoreOpen, setExpenseMoreOpen] = useState(false);
-  const [formError, setFormError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  // On a phone the add-expense form lives in a bottom sheet, collapsed to a
-  // peek strip until tapped or triggered (editing, voice, a shared amount).
-  // On a wide screen this flag has no visual effect — the form is always
-  // shown inline there.
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const receiptInputRef = useRef(null);
-  const [receiptUploading, setReceiptUploading] = useState(false);
-  const [receiptView, setReceiptView] = useState(null); // null | "loading" | data URL
-
-  const [voiceListening, setVoiceListening] = useState(false);
-  const [voiceError, setVoiceError] = useState("");
-
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreMenuRef = useRef(null);
-  useEffect(() => {
-    if (!moreOpen) return;
-    function handleClickOutside(e) {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target)) setMoreOpen(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [moreOpen]);
-
-  const [showTopup, setShowTopup] = useState(false);
-  const [topupForm, setTopupForm] = useState(getEmptyTopupForm);
-  const [editingTopupId, setEditingTopupId] = useState(null);
-  const [topupError, setTopupError] = useState("");
-  const [topupSubmitting, setTopupSubmitting] = useState(false);
-
-  const [savingsGoal, setSavingsGoal] = useState(null);
-  useEffect(() => {
-    fetch("/api/data?type=savings-goal")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setSavingsGoal(d.goal))
-      .catch(() => {});
-  }, []);
-
-  async function load() {
+  async function markSugar(completed) {
+    setMarking(true);
+    vibrate(10);
     try {
-      const [expRes, movRes, balRes, ruleRes, chalRes, catRes, recRes] = await Promise.all([
-        fetch("/api/data?type=expenses"),
-        fetch("/api/data?type=movies"),
-        fetch("/api/data?type=balance"),
-        fetch("/api/data?type=budget"),
-        fetch("/api/data?type=challenge"),
-        fetch("/api/data?type=categories"),
-        fetch("/api/data?type=recurring"),
-      ]);
-      if (!expRes.ok) throw new Error("Request failed");
-      const expData = await expRes.json();
-      const mappedExpenses = expData.expenses.map((x) => ({
-        id: x.id,
-        amount: parseFloat(x.amount),
-        category: x.category,
-        note: x.note || "",
-        date: x.expense_date.slice(0, 10),
-        time: x.expense_time ? x.expense_time.slice(0, 5) : "",
-        affectsBalance: x.affects_balance !== false,
-        hasReceipt: !!x.has_receipt,
-      }));
-      setExpenses(mappedExpenses);
-      let mappedMovies = [];
-      if (movRes.ok) {
-        const movData = await movRes.json();
-        mappedMovies = movData.movies.map((m) => ({
-          id: m.id,
-          title: m.title,
-          date: m.watched_date.slice(0, 10),
-          ticketPrice: parseFloat(m.ticket_price),
-          canteenPrice: parseFloat(m.canteen_price),
-          affectsBalance: m.affects_balance !== false,
-          quantity: m.quantity || 1,
-        }));
-        setMovies(mappedMovies);
-      }
-      let mappedTopups = [];
-      if (balRes.ok) {
-        const balData = await balRes.json();
-        mappedTopups = balData.topups.map((t) => ({
-          id: t.id,
-          amount: parseFloat(t.amount),
-          note: t.note || "",
-          date: t.topup_date.slice(0, 10),
-          mode: t.mode === "set" ? "set" : "add",
-          createdAt: t.created_at,
-        }));
-        setTopups(mappedTopups);
-      }
-      let mappedRules = [];
-      if (ruleRes.ok) {
-        const ruleData = await ruleRes.json();
-        mappedRules = ruleData.rules.map((r) => ({ id: r.id, ruleType: r.rule_type, category: r.category, amount: parseFloat(r.amount) }));
-        setBudgetRules(mappedRules);
-      }
-      let mappedChalMeta = null, mappedChalDays = {};
-      if (chalRes.ok) {
-        const chalData = await chalRes.json();
-        mappedChalMeta = chalData.meta;
-        setChallengeMeta(chalData.meta);
-        for (const d of chalData.days || []) mappedChalDays[d.day_date.slice(0, 10)] = d.completed;
-        setChallengeDays(mappedChalDays);
-      }
-      let mappedCategories = [];
-      if (catRes.ok) {
-        const catData = await catRes.json();
-        mappedCategories = catData.categories || [];
-        setCustomCategories(mappedCategories);
-      }
-      let mappedRecurring = [];
-      if (recRes.ok) {
-        const recData = await recRes.json();
-        mappedRecurring = recData.recurring || [];
-        setRecurring(mappedRecurring);
-      }
-      localStorage.setItem("cache_index", JSON.stringify({
-        expenses: mappedExpenses, movies: mappedMovies, topups: mappedTopups,
-        budgetRules: mappedRules, challengeMeta: mappedChalMeta, challengeDays: mappedChalDays,
-        customCategories: mappedCategories, recurring: mappedRecurring,
-      }));
-      setLoadError("");
-    } catch (err) {
-      const cached = localStorage.getItem("cache_index");
-      if (cached) {
-        try {
-          const c = JSON.parse(cached);
-          setExpenses(c.expenses || []);
-          setMovies(c.movies || []);
-          setTopups(c.topups || []);
-          setBudgetRules(c.budgetRules || []);
-          setChallengeMeta(c.challengeMeta || null);
-          setChallengeDays(c.challengeDays || {});
-          setCustomCategories(c.customCategories || []);
-          setRecurring(c.recurring || []);
-          setLoadError("You're offline — showing what was last saved. New entries will sync once you're back online.");
-        } catch {
-          setLoadError("Couldn't load your expenses. Check your connection and refresh.");
-        }
-      } else {
-        setLoadError("You're offline and nothing's cached yet — connect once so this page can save a local copy.");
-      }
-    } finally {
-      setLoaded(true);
-    }
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const amountInputRef = useRef(null);
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("quickadd") === "expense") {
-      setSheetOpen(true);
-      setTimeout(() => {
-        amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-        amountInputRef.current?.focus();
-      }, 300);
-    }
-  }, [loaded]);
-
-  // Handles the phone's native "Share" sheet, once this app is registered as
-  // a share target (see manifest.json): sharing a UPI notification or a
-  // note to Expense Ledger lands here as a URL like /?shared_text=...,
-  // which gets parsed the same way a spoken amount does and dropped straight
-  // into the form, open and ready to confirm.
-  useEffect(() => {
-    if (typeof window === "undefined" || !loaded) return;
-    const params = new URLSearchParams(window.location.search);
-    const sharedText = params.get("shared_text") || params.get("shared_title") || "";
-    if (!sharedText.trim()) return;
-    const parsed = parseVoiceExpense(sharedText);
-    setExpenseForm((f) => ({
-      ...f,
-      amount: parsed.amount || f.amount,
-      category: parsed.category || f.category,
-      note: parsed.note || f.note,
-    }));
-    setSheetOpen(true);
-    setTimeout(() => {
-      amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      amountInputRef.current?.focus();
-    }, 350);
-    window.history.replaceState({}, "", "/");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded]);
-
-  const movieItems = useMemo(() => {
-    const items = [];
-    for (const m of movies) {
-      const qty = m.quantity || 1;
-      const qtyLabel = qty > 1 ? ` ×${qty}` : "";
-      if (m.ticketPrice > 0) {
-        items.push({ id: `movie-${m.id}-ticket`, amount: m.ticketPrice * qty, category: MOVIE_CATEGORY.name, note: `${m.title} (ticket${qtyLabel})`, date: m.date, affectsBalance: m.affectsBalance });
-      }
-      if (m.canteenPrice > 0) {
-        items.push({ id: `movie-${m.id}-canteen`, amount: m.canteenPrice * qty, category: MOVIE_CATEGORY.name, note: `${m.title} (canteen${qtyLabel})`, date: m.date, affectsBalance: m.affectsBalance });
-      }
-    }
-    return items;
-  }, [movies]);
-
-  // Recurring templates not yet auto-generated for the current month show up
-  // as a preview here — same date they'll actually land on — so you can see
-  // the commitment coming instead of only after the cron job creates it.
-  const recurringPendingItems = useMemo(() => {
-    const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    return recurring
-      .filter((r) => r.last_generated_month !== ym)
-      .map((r) => ({
-        id: `recurring-${r.id}`,
-        amount: parseFloat(r.amount),
-        category: r.category,
-        note: r.note || "(recurring)",
-        date: `${ym}-${String(Math.min(r.day_of_month, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate())).padStart(2, "0")}`,
-        affectsBalance: r.affects_balance !== false,
-        isRecurringPending: true,
-      }));
-  }, [recurring]);
-
-  const allItems = useMemo(() => [...expenses, ...movieItems, ...recurringPendingItems], [expenses, movieItems, recurringPendingItems]);
-
-  const totalRecurringPerMonth = useMemo(() => recurring.reduce((s, r) => s + parseFloat(r.amount), 0), [recurring]);
-
-  // Balance: expenses/movies dated in the future (e.g. an EMI you logged ahead of
-  // time) don't reduce the balance until their date actually arrives. They still
-  // show up in the "Upcoming" total below so you can plan for them.
-  const today = todayISO();
-
-  // If a "set current balance" top-up exists, it becomes the baseline: everything
-  // before its date is ignored (the amount you typed already accounts for it),
-  // and only additions/spend after that date apply on top.
-  const baselineTopup = useMemo(() => {
-    const setTopups = topups.filter((t) => t.mode === "set");
-    if (setTopups.length === 0) return null;
-    return [...setTopups].sort((a, b) => {
-      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-      return new Date(b.createdAt) - new Date(a.createdAt);
-    })[0];
-  }, [topups]);
-
-  const balanceCalc = useMemo(() => {
-    if (baselineTopup) {
-      const afterAdds = topups
-        .filter((t) => t.mode === "add" && t.date > baselineTopup.date)
-        .reduce((s, t) => s + t.amount, 0);
-      const spentAfter = allItems
-        .filter((x) => x.affectsBalance !== false && x.date > baselineTopup.date && x.date <= today)
-        .reduce((s, x) => s + x.amount, 0);
-      return {
-        balance: baselineTopup.amount + afterAdds - spentAfter,
-        addedLabel: `${fmt(baselineTopup.amount)} set on ${new Date(baselineTopup.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}${afterAdds > 0 ? ` + ${fmt(afterAdds)} added` : ""}`,
-        spentLabel: fmt(spentAfter),
-      };
-    }
-    const totalAdded = topups.filter((t) => t.mode === "add").reduce((s, t) => s + t.amount, 0);
-    const totalSpent = allItems.filter((x) => x.affectsBalance !== false && x.date <= today).reduce((s, x) => s + x.amount, 0);
-    return { balance: totalAdded - totalSpent, addedLabel: `${fmt(totalAdded)} added`, spentLabel: fmt(totalSpent) };
-  }, [topups, allItems, baselineTopup, today]);
-
-  function startEditExpense(x) {
-    setEditingExpenseId(x.id);
-    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false, receiptPhoto: null, hasReceipt: !!x.hasReceipt });
-    // Editing always shows the full form — the person may specifically be
-    // here to fix the date or the deduct toggle.
-    setExpenseMoreOpen(true);
-    setSheetOpen(true);
-    setFormError("");
-  }
-
-  function cancelEditExpense() {
-    setEditingExpenseId(null);
-    setExpenseForm(getEmptyExpenseForm());
-    setExpenseMoreOpen(false);
-    setSheetOpen(false);
-    setFormError("");
-  }
-
-  function parseVoiceExpense(transcript) {
-    const text = transcript.toLowerCase();
-    const numMatch = text.match(/\d+(\.\d+)?/);
-    const amount = numMatch ? numMatch[0] : "";
-    const allCatNames = [...CATEGORIES.map((c) => c.name), ...customCategories.map((c) => c.name)];
-    let matchedCategory = null;
-    for (const name of allCatNames) {
-      if (text.includes(name.toLowerCase())) { matchedCategory = name; break; }
-    }
-    let note = transcript;
-    if (numMatch) note = note.replace(numMatch[0], "");
-    if (matchedCategory) note = note.replace(new RegExp(matchedCategory, "i"), "");
-    note = note.replace(/\b(rupees?|rs\.?|for|on|spent|paid|bucks)\b/gi, "").trim().replace(/\s+/g, " ");
-    return { amount, category: matchedCategory, note };
-  }
-
-  function startVoiceAdd() {
-    const SR = typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition);
-    if (!SR) {
-      setVoiceError("Voice input isn't supported in this browser.");
-      return;
-    }
-    setSheetOpen(true);
-    setVoiceError("");
-    const recognition = new SR();
-    recognition.lang = "en-IN";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onstart = () => setVoiceListening(true);
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      const parsed = parseVoiceExpense(transcript);
-      setExpenseForm((f) => ({
-        ...f,
-        amount: parsed.amount || f.amount,
-        category: parsed.category || f.category,
-        note: parsed.note || f.note,
-      }));
-    };
-    recognition.onerror = () => setVoiceError("Didn't catch that — try again or type it in.");
-    recognition.onend = () => setVoiceListening(false);
-    recognition.start();
-  }
-
-  async function handleReceiptChange(e) {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // so picking the same file again still fires onChange
-    if (!file) return;
-    setReceiptUploading(true);
-    try {
-      const dataUrl = await fileToCompressedDataUrl(file);
-      setExpenseForm((f) => ({ ...f, receiptPhoto: dataUrl }));
+      const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "challenge-day", date: today, completed }) });
+      if (!res.ok) throw new Error();
+      showToast(completed ? "Sugar-free today — streak +1" : "Logged. Tomorrow's a fresh start.", completed ? "🔥" : "💪");
+      notifyLedgerChanged();
     } catch {
-      setFormError("Couldn't process that photo — try again.");
+      showToast("Couldn't save that — try again", "⚠️");
     } finally {
-      setReceiptUploading(false);
+      setMarking(false);
     }
   }
 
-  // Photos aren't in the list payload; fetch one when it's asked for and show
-  // it in an in-app overlay (browsers block window.open on data: URLs).
-  async function openReceipt(x) {
-    if (x.receiptPhoto) { setReceiptView(x.receiptPhoto); return; }
-    setReceiptView("loading");
-    try {
-      const res = await fetch(`/api/data?type=receipts&ids=${x.id}`);
-      if (!res.ok) throw new Error();
-      const { receipts } = await res.json();
-      if (!receipts[x.id]) throw new Error();
-      setReceiptView(receipts[x.id]);
-    } catch {
-      setReceiptView(null);
-      showToast("Couldn't load that receipt", "⚠️");
-    }
-  }
-
-  async function submitExpense(e) {
-    e.preventDefault();
-    const amt = parseFloat(expenseForm.amount);
-    if (!expenseForm.amount || isNaN(amt) || amt <= 0) {
-      setFormError("Enter an amount greater than 0");
-      return;
-    }
-    if (!expenseForm.date) {
-      setFormError("Pick a date");
-      return;
-    }
-    if (expenseForm.category === "Other" && !expenseForm.note.trim()) {
-      setFormError("Add a reason for this Other expense");
-      return;
-    }
-    setFormError("");
-    setSubmitting(true);
-    const isEdit = editingExpenseId !== null;
-    const payload = {
-      type: "expenses",
-      ...(isEdit ? { id: editingExpenseId } : { clientRequestId: newRequestId() }),
-      amount: amt,
-      category: expenseForm.category,
-      note: expenseForm.note.trim(),
-      date: expenseForm.date,
-      time: expenseForm.time,
-      affectsBalance: expenseForm.affectsBalance,
-      // On edit: null keeps the stored photo, "" removes it, a data URL replaces it.
-      receiptPhoto: isEdit ? expenseForm.receiptPhoto : expenseForm.receiptPhoto || "",
-    };
-
-    let res;
-    try {
-      res = await fetch("/api/data", {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    } catch (networkErr) {
-      // Genuine network failure (offline) — queue it and show it locally right away.
-      const queued = queueRequest({ url: "/api/data", method: isEdit ? "PUT" : "POST", body: payload });
-      if (!queued.ok) {
-        setSubmitting(false);
-        setFormError("You're offline and this phone's storage is full — couldn't save. Try again when online.");
-        return;
-      }
-      if (!isEdit) {
-        const keptPhoto = queued.droppedPhoto ? "" : expenseForm.receiptPhoto || "";
-        setExpenses((prev) => [
-          { id: `pending-${Date.now()}`, amount: amt, category: expenseForm.category, note: expenseForm.note.trim(), date: expenseForm.date, time: expenseForm.time, affectsBalance: expenseForm.affectsBalance !== false, receiptPhoto: keptPhoto, hasReceipt: !!keptPhoto, pending: true },
-          ...prev,
-        ]);
-      }
-      cancelEditExpense();
-      setSubmitting(false);
-      showToast(
-        queued.droppedPhoto ? "Saved without the photo (storage full) — will sync once online" : "Saved — will sync once you're back online",
-        "📥"
-      );
-      return;
-    }
-
-    try {
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save");
-      }
-      // Big-expense check, using history from before this save: flag a new
-      // entry that's well above what's normal for its category — a nudge,
-      // not a block, so it's shown after the success toast rather than
-      // instead of it.
-      if (!isEdit) {
-        const sameCategoryPast = expenses.filter((x) => x.category === expenseForm.category && x.affectsBalance !== false);
-        if (sameCategoryPast.length >= 3) {
-          const avg = sameCategoryPast.reduce((s, x) => s + x.amount, 0) / sameCategoryPast.length;
-          if (amt > avg * 2.5 && amt - avg > 200) {
-            setTimeout(() => showToast(`That's ${Math.round(amt / avg)}x your usual ${expenseForm.category} spend (avg ${fmt(avg)})`, "👀"), 900);
-          }
-        }
-      }
-      vibrate(10);
-      cancelEditExpense();
-      await load();
-      showToast(isEdit ? "Expense updated" : "Expense logged", isEdit ? "✏️" : "✅");
-    } catch (err) {
-      setFormError(err.message || "Couldn't save that expense. Try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  // Spot entries that weren't there a moment ago so they can pop in.
-  useEffect(() => {
-    if (expenses.length === 0) return;
-    const ids = new Set(expenses.map((x) => x.id));
-    if (seenIds.current) {
-      const added = expenses.filter((x) => !seenIds.current.has(x.id)).map((x) => x.id);
-      if (added.length > 0 && added.length <= 3) {
-        setFreshIds(added);
-        setTimeout(() => setFreshIds([]), 900);
-      }
-    }
-    seenIds.current = ids;
-  }, [expenses]);
-
-  async function removeExpense(id) {
-    if (!window.confirm("Delete this expense? This can't be undone.")) return;
-    const prev = expenses;
-    setRemovingIds((r) => [...r, id]);
-    await new Promise((r) => setTimeout(r, 300));
-    setExpenses(expenses.filter((x) => x.id !== id));
-    setRemovingIds((r) => r.filter((x) => x !== id));
-    try {
-      const res = await fetch(`/api/data?type=expenses&id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-    } catch (err) {
-      setExpenses(prev);
-      setLoadError("Couldn't delete that entry. Try again.");
-    }
-  }
-
-  function startEditTopup(t) {
-    setEditingTopupId(t.id);
-    setTopupForm({ amount: String(t.amount), note: t.note, date: t.date, mode: t.mode });
-    setShowTopup(true);
-    setTopupError("");
-  }
-
-  function cancelEditTopup() {
-    setEditingTopupId(null);
-    setTopupForm(getEmptyTopupForm());
-    setShowTopup(false);
-    setTopupError("");
-  }
-
-  async function submitTopup(e) {
-    e.preventDefault();
-    const amt = parseFloat(topupForm.amount);
-    if (!topupForm.amount || isNaN(amt) || amt <= 0) {
-      setTopupError("Enter an amount greater than 0");
-      return;
-    }
-    if (!topupForm.date) {
-      setTopupError("Pick a date");
-      return;
-    }
-    setTopupError("");
-    setTopupSubmitting(true);
-    try {
-      const isEdit = editingTopupId !== null;
-      const res = await fetch("/api/data", {
-        method: isEdit ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "balance", ...(isEdit ? { id: editingTopupId } : {}), amount: amt, note: topupForm.note.trim(), date: topupForm.date, mode: topupForm.mode }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save");
-      }
-      const wasEdit = editingTopupId !== null;
-      vibrate(10);
-      cancelEditTopup();
-      await load();
-      showToast(wasEdit ? "Balance entry updated" : "Balance updated", "💰");
-    } catch (err) {
-      setTopupError(err.message || "Couldn't save that. Try again.");
-    } finally {
-      setTopupSubmitting(false);
-    }
-  }
-
-  async function removeTopup(id) {
-    if (!window.confirm("Delete this top-up? This can't be undone.")) return;
-    const prev = topups;
-    setTopups(topups.filter((t) => t.id !== id));
-    try {
-      const res = await fetch(`/api/data?type=balance&id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-    } catch (err) {
-      setTopups(prev);
-      setLoadError("Couldn't remove that top-up. Try again.");
-    }
-  }
-
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-
-  const monthItems = useMemo(() => {
-    return allItems.filter((x) => {
-      const d = new Date(x.date + "T00:00:00");
-      return d.getFullYear() === year && d.getMonth() === month;
-    });
-  }, [allItems, year, month]);
-
-  const spentSoFar = monthItems.filter((x) => x.date <= today).reduce((s, x) => s + x.amount, 0);
-  const upcomingItems = useMemo(() => monthItems.filter((x) => x.date > today), [monthItems, today]);
-  const upcomingTotal = upcomingItems.reduce((s, x) => s + x.amount, 0);
-  const total = spentSoFar + upcomingTotal;
-
-  const lastMonthDate = new Date(year, month - 1, 1);
-  const lastMonthTotal = useMemo(() => {
-    return allItems
-      .filter((x) => {
-        const d = new Date(x.date + "T00:00:00");
-        return d.getFullYear() === lastMonthDate.getFullYear() && d.getMonth() === lastMonthDate.getMonth();
-      })
-      .reduce((s, x) => s + x.amount, 0);
-  }, [allItems, year, month]);
-
-  const diff = lastMonthTotal > 0 ? ((spentSoFar - lastMonthTotal) / lastMonthTotal) * 100 : null;
-
-  const byCategory = useMemo(() => {
-    const map = {};
-    for (const c of CATEGORIES) map[c.name] = 0;
-    for (const c of customCategories) map[c.name] = 0;
-    map[MOVIE_CATEGORY.name] = 0;
-    for (const x of monthItems) map[x.category] = (map[x.category] || 0) + x.amount;
-    return [...CATEGORIES, ...customCategories, MOVIE_CATEGORY]
-      .map((c) => ({ name: c.name, value: map[c.name], color: c.color }))
-      .filter((c) => c.value > 0)
-      .sort((a, b) => b.value - a.value);
-  }, [monthItems, customCategories]);
-
-  const overallRule = budgetRules.find((r) => r.ruleType === "overall");
-  const lowBalanceRule = budgetRules.find((r) => r.ruleType === "low_balance");
-  const balanceStatus = balanceCalc.balance < 0 ? "negative" : (lowBalanceRule && balanceCalc.balance < lowBalanceRule.amount) ? "low" : "ok";
-  const balanceColor = balanceStatus === "negative" ? "#A34A38" : balanceStatus === "low" ? "#C98A2C" : "#241F1A";
-  const balancePanelBg = balanceStatus === "negative" ? "#FAECE7" : balanceStatus === "low" ? "#F7EEDD" : "#F1ECDF";
-  const animatedBalance = useCountUp(balanceCalc.balance);
-
-  // ---- Forecast + safe-to-spend (current month only) ----
-  const forecast = useMemo(() => {
-    const now = new Date();
-    if (year !== now.getFullYear() || month !== now.getMonth()) return null;
-    const dim = new Date(year, month + 1, 0).getDate();
-    const dom = now.getDate();
-    const daysLeft = dim - dom + 1; // includes today
-    const spentBeforeToday = monthItems.filter((x) => x.date < today).reduce((s, x) => s + x.amount, 0);
-    const spentToday = monthItems.filter((x) => x.date === today).reduce((s, x) => s + x.amount, 0);
-    const pastDays = Math.max(1, dom - 1);
-    const dailyAvg = dom > 1 ? spentBeforeToday / pastDays : spentToday;
-    const projected = spentSoFar + upcomingTotal + dailyAvg * (dim - dom);
-    const upcomingDeducting = upcomingItems.filter((x) => x.affectsBalance !== false).reduce((s, x) => s + x.amount, 0);
-    // Money you can spend per day for the rest of the month without dipping below zero.
-    const pool = balanceCalc.balance + spentToday - upcomingDeducting;
-    const safePerDay = Math.max(0, pool / daysLeft);
-    return { dim, dom, daysLeft, projected, spentToday, safePerDay, dailyAvg, enough: dom >= 3 };
-  }, [monthItems, year, month, today, spentSoFar, upcomingTotal, upcomingItems, balanceCalc.balance]);
-
-  // ---- Quick-add chips: your most repeated entries, one tap to log ----
-  const quickChips = useMemo(() => {
-    const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-    const map = {};
-    for (const x of expenses) {
-      if (x.category === MOVIE_CATEGORY.name || x.date < cutoff || x.pending) continue;
-      if (x.category === "Other" && !x.note) continue;
-      const key = `${x.category}|${x.note || ""}|${x.amount}`;
-      map[key] = map[key] || { category: x.category, note: x.note || "", amount: x.amount, count: 0 };
-      map[key].count++;
-    }
-    return Object.values(map).filter((c) => c.count >= 2).sort((a, b) => b.count - a.count).slice(0, 6);
-  }, [expenses]);
-
-  async function quickAdd(c) {
-    vibrate(12);
-    const payload = { type: "expenses", clientRequestId: newRequestId(), amount: c.amount, category: c.category, note: c.note, date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "" };
-    try {
-      const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      if (!res.ok) throw new Error();
-      await load();
-      showToast(`${c.note || c.category} ${fmt(c.amount)} logged`, "✅");
-    } catch {
-      queueRequest({ url: "/api/data", method: "POST", body: payload });
-      setExpenses((prev) => [{ id: `pending-${Date.now()}`, ...c, date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, hasReceipt: false, pending: true }, ...prev]);
-      showToast("Saved — will sync once you're back online", "📥");
-    }
-  }
-  const categoryRuleMap = useMemo(() => {
-    const map = {};
-    for (const r of budgetRules) if (r.ruleType === "category") map[r.category] = r.amount;
-    return map;
-  }, [budgetRules]);
-  const categoryBreaches = byCategory.filter((c) => categoryRuleMap[c.name] && c.value > categoryRuleMap[c.name]);
-  const overallBreach = overallRule && spentSoFar > overallRule.amount;
-
-  const currentStreak = useMemo(() => {
-    if (!challengeMeta) return null;
-    let streak = 0;
-    const start = challengeMeta.start_date.slice(0, 10);
-    for (let i = 0; i < challengeMeta.length_days; i++) {
-      const d = new Date(start + "T00:00:00");
-      d.setDate(d.getDate() + i);
-      const off = d.getTimezoneOffset() * 60000;
-      const iso = new Date(d - off).toISOString().slice(0, 10);
-      if (iso > today) break;
-      if (challengeDays[iso] === true) streak++;
-      else if (iso in challengeDays) streak = 0;
-    }
-    return streak;
-  }, [challengeMeta, challengeDays, today]);
-
-  const moviesThisMonth = useMemo(() => movies.filter((m) => m.date.slice(0, 7) === `${year}-${String(month + 1).padStart(2, "0")}`).length, [movies, year, month]);
-
-  const loggedToday = useMemo(() => {
-    return expenses.some((x) => x.date === today) || movies.some((m) => m.date === today) || (challengeMeta && today in challengeDays);
-  }, [expenses, movies, challengeMeta, challengeDays, today]);
-
-  const grouped = useMemo(() => {
-    const sorted = [...monthItems].sort((a, b) => (a.date < b.date ? 1 : -1));
-    const map = new Map();
-    for (const x of sorted) {
-      if (!map.has(x.date)) map.set(x.date, []);
-      map.get(x.date).push(x);
-    }
-    return Array.from(map.entries());
-  }, [monthItems]);
-
-  function formatDateLabel(iso) {
-    const d = new Date(iso + "T00:00:00");
-    if (iso === today) return "Today";
-    return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
-  }
-
-  function catColor(name) {
-    if (name === MOVIE_CATEGORY.name) return MOVIE_CATEGORY.color;
-    return CATEGORIES.find((c) => c.name === name)?.color || customCategories.find((c) => c.name === name)?.color || "#6B6558";
-  }
-
-  if (!loaded) {
+  if (!loaded || !view) {
     return (
-      <div className="page-container" style={{ maxWidth: 920, margin: "0 auto", padding: "40px 24px 64px" }}>
-        <div className="skeleton" style={{ height: 30, width: 190, marginBottom: 10 }} />
-        <div className="skeleton" style={{ height: 14, width: 270, maxWidth: "100%", marginBottom: 30 }} />
-        <div className="skeleton" style={{ height: 36, width: 230, maxWidth: "100%", marginBottom: 22, borderRadius: 999 }} />
-        <div className="skeleton" style={{ height: 112, marginBottom: 28, borderRadius: 20 }} />
-        <div className="skeleton" style={{ height: 46, width: 210, marginBottom: 28 }} />
-        {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="skeleton" style={{ height: 54, marginBottom: 10 }} />
-        ))}
+      <div className="page-container home" style={{ maxWidth: 560, margin: "0 auto", padding: "32px 20px 100px" }}>
+        <div className="skeleton" style={{ height: 22, width: 160, marginBottom: 24 }} />
+        <div className="skeleton" style={{ height: 200, width: 200, borderRadius: "50%", margin: "0 auto 28px" }} />
+        <div className="skeleton" style={{ height: 132, marginBottom: 16, borderRadius: 20 }} />
+        <div className="skeleton" style={{ height: 60, marginBottom: 10 }} />
       </div>
     );
   }
 
+  const { budget } = view;
+  const ringColor = !budget.hasMoney ? "var(--line-strong)" : budget.level === 2 ? "var(--danger)" : budget.level === 1 ? "var(--warn)" : "var(--success)";
+  const ringPct = budget.hasMoney && budget.perDay > 0 ? Math.max(0, budget.left) / budget.perDay : 0;
+  const dateLine = new Date(today + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
+  const showWrapped = Number(today.slice(8, 10)) <= 7 && data.expenses.length > 0;
+
   return (
-    <div className="page-container" style={{ maxWidth: 920, margin: "0 auto", padding: "40px 24px 64px" }}>
-      {loadError && (
-        <div style={{ background: "#FAECE7", border: "1px solid #D85A30", color: "#712B13", padding: "10px 14px", borderRadius: 4, fontSize: 13, marginBottom: 20 }}>
-          {loadError}
-        </div>
-      )}
-
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", marginBottom: 32, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, gap: 12 }}>
-        <div style={{ minWidth: 0 }}>
-          <div className="lora gradient-title" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.015em", whiteSpace: "nowrap" }}>
-            Expense Ledger
+    <div className="page-container home" style={{ maxWidth: 560, margin: "0 auto", padding: "28px 20px 100px" }}>
+      <PullToRefresh onRefresh={refresh}>
+        <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div>
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>{dateLine}</div>
+            <h1 className="lora" style={{ fontSize: 26, fontWeight: 700, margin: "2px 0 0", letterSpacing: "-0.01em" }}>
+              {greeting()} <span aria-hidden="true">👋</span>
+            </h1>
           </div>
-          <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>
-            Track where your money goes, one entry at a time.
-          </div>
-          <Link href="/insights" style={{ fontSize: 12, color: "#A34A38", textDecoration: "none", display: "inline-block", marginTop: 6, fontWeight: 500 }}>
-            Patterns →
+          <Link href="/search" className="icon-btn" aria-label="Search" style={{ background: "var(--surface)", boxShadow: "var(--shadow-sm)" }}>
+            <Search size={19} />
           </Link>
-        </div>
-        <div ref={moreMenuRef} style={{ position: "relative", flexShrink: 0 }}>
-          <button
-            onClick={() => setMoreOpen((v) => !v)}
-            aria-label="More pages"
-            style={{ background: moreOpen ? "#EAE5D9" : "none", border: "1px solid #D9D2C2", borderRadius: 20, padding: "7px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: "#5f5a4f", fontSize: 12 }}
-          >
-            <MoreHorizontal size={15} /> More
-          </button>
-          {moreOpen && (
-            <div className="card" style={{ position: "absolute", left: 0, top: "calc(100% + 8px)", minWidth: 180, maxWidth: "calc(100vw - 48px)", zIndex: 20, overflow: "hidden", animation: "fadeIn 0.15s ease" }}>
-              {[
-                { href: "/search", label: "Search" },
-                { href: "/year", label: "Year view" },
-                { href: "/report", label: "Monthly report" },
-                { href: "/ious", label: "Who owes what" },
-                { href: "/pause", label: "Pause" },
-              ].map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  style={{ display: "block", padding: "10px 14px", fontSize: 13, color: "#241F1A", textDecoration: "none", borderBottom: "1px solid #F1ECDF" }}
-                >
-                  {item.label}
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <button onClick={() => setViewDate(new Date(year, month - 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }} aria-label="Previous month">
-            <ChevronLeft size={18} />
-          </button>
-          <div className="tabnum" style={{ fontSize: 14, fontWeight: 500, minWidth: 130, textAlign: "center" }}>
-            {MONTH_NAMES[month]} {year}
-          </div>
-          <button onClick={() => setViewDate(new Date(year, month + 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }} aria-label="Next month">
-            <ChevronRight size={18} />
-          </button>
-        </div>
-      </div>
+        </header>
 
-      <div style={{ fontSize: 13, color: "#8a8477", marginBottom: 12 }}>
-        {greeting()}
-        {!loggedToday && ", "}
-        {!loggedToday && (
-          <button
-            onClick={() => {
-              setSheetOpen(true);
-              setTimeout(() => {
-                amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-                amountInputRef.current?.focus();
-              }, 320);
-            }}
-            style={{ background: "none", border: "none", padding: 0, color: "#A34A38", fontWeight: 600, cursor: "pointer", fontSize: 13, textDecoration: "underline" }}
-          >
-            nothing logged yet today — add one now →
-          </button>
-        )}
-      </div>
+        {error && <div role="status" style={{ background: "var(--warn-bg)", color: "var(--ink)", padding: "10px 14px", borderRadius: 12, fontSize: 13, margin: "10px 0" }}>{error}</div>}
 
-      {/* Daily snapshot: money, movies, diet in one glance */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 20 }}>
-        <Link href="/sugar-challenge" className={`story-chip${currentStreak > 0 ? "" : " idle"}`} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
-          <Flame size={13} color={currentStreak > 0 ? "#C98A2C" : "#C4BDAC"} className={currentStreak > 0 ? "pulse-flame" : ""} />
-          {challengeMeta ? `${currentStreak}-day streak` : "No challenge running"}
-        </Link>
-        <Link href="/movies" className={`story-chip${moviesThisMonth > 0 ? "" : " idle"}`} style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
-          <Clapperboard size={13} color="#7A3E56" />
-          {moviesThisMonth} movie{moviesThisMonth !== 1 ? "s" : ""} this month
-        </Link>
-        <span className={`story-chip${overallBreach || categoryBreaches.length > 0 ? " idle" : ""}`} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#5f5a4f", background: "#F1ECDF", borderRadius: 20, padding: "6px 12px" }}>
-          {overallBreach || categoryBreaches.length > 0 ? <ShieldAlert size={13} color="#A34A38" /> : <ShieldCheck size={13} color="#2F6F5E" />}
-          {overallBreach || categoryBreaches.length > 0 ? "Over a budget rule" : "On budget"}
-        </span>
-      </div>
-
-      {forecast && (
-        <div className="panel-soft" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, padding: "14px 16px", marginBottom: 20, background: "#F1ECDF", borderRadius: 10 }}>
-          <div>
-            <div style={{ fontSize: 11, color: "#8a8477" }}>Safe to spend per day</div>
-            <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700, color: forecast.safePerDay === 0 ? "#A34A38" : "#2F6F5E" }}>
-              <CountUp value={forecast.safePerDay} format={fmt} />
-            </div>
-            <div style={{ fontSize: 10, color: "#8a8477" }}>for the next {forecast.daysLeft} day{forecast.daysLeft !== 1 ? "s" : ""}, after scheduled items</div>
-            <div style={{ height: 5, background: "#E3DCC9", borderRadius: 4, overflow: "hidden", marginTop: 6 }}>
-              <div className="bar-grow" style={{ height: "100%", width: `${forecast.safePerDay > 0 ? Math.min(100, (forecast.spentToday / forecast.safePerDay) * 100) : 100}%`, background: forecast.spentToday > forecast.safePerDay ? "#A34A38" : "#2F6F5E", borderRadius: 4, transition: "width 0.5s var(--ease-fluid)" }} />
-            </div>
-            <div style={{ fontSize: 10, color: "#8a8477", marginTop: 3 }}>Today: {fmt(forecast.spentToday)} spent</div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: "#8a8477" }}>Month-end forecast</div>
-            {forecast.enough ? (
+        {/* Today ring */}
+        <section aria-label="Today's budget" style={{ display: "flex", flexDirection: "column", alignItems: "center", margin: "18px 0 22px" }}>
+          <Ring pct={ringPct} color={ringColor}>
+            {budget.hasMoney ? (
               <>
-                <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700, color: overallRule && forecast.projected > overallRule.amount ? "#A34A38" : "#241F1A" }}>
-                  <CountUp value={forecast.projected} format={fmt} />
+                <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{budget.left >= 0 ? "Left today" : "Over today by"}</div>
+                <div className="lora tabnum" style={{ fontSize: 36, fontWeight: 700, color: budget.level === 2 ? "var(--danger)" : "var(--ink)", lineHeight: 1.1 }}>
+                  <CountUp value={Math.abs(budget.left)} format={fmt} />
                 </div>
-                <div style={{ fontSize: 10, color: overallRule && forecast.projected > overallRule.amount ? "#A34A38" : "#8a8477" }}>
-                  {overallRule
-                    ? forecast.projected > overallRule.amount
-                      ? `~${fmt(forecast.projected - overallRule.amount)} over your ${fmt(overallRule.amount)} rule at this pace`
-                      : `within your ${fmt(overallRule.amount)} rule at this pace`
-                    : `at ~${fmt(forecast.dailyAvg)}/day so far`}
-                </div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>of {fmt(budget.perDay)} / day</div>
               </>
             ) : (
-              <div style={{ fontSize: 12, color: "#8a8477", marginTop: 6 }}>Needs a few days of data to forecast.</div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {savingsGoal && savingsGoal.targetAmount > 0 && (() => {
-        const pct = Math.min(100, Math.max(0, (balanceCalc.balance / savingsGoal.targetAmount) * 100));
-        const daysLeft = savingsGoal.targetDate ? Math.ceil((new Date(savingsGoal.targetDate + "T00:00:00") - new Date(todayISO() + "T00:00:00")) / 86400000) : null;
-        const remaining = Math.max(0, savingsGoal.targetAmount - balanceCalc.balance);
-        const perDay = daysLeft && daysLeft > 0 ? remaining / daysLeft : null;
-        const done = pct >= 100;
-        return (
-          <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 10, padding: "14px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16 }}>
-            <div className="streak-ring" style={{ width: 84, height: 84, "--p": pct, "--ring-a": done ? "#2F6F5E" : "var(--accent-solid)", "--glow": done ? 18 : 6 }}>
-              <span className="lora tabnum" style={{ fontSize: 17, fontWeight: 700, color: done ? "#2F6F5E" : "#241F1A" }}>
-                <CountUp value={Math.round(pct)} />%
-              </span>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{savingsGoal.label || "Savings goal"} {done && "🎉"}</div>
-              <div style={{ fontSize: 12, color: "#8a8477", marginTop: 2 }}>
-                <span className="tabnum">{fmt(balanceCalc.balance)}</span> of <span className="tabnum">{fmt(savingsGoal.targetAmount)}</span>
-              </div>
-              {!done && daysLeft !== null && daysLeft >= 0 && (
-                <div style={{ fontSize: 11, color: "#8a8477", marginTop: 2 }}>
-                  {daysLeft} day{daysLeft !== 1 ? "s" : ""} left{perDay ? ` · save ~${fmt(perDay)}/day to hit it` : ""}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Balance */}
-      <div className="panel-soft" style={{ background: balancePanelBg, borderRadius: 6, padding: "18px 20px", marginBottom: 28 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>Balance available</div>
-            <div className="lora tabnum count-up" style={{ fontSize: "clamp(24px, 7vw, 32px)", fontWeight: 600, lineHeight: 1, color: balanceColor }}>
-              {fmt(animatedBalance)}
-            </div>
-            {balanceStatus === "low" && (
-              <div style={{ fontSize: 11, color: "#C98A2C", marginTop: 4 }}>Below your {fmt(lowBalanceRule.amount)} alert threshold</div>
-            )}
-            <div style={{ fontSize: 11, color: "#8a8477", marginTop: 4 }}>
-              {balanceCalc.addedLabel} · {balanceCalc.spentLabel} deducted
-            </div>
-          </div>
-          <button
-            onClick={() => (showTopup ? cancelEditTopup() : setShowTopup(true))}
-            style={{ background: showTopup ? "#EAE5D9" : "#241F1A", color: showTopup ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
-          >
-            {showTopup ? <X size={14} /> : <Plus size={14} />} {showTopup ? "Cancel" : "Add money"}
-          </button>
-        </div>
-
-        {showTopup && (
-          <form onSubmit={submitTopup} style={{ marginTop: 14 }}>
-            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              <button
-                type="button"
-                onClick={() => setTopupForm({ ...topupForm, mode: "add" })}
-                style={{ fontSize: 12, padding: "6px 12px", borderRadius: 20, border: "1px solid " + (topupForm.mode === "add" ? "#241F1A" : "#D9D2C2"), background: topupForm.mode === "add" ? "#241F1A" : "transparent", color: topupForm.mode === "add" ? "#FBF8F2" : "#5f5a4f", cursor: "pointer" }}
-              >
-                Add to balance
-              </button>
-              <button
-                type="button"
-                onClick={() => setTopupForm({ ...topupForm, mode: "set" })}
-                style={{ fontSize: 12, padding: "6px 12px", borderRadius: 20, border: "1px solid " + (topupForm.mode === "set" ? "#241F1A" : "#D9D2C2"), background: topupForm.mode === "set" ? "#241F1A" : "transparent", color: topupForm.mode === "set" ? "#FBF8F2" : "#5f5a4f", cursor: "pointer" }}
-              >
-                Set current balance
-              </button>
-            </div>
-            {topupForm.mode === "set" && (
-              <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 10, maxWidth: 420 }}>
-                Use this when you're pasting in whatever amount you currently have on hand, partway through the month. It replaces the balance as of this date — expenses before this date won't be subtracted again.
-              </div>
-            )}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-              <input type="number" inputMode="decimal" placeholder="Amount (₹)" value={topupForm.amount} onChange={(e) => setTopupForm({ ...topupForm, amount: e.target.value })} step="0.01" min="0" style={{ width: 140 }} />
-              <input type="text" placeholder="Source (optional)" value={topupForm.note} onChange={(e) => setTopupForm({ ...topupForm, note: e.target.value })} maxLength={60} style={{ width: 160 }} />
-              <input type="date" value={topupForm.date} onChange={(e) => setTopupForm({ ...topupForm, date: e.target.value })} max={todayISO()} style={{ width: 150 }} />
-              <button type="submit" disabled={topupSubmitting} className="pill" style={{ background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, fontWeight: 500, cursor: topupSubmitting ? "default" : "pointer", opacity: topupSubmitting ? 0.6 : 1 }}>
-                {topupSubmitting ? "Saving…" : editingTopupId ? "Save changes" : "Add"}
-              </button>
-            </div>
-            {topupError && <div style={{ fontSize: 12, color: "#A34A38", marginTop: 8 }}>{topupError}</div>}
-          </form>
-        )}
-
-        {topups.length > 0 && (
-          <div style={{ marginTop: 14, borderTop: "1px solid #E3DCC9", paddingTop: 10 }}>
-            {topups.slice(0, 5).map((t) => (
-              <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: "#5f5a4f", padding: "4px 0" }}>
-                <span>
-                  {new Date(t.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                  {t.note && <> · {t.note}</>}
-                  {t.mode === "set" && <span style={{ color: "#7A3E56" }}> · set balance</span>}
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span className="tabnum" style={{ color: t.mode === "set" ? "#7A3E56" : "#2F6F5E" }}>{t.mode === "set" ? "= " : "+"}{fmt(t.amount)}</span>
-                  <button onClick={() => startEditTopup(t)} aria-label="Edit top-up" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 2, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#5f5a4f")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
-                    <Pencil size={12} />
-                  </button>
-                  <button onClick={() => removeTopup(t.id)} aria-label="Delete top-up" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 2, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#A34A38")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
-                    <Trash2 size={12} />
-                  </button>
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Hero total */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 24, marginBottom: 12, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 12, color: "#8a8477", marginBottom: 4 }}>Spent in {MONTH_NAMES[month]}</div>
-          <div className="lora tabnum" style={{ fontSize: "clamp(30px, 9vw, 44px)", fontWeight: 600, lineHeight: 1 }}>
-            <CountUp value={spentSoFar} format={fmt} />
-          </div>
-          <div style={{ fontSize: 11, color: "#8a8477", marginTop: 4 }}>Includes movie tickets and canteen spend</div>
-        </div>
-        {diff !== null && (
-          <div style={{ fontSize: 13, color: diff > 0 ? "#A34A38" : "#2F6F5E", paddingBottom: 8 }}>
-            {diff > 0 ? "↑" : "↓"} {Math.abs(Math.round(diff))}% vs {MONTH_NAMES[lastMonthDate.getMonth()]}
-            <span style={{ color: "#8a8477" }}> ({fmt(lastMonthTotal)})</span>
-          </div>
-        )}
-      </div>
-
-      {upcomingTotal > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#A3763F", marginBottom: 40 }}>
-          <Clock size={14} />
-          <span><strong className="tabnum"><CountUp value={upcomingTotal} format={fmt} /></strong> scheduled later this month ({upcomingItems.length} item{upcomingItems.length !== 1 ? "s" : ""}, not yet deducted from balance)</span>
-        </div>
-      )}
-      {upcomingTotal === 0 && <div style={{ marginBottom: upcomingTotal > 0 || overallBreach || categoryBreaches.length > 0 ? 0 : 40 }} />}
-
-      {(overallBreach || categoryBreaches.length > 0) && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#A34A38", marginBottom: 40, flexWrap: "wrap" }}>
-          <span>
-            Over budget:{" "}
-            {overallBreach && <>overall by <strong className="tabnum">{fmt(spentSoFar - overallRule.amount)}</strong></>}
-            {overallBreach && categoryBreaches.length > 0 && ", "}
-            {categoryBreaches.map((c, i) => (
-              <span key={c.name}>
-                {c.name} by <strong className="tabnum">{fmt(c.value - categoryRuleMap[c.name])}</strong>{i < categoryBreaches.length - 1 ? ", " : ""}
-              </span>
-            ))}
-          </span>
-          <Link href="/budget" style={{ color: "#A34A38", fontSize: 12, textDecoration: "underline" }}>Adjust rules →</Link>
-        </div>
-      )}
-
-      {sheetOpen && <div className="sheet-backdrop" onClick={() => !editingExpenseId && setSheetOpen(false)} />}
-
-      <button
-        type="button"
-        className="mobile-fab-add"
-        aria-label="Add expense"
-        onClick={() => {
-          setSheetOpen(true);
-          setTimeout(() => {
-            amountInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-            amountInputRef.current?.focus();
-          }, 350);
-        }}
-      >
-        <Plus size={24} />
-      </button>
-
-      <div className="responsive-grid">
-        <div>
-          <div className={`expense-form-wrap${sheetOpen ? " open" : ""}`}>
-            <div className="sheet-peek" onClick={() => setSheetOpen((v) => !v)}>
-              <span className="sheet-drag-handle" />
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>
-                  {editingExpenseId ? "Edit expense" : "Add an expense"}
-                </div>
-                {!editingExpenseId && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); startVoiceAdd(); }}
-                    disabled={voiceListening}
-                    title="Speak an expense, e.g. '250 for food swiggy'"
-                    style={{ display: "flex", alignItems: "center", gap: 5, background: voiceListening ? "#A34A38" : "#F1ECDF", color: voiceListening ? "#FBF8F2" : "#5f5a4f", border: "none", borderRadius: 20, padding: "6px 12px", fontSize: 12, cursor: voiceListening ? "default" : "pointer" }}
-                  >
-                    <Mic size={13} /> {voiceListening ? "Listening…" : "Speak to add"}
-                  </button>
-                )}
-              </div>
-            </div>
-          {voiceError && <div style={{ fontSize: 11, color: "#A34A38", marginTop: -6, marginBottom: 10 }}>{voiceError}</div>}
-          {!editingExpenseId && quickChips.length > 0 && (
-            <div data-no-tab-swipe="1" style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6, marginBottom: 8 }}>
-              {quickChips.map((c) => (
-                <button key={`${c.category}|${c.note}|${c.amount}`} type="button" className="story-chip" onClick={() => quickAdd(c)} style={{ flexShrink: 0, background: "none", borderRadius: 20, padding: "6px 12px", fontSize: 12, color: "#5f5a4f", cursor: "pointer", whiteSpace: "nowrap" }}>
-                  ⚡ {c.note || c.category} · {fmt(c.amount)}
-                </button>
-              ))}
-            </div>
-          )}
-          <form onSubmit={submitExpense} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <input ref={amountInputRef} type="number" inputMode="decimal" placeholder="Amount (₹)" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} step="0.01" min="0" />
-            <select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>
-              {CATEGORIES.map((c) => (
-                <option key={c.name} value={c.name}>{c.name}</option>
-              ))}
-              {customCategories.map((c) => (
-                <option key={c.name} value={c.name}>{c.name}</option>
-              ))}
-            </select>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                type="text"
-                placeholder={expenseForm.category === "Other" ? "Reason (required)" : "Note (optional)"}
-                value={expenseForm.note}
-                onChange={(e) => setExpenseForm({ ...expenseForm, note: e.target.value })}
-                maxLength={80}
-                style={{ flex: 1, ...(expenseForm.category === "Other" ? { borderColor: "#A34A38" } : {}) }}
-              />
-              <input ref={receiptInputRef} type="file" accept="image/*" capture="environment" onChange={handleReceiptChange} style={{ display: "none" }} />
-              <button
-                type="button"
-                onClick={() => receiptInputRef.current?.click()}
-                disabled={receiptUploading}
-                title="Attach a photo of the receipt"
-                aria-label="Attach receipt photo"
-                style={{ flexShrink: 0, width: 40, display: "flex", alignItems: "center", justifyContent: "center", background: expenseForm.receiptPhoto ? "#F1ECDF" : "none", border: "1px solid #D9D2C2", borderRadius: 8, color: expenseForm.receiptPhoto ? "#A34A38" : "#5f5a4f", cursor: receiptUploading ? "default" : "pointer" }}
-              >
-                <Camera size={16} />
-              </button>
-            </div>
-            {receiptUploading && <div style={{ fontSize: 11, color: "#8a8477", marginTop: -6 }}>Processing photo…</div>}
-            {(expenseForm.receiptPhoto || (expenseForm.receiptPhoto === null && expenseForm.hasReceipt)) && !receiptUploading && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: -4 }}>
-                {expenseForm.receiptPhoto ? (
-                  <img src={expenseForm.receiptPhoto} alt="Receipt" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #D9D2C2" }} />
-                ) : (
-                  <button type="button" onClick={() => openReceipt({ id: editingExpenseId })} style={{ background: "none", border: "none", color: "#5f5a4f", fontSize: 11, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
-                    View
-                  </button>
-                )}
-                <span style={{ fontSize: 11, color: "#8a8477" }}>Receipt attached</span>
-                <button type="button" onClick={() => setExpenseForm({ ...expenseForm, receiptPhoto: "", hasReceipt: false })} style={{ background: "none", border: "none", color: "#A34A38", fontSize: 11, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
-                  Remove
-                </button>
-              </div>
-            )}
-            {expenseMoreOpen ? (
               <>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} style={{ flex: 1 }} />
-                  <input type="time" value={expenseForm.time} onChange={(e) => setExpenseForm({ ...expenseForm, time: e.target.value })} style={{ flex: 1 }} />
-                </div>
-                {expenseForm.date > todayISO() && (
-                  <div style={{ fontSize: 11, color: "#A3763F", marginTop: -6 }}>Future date — won't reduce your balance until this day arrives</div>
-                )}
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#5f5a4f", cursor: "pointer" }}>
-                  <input type="checkbox" checked={expenseForm.affectsBalance} onChange={(e) => setExpenseForm({ ...expenseForm, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
-                  Deduct from balance
-                </label>
-                {!editingExpenseId && (
-                  <button type="button" onClick={() => setExpenseMoreOpen(false)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "#8a8477", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
-                    Hide date &amp; time options
-                  </button>
-                )}
+                <Wallet size={26} color="var(--muted)" />
+                <div style={{ fontSize: 13, color: "var(--text-2)", maxWidth: 140, marginTop: 6 }}>Add your balance to get a daily budget</div>
               </>
-            ) : (
-              <button type="button" onClick={() => setExpenseMoreOpen(true)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "#8a8477", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
-                Backdate, schedule, or exclude from balance →
-              </button>
             )}
-            {formError && <div style={{ fontSize: 12, color: "#A34A38" }}>{formError}</div>}
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="submit"
-                disabled={submitting}
-                style={{ flex: 1, marginTop: 4, background: "#241F1A", color: "#FBF8F2", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-              >
-                <Plus size={16} /> {submitting ? "Saving…" : editingExpenseId ? "Save changes" : "Add expense"}
-              </button>
-              {editingExpenseId && (
-                <button type="button" onClick={cancelEditExpense} style={{ marginTop: 4, background: "#EAE5D9", color: "#241F1A", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
-                  Cancel
-                </button>
-              )}
+          </Ring>
+          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", justifyContent: "center" }}>
+            <span className="chip" style={{ cursor: "default" }}>Spent today · <b className="tabnum">{fmt(budget.spentToday)}</b></span>
+            {budget.hasMoney ? (
+              <span className="chip" style={{ cursor: "default" }}>{budget.daysLeft} days left in month</span>
+            ) : (
+              <Link href="/transactions?topup=1" className="btn btn-primary" style={{ textDecoration: "none", minHeight: 36 }}>Add money</Link>
+            )}
+          </div>
+        </section>
+
+        {/* Insight of the day */}
+        {view.insight && (
+          <Link href="/insights" style={{ textDecoration: "none", color: "inherit" }}>
+            <div className="card" style={{ display: "flex", gap: 12, alignItems: "center", padding: "14px 16px", borderRadius: 18, marginBottom: 16 }}>
+              <span style={{ fontSize: 24 }} aria-hidden="true">{view.insight.emoji}</span>
+              <div style={{ fontSize: 14, lineHeight: 1.4, flex: 1 }}>{view.insight.text}</div>
+              <ChevronRight size={18} color="var(--muted)" />
             </div>
-          </form>
+          </Link>
+        )}
+
+        {showWrapped && (
+          <Link href="/wrapped" style={{ textDecoration: "none" }}>
+            <div className="wrapped-banner" style={{ borderRadius: 18, padding: "14px 16px", marginBottom: 16, color: "#fff", background: "var(--accent-gradient)", display: "flex", alignItems: "center", gap: 10, boxShadow: "var(--accent-glow)" }}>
+              <Sparkles size={22} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Your month, wrapped</div>
+                <div style={{ fontSize: 12, opacity: 0.9 }}>Last month's story is ready — tap to watch</div>
+              </div>
+              <ChevronRight size={20} />
+            </div>
+          </Link>
+        )}
+
+        {/* Swipeable cards */}
+        <div className="h-scroll home-cards" data-no-tab-swipe="1" style={{ scrollSnapType: "x mandatory", scrollPaddingInline: 20, margin: "0 -20px 20px", padding: "4px 20px 10px", gap: 12 }}>
+          <div style={{ flex: "0 0 78%", scrollSnapAlign: "start" }}>
+            <Card href="/transactions" icon={<Wallet size={14} />} title="Money">
+              <div className="lora tabnum" style={{ fontSize: 28, fontWeight: 700, color: derived.balance < 0 ? "var(--danger)" : "var(--ink)" }}>{fmt(derived.balance)}</div>
+              <div style={{ fontSize: 13, color: "var(--text-2)" }}>balance · {fmt(budget.spentMonth)} spent this month</div>
+              {view.overall && (
+                <div style={{ marginTop: "auto" }}>
+                  <div style={{ height: 6, borderRadius: 4, background: "var(--line)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${Math.min(100, (budget.spentMonth / view.overall.amount) * 100)}%`, background: view.overBudget ? "var(--danger)" : "var(--success)", borderRadius: 4 }} />
+                  </div>
+                  <div style={{ fontSize: 11.5, color: view.overBudget ? "var(--danger)" : "var(--muted)", marginTop: 4 }}>
+                    {view.overBudget ? `Over your ${fmt(view.overall.amount)} limit` : `${fmt(view.overall.amount - budget.spentMonth)} left of ${fmt(view.overall.amount)} limit`}
+                  </div>
+                </div>
+              )}
+            </Card>
           </div>
 
-          {byCategory.length > 0 && (
-            <div style={{ marginTop: 36 }}>
-              <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-                By category
+          <div style={{ flex: "0 0 78%", scrollSnapAlign: "start" }}>
+            <Card href={data.challengeMeta ? undefined : "/sugar-challenge"} icon={<Flame size={14} />} title="Sugar-free" accent="var(--warn)">
+              {data.challengeMeta ? (
+                <>
+                  <Link href="/sugar-challenge" style={{ textDecoration: "none", color: "inherit" }}>
+                    <div className="lora tabnum" style={{ fontSize: 28, fontWeight: 700 }}>{view.streak} <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-2)" }}>day streak 🔥</span></div>
+                  </Link>
+                  {view.sugarToday === undefined ? (
+                    <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
+                      <button type="button" className="btn btn-primary" disabled={marking} onClick={() => markSugar(true)} style={{ flex: 1, minHeight: 40, fontSize: 13 }}><Check size={15} /> Sugar-free</button>
+                      <button type="button" className="btn btn-secondary" disabled={marking} onClick={() => markSugar(false)} style={{ flex: 1, minHeight: 40, fontSize: 13 }}><XIcon size={15} /> Slipped</button>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 13, color: view.sugarToday ? "var(--success)" : "var(--danger)", marginTop: "auto" }}>
+                      {view.sugarToday ? "✓ Today marked sugar-free" : "Today marked as a slip"}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>Try a no-sugar challenge</div>
+                  <div style={{ fontSize: 13, color: "var(--text-2)" }}>One tap a day. Watch the streak grow.</div>
+                </>
+              )}
+            </Card>
+          </div>
+
+          <div style={{ flex: "0 0 78%", scrollSnapAlign: "start" }}>
+            <Card href="/movies" icon={<Clapperboard size={14} />} title="Movies" accent="#B0567F">
+              <div className="lora tabnum" style={{ fontSize: 28, fontWeight: 700 }}>{view.moviesMonth.length} <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-2)" }}>this month</span></div>
+              <div style={{ fontSize: 13, color: "var(--text-2)" }}>
+                {data.movies[0] ? <>Last: <b>{data.movies[0].title}</b></> : "Log the movies you watch and what you thought."}
               </div>
-              <div style={{ height: Math.max(byCategory.length * 34, 60) }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={byCategory} layout="vertical" margin={{ top: 0, right: 8, left: 0, bottom: 0 }}>
-                    <XAxis type="number" hide />
-                    <YAxis type="category" dataKey="name" width={90} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#5f5a4f" }} />
-                    <Bar dataKey="value" radius={[0, 2, 2, 0]} barSize={14}>
-                      {byCategory.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
-                {byCategory.map((c) => (
-                  <div key={c.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#5f5a4f" }}>
-                    <span>{c.name}</span>
-                    <span className="tabnum">{fmt(c.value)}</span>
-                  </div>
-                ))}
-              </div>
+            </Card>
+          </div>
+
+          {data.savingsGoal && data.savingsGoal.targetAmount > 0 && (
+            <div style={{ flex: "0 0 78%", scrollSnapAlign: "start" }}>
+              <Card href="/budget" icon={<Target size={14} />} title="Goal" accent="var(--accent-solid)">
+                <div style={{ fontSize: 16, fontWeight: 600 }}>{data.savingsGoal.label || "Savings goal"}</div>
+                <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700 }}>{Math.min(100, Math.max(0, Math.round((derived.balance / data.savingsGoal.targetAmount) * 100)))}%</div>
+                <div style={{ fontSize: 13, color: "var(--text-2)" }}>{fmt(Math.max(0, derived.balance))} of {fmt(data.savingsGoal.targetAmount)}</div>
+              </Card>
             </div>
           )}
+
+          <div style={{ flex: "0 0 78%", scrollSnapAlign: "start" }}>
+            <Card href="/challenges" icon={<Trophy size={14} />} title="Challenge" accent="var(--success)">
+              {view.challenge ? (
+                <>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>{view.challenge.emoji} {view.challenge.title}</div>
+                  <div style={{ display: "flex", gap: 4, marginTop: 4 }} aria-label={`Day ${view.challenge.day} of ${view.challenge.days}`}>
+                    {view.challenge.dayStates.map((s, i) => (
+                      <span key={i} style={{ flex: 1, height: 8, borderRadius: 4, background: s === "ok" ? "var(--success)" : s === "broken" ? "var(--danger)" : s === "today" ? "var(--warn)" : "var(--line)" }} />
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-2)", marginTop: "auto" }}>
+                    {view.challenge.status === "upcoming" ? `Starts ${dayLabel(view.challenge.start, today)}` : `Day ${view.challenge.day} of ${view.challenge.days} — keep going`}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>Pick a mini challenge</div>
+                  <div style={{ fontSize: 13, color: "var(--text-2)" }}>No-delivery week, daily cap, no-spend weekend…</div>
+                </>
+              )}
+            </Card>
+          </div>
         </div>
 
-        <div>
-          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-            Transactions
+        {/* Today */}
+        <section aria-label="Today's entries">
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+            <h2 className="section-title" style={{ margin: 0 }}>Today</h2>
+            <Link href="/transactions" style={{ fontSize: 13, color: "var(--accent-solid)", textDecoration: "none", fontWeight: 600 }}>All transactions →</Link>
           </div>
-          <PullToRefresh onRefresh={load}>
-          {grouped.length === 0 ? (
-            <div style={{ border: "1px dashed #D9D2C2", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "#8a8477", fontSize: 14 }}>
-              <Wallet size={22} style={{ marginBottom: 8, opacity: 0.5 }} />
-              <div>Nothing logged for {MONTH_NAMES[month]} yet.</div>
-              <div style={{ fontSize: 12, marginTop: 2 }}>Add your first expense on the left.</div>
-            </div>
+          {view.todayItems.length === 0 ? (
+            <button type="button" onClick={() => openQuickAdd()} className="card" style={{ width: "100%", border: "none", padding: "22px 16px", borderRadius: 18, textAlign: "center", cursor: "pointer", color: "var(--text-2)", fontSize: 14 }}>
+              Nothing logged today yet.<br />
+              <span style={{ color: "var(--accent-solid)", fontWeight: 600 }}>Tap to add your first expense</span>
+              {view.logStreak > 1 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Keep your {view.logStreak}-day logging streak alive 🔥</div>}
+            </button>
           ) : (
-            <div>
-              {grouped.map(([dateKey, items]) => (
-                <div key={dateKey} style={{ marginBottom: 18 }}>
-                  <div style={{ fontSize: 12, color: dateKey > today ? "#A3763F" : "#8a8477", marginBottom: 6, display: "flex", justifyContent: "space-between" }}>
-                    <span>{formatDateLabel(dateKey)}{dateKey > today && " · scheduled"}</span>
-                    <span className="tabnum">{fmt(items.reduce((s, x) => s + x.amount, 0))}</span>
+            <div className="card" style={{ borderRadius: 18, padding: "4px 14px" }}>
+              {view.todayItems.map((x, i) => (
+                <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderTop: i ? "1px solid var(--line)" : "none" }}>
+                  <CategoryIcon category={x.category} color={categoryColor(x.category, data.customCategories)} size={36} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.note || x.category}</div>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{x.category}{x.time ? ` · ${x.time}` : ""}{x.isRecurringPending ? " · scheduled" : ""}</div>
                   </div>
-                  <div style={{ borderTop: "1px solid #EAE5D9" }}>
-                    {items.map((x) => {
-                      const isMovie = x.category === MOVIE_CATEGORY.name;
-                      const canSwipeDelete = !isMovie && !x.pending && !x.isRecurringPending;
-                      const rowClass = removingIds.includes(x.id) ? "row-leave" : freshIds.includes(x.id) ? "row-new" : "";
-                      const row = (
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid #EAE5D9", gap: 12, background: "#FBF8F2" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                            <CategoryIcon category={x.category} color={catColor(x.category)} size={34} />
-                            {x.hasReceipt && (
-                              <button
-                                type="button"
-                                onClick={() => openReceipt(x)}
-                                aria-label="View receipt"
-                                title="View receipt"
-                                style={{ width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 5, flexShrink: 0, cursor: "pointer", background: "#F1ECDF", border: "1px solid #D9D2C2", color: "#5f5a4f", padding: 0 }}
-                              >
-                                <Receipt size={14} />
-                              </button>
-                            )}
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {x.note || x.category}
-                                {x.time && <span style={{ fontSize: 10, color: "#8a8477" }}> · {x.time}</span>}
-                                {x.affectsBalance === false && <span style={{ fontSize: 10, color: "#8a8477" }}> · not deducted</span>}
-                                {x.pending && <span style={{ fontSize: 10, color: "#C98A2C" }}> · pending sync</span>}
-                                {x.isRecurringPending && <span style={{ fontSize: 10, color: "#A3763F" }}> · recurring, not yet posted</span>}
-                              </div>
-                              {x.note && <div style={{ fontSize: 12, color: "#8a8477" }}>{x.category}</div>}
-                            </div>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                            <span className="tabnum" style={{ fontSize: 14, fontWeight: 500 }}>{fmt(x.amount)}</span>
-                            {!isMovie && !x.pending && !x.isRecurringPending && (
-                              <>
-                                <button onClick={() => startEditExpense(x)} aria-label="Edit" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#5f5a4f")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
-                                  <Pencil size={14} />
-                                </button>
-                                <button onClick={() => removeExpense(x.id)} aria-label="Delete" style={{ background: "none", border: "none", cursor: "pointer", color: "#C4BDAC", padding: 4, display: "flex" }} onMouseEnter={(e) => (e.currentTarget.style.color = "#A34A38")} onMouseLeave={(e) => (e.currentTarget.style.color = "#C4BDAC")}>
-                                  <Trash2 size={14} />
-                                </button>
-                              </>
-                            )}
-                            {x.pending && <span style={{ fontSize: 10, color: "#C98A2C" }}>syncing…</span>}
-                            {x.isRecurringPending && <Link href="/settings" style={{ fontSize: 11, color: "#8a8477", textDecoration: "none" }}>edit in Settings →</Link>}
-                            {isMovie && (
-                              <Link href="/movies" style={{ fontSize: 11, color: "#8a8477", textDecoration: "none" }}>edit on Movies →</Link>
-                            )}
-                          </div>
-                        </div>
-                      );
-                      return canSwipeDelete ? (
-                        <SwipeRow key={x.id} className={rowClass} onDelete={() => removeExpense(x.id)}>{row}</SwipeRow>
-                      ) : (
-                        <div key={x.id} className={rowClass}>{row}</div>
-                      );
-                    })}
-                  </div>
+                  <div className="tabnum" style={{ fontWeight: 600, fontSize: 15 }}>{fmt(x.amount)}</div>
                 </div>
               ))}
             </div>
           )}
-          </PullToRefresh>
-        </div>
-      </div>
-      {receiptView && (
-        <div
-          role="dialog"
-          aria-label="Receipt"
-          onClick={() => setReceiptView(null)}
-          style={{ position: "fixed", inset: 0, zIndex: 80, background: "rgba(20,17,14,0.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
-        >
-          {receiptView === "loading" ? (
-            <span style={{ color: "#FBF8F2", fontSize: 13 }}>Loading receipt…</span>
-          ) : (
-            <img src={receiptView} alt="Receipt" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 6 }} />
-          )}
-          <button
-            type="button"
-            onClick={() => setReceiptView(null)}
-            aria-label="Close"
-            style={{ position: "absolute", top: 16, right: 16, background: "rgba(251,248,242,0.15)", border: "none", borderRadius: 999, color: "#FBF8F2", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-          >
-            <X size={18} />
-          </button>
-        </div>
-      )}
+        </section>
+
+        {view.upcoming.length > 0 && (
+          <section aria-label="Coming up" style={{ marginTop: 20 }}>
+            <h2 className="section-title" style={{ fontSize: 15 }}>Coming up this month</h2>
+            {view.upcoming.map((x) => (
+              <div key={x.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, padding: "6px 0", color: "var(--text-2)" }}>
+                <span>{dayLabel(x.date, today)} · {x.note || x.category}</span>
+                <span className="tabnum">{fmt(x.amount)}</span>
+              </div>
+            ))}
+          </section>
+        )}
+      </PullToRefresh>
     </div>
   );
 }

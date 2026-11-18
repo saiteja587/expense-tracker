@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt } from "../lib/format";
 
@@ -119,11 +119,11 @@ export default function YearPage() {
   const maxDailySpend = useMemo(() => Math.max(1, ...Object.values(dailySpend)), [dailySpend]);
 
   function heatColor(amount) {
-    if (!amount) return "#EAE5D9";
+    if (!amount) return "var(--line)";
     const ratio = amount / maxDailySpend;
     if (ratio > 0.75) return "#712B13";
-    if (ratio > 0.5) return "#A34A38";
-    if (ratio > 0.25) return "#C98A2C";
+    if (ratio > 0.5) return "var(--danger)";
+    if (ratio > 0.25) return "var(--warn)";
     return "#E3C99A";
   }
 
@@ -154,68 +154,69 @@ export default function YearPage() {
   }, [monthly]);
 
   if (!loaded) {
-    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#8a8477" }}>Loading…</div>;
+    return <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>Loading…</div>;
   }
 
   return (
     <div className="page-container" style={{ maxWidth: 920, margin: "0 auto", padding: "40px 24px 64px" }}>
-      <div style={{ marginBottom: 28, borderBottom: "1px solid #D9D2C2", paddingBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
+      <div style={{ marginBottom: 28, borderBottom: "1px solid var(--line-strong)", paddingBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
         <div>
-          <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8a8477", textDecoration: "none", marginBottom: 6 }}>
-            <ArrowLeft size={12} /> Expense ledger
+          <Link href="/insights" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--muted)", textDecoration: "none", marginBottom: 6 }}>
+            <ArrowLeft size={13} /> Insights
           </Link>
           <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Year view</div>
-          <div style={{ fontSize: 13, color: "#8a8477", marginTop: 2 }}>Money, movies and diet across the whole year.</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Money, movies and diet across the whole year.</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <button onClick={() => setYear(year - 1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }} aria-label="Previous year"><ChevronLeft size={18} /></button>
+          <button onClick={() => setYear(year - 1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }} aria-label="Previous year"><ChevronLeft size={18} /></button>
           <div className="tabnum" style={{ fontSize: 16, fontWeight: 600, minWidth: 60, textAlign: "center" }}>{year}</div>
-          <button onClick={() => setYear(year + 1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "#5f5a4f" }} aria-label="Next year"><ChevronRight size={18} /></button>
+          <button onClick={() => setYear(year + 1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }} aria-label="Next year"><ChevronRight size={18} /></button>
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 12, marginBottom: 28, flexWrap: "wrap" }}>
         <div className="panel-soft" style={{ flex: "1 1 140px", borderRadius: 6, padding: "14px 16px" }}>
-          <div style={{ fontSize: 11, color: "#8a8477" }}>Total spend</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Total spend</div>
           <div className="lora tabnum" style={{ fontSize: 20, fontWeight: 600 }}>{fmt(totals.spend)}</div>
         </div>
         <div className="panel-soft" style={{ flex: "1 1 140px", borderRadius: 6, padding: "14px 16px", background: "#F7ECF1" }}>
-          <div style={{ fontSize: 11, color: "#8a8477" }}>Movies</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Movies</div>
           <div className="lora tabnum" style={{ fontSize: 20, fontWeight: 600, color: "#7A3E56" }}>{totals.movieCount} · {fmt(totals.movieSpend)}</div>
         </div>
-        <div className="panel-soft" style={{ flex: "1 1 140px", borderRadius: 6, padding: "14px 16px", background: "#EAF3EF" }}>
-          <div style={{ fontSize: 11, color: "#8a8477" }}>Sugar-free days</div>
-          <div className="lora tabnum" style={{ fontSize: 20, fontWeight: 600, color: "#2F6F5E" }}>{totals.sugarFreeDays}</div>
+        <div className="panel-soft" style={{ flex: "1 1 140px", borderRadius: 6, padding: "14px 16px", background: "var(--success-bg)" }}>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Sugar-free days</div>
+          <div className="lora tabnum" style={{ fontSize: 20, fontWeight: 600, color: "var(--success)" }}>{totals.sugarFreeDays}</div>
         </div>
-        <div className="panel-soft" style={{ flex: "1 1 140px", borderRadius: 6, padding: "14px 16px", background: "#FAECE7" }}>
-          <div style={{ fontSize: 11, color: "#8a8477" }}>Slip days</div>
-          <div className="lora tabnum" style={{ fontSize: 20, fontWeight: 600, color: "#A34A38" }}>{totals.slipDays}</div>
+        <div className="panel-soft" style={{ flex: "1 1 140px", borderRadius: 6, padding: "14px 16px", background: "var(--danger-bg)" }}>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Slip days</div>
+          <div className="lora tabnum" style={{ fontSize: 20, fontWeight: 600, color: "var(--danger)" }}>{totals.slipDays}</div>
         </div>
       </div>
 
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Monthly spend</div>
         <div style={{ height: 220 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthly} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid stroke="#EAE5D9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
-              <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={60} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
-              <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
+              <XAxis dataKey="month" tick={{ fontSize: 11.5, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
+              <YAxis tick={{ fontSize: 12, fill: "#8a8477" }} axisLine={false} tickLine={false} width={60} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
+              <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid var(--line)" }} />
               <Line type="monotone" dataKey="spend" name="Total spend" stroke="#A34A38" strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="movieSpend" name="Movie spend" stroke="#8C4470" strokeWidth={2} dot={{ r: 3 }} />
+              <Legend verticalAlign="top" height={26} iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Spending heatmap</div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 14 }}>Darker means a heavier spending day this year.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Darker means a heavier spending day this year.</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 16 }}>
           {heatmapMonths.map((hm) => (
             <div key={hm.label}>
-              <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 4 }}>{hm.label}</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>{hm.label}</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
                 {hm.cells.map((c, i) =>
                   c === null ? (
@@ -230,48 +231,49 @@ export default function YearPage() {
         </div>
       </div>
 
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Balance over the year</div>
-        <div style={{ fontSize: 11, color: "#8a8477", marginBottom: 10 }}>Approximate balance at the end of each month — a rough net-worth trend, not exact for months before a "set current balance" entry.</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Approximate balance at the end of each month — a rough net-worth trend, not exact for months before a "set current balance" entry.</div>
         <div style={{ height: 200 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthly} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid stroke="#EAE5D9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
-              <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={60} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
-              <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
+              <XAxis dataKey="month" tick={{ fontSize: 11.5, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
+              <YAxis tick={{ fontSize: 12, fill: "#8a8477" }} axisLine={false} tickLine={false} width={60} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
+              <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid var(--line)" }} />
               <Line type="monotone" dataKey="balance" name="Balance" stroke="#2F6F5E" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 20 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Movies per month</div>
         <div style={{ height: 180 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthly} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid stroke="#EAE5D9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
-              <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={44} allowDecimals={false} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
+              <XAxis dataKey="month" tick={{ fontSize: 11.5, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
+              <YAxis tick={{ fontSize: 12, fill: "#8a8477" }} axisLine={false} tickLine={false} width={44} allowDecimals={false} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid var(--line)" }} />
               <Line type="monotone" dataKey="movieCount" name="Movies watched" stroke="#7A3E56" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      <div className="card" style={{ border: "1px solid #EAE5D9", borderRadius: 6, padding: "16px 18px" }}>
+      <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px" }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Sugar-free vs. slip days</div>
         <div style={{ height: 180 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthly} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid stroke="#EAE5D9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
-              <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={44} allowDecimals={false} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
+              <XAxis dataKey="month" tick={{ fontSize: 11.5, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
+              <YAxis tick={{ fontSize: 12, fill: "#8a8477" }} axisLine={false} tickLine={false} width={44} allowDecimals={false} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid var(--line)" }} />
               <Line type="monotone" dataKey="sugarFreeDays" name="Sugar-free" stroke="#2F6F5E" strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="slipDays" name="Slips" stroke="#A34A38" strokeWidth={2} dot={{ r: 3 }} />
+              <Legend verticalAlign="top" height={26} iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>

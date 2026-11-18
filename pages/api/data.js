@@ -19,6 +19,34 @@ export const config = {
   },
 };
 
+// Poster URLs by title, kept for the life of the server instance.
+const posterCache = new Map();
+async function lookupPoster(title, year) {
+  const key = `${title.toLowerCase()}|${year || ""}`;
+  if (posterCache.has(key)) return posterCache.get(key);
+  const apiKey = process.env.TMDB_API_KEY;
+  // TMDB accepts either a v3 API key (query param) or a v4 read token (Bearer).
+  const isBearer = apiKey.startsWith("eyJ");
+  const url = new URL("https://api.themoviedb.org/3/search/movie");
+  url.searchParams.set("query", title);
+  url.searchParams.set("include_adult", "false");
+  if (year) url.searchParams.set("year", String(year).slice(0, 4));
+  if (!isBearer) url.searchParams.set("api_key", apiKey);
+  let poster = null;
+  try {
+    const r = await fetch(url, { headers: isBearer ? { Authorization: `Bearer ${apiKey}` } : {} });
+    if (r.ok) {
+      const d = await r.json();
+      const hit = (d.results || []).find((m) => m.poster_path);
+      poster = hit ? `https://image.tmdb.org/t/p/w342${hit.poster_path}` : null;
+    }
+  } catch {
+    poster = null;
+  }
+  posterCache.set(key, poster);
+  return poster;
+}
+
 function err(res, msg, status = 400) {
   return res.status(status).json({ error: msg });
 }
@@ -55,6 +83,17 @@ export default async function handler(req, res) {
       if (type === "watchlist") return res.status(200).json({ watchlist: await db.listWatchlist() });
       if (type === "savings-goal") return res.status(200).json({ goal: await db.getSavingsGoal() });
       if (type === "milestone-rewards") return res.status(200).json({ rewards: await db.getMilestoneRewards() });
+      if (type === "mini-challenges") {
+        const raw = await db.getSetting("mini_challenges");
+        return res.status(200).json({ challenges: raw ? JSON.parse(raw) : [] });
+      }
+      // Movie poster lookup via TMDB (free API key in TMDB_API_KEY). Without a
+      // key the app shows generated poster tiles instead.
+      if (type === "poster") {
+        const title = String(req.query.title || "").trim().slice(0, 120);
+        if (!title || !process.env.TMDB_API_KEY) return res.status(200).json({ url: null });
+        return res.status(200).json({ url: await lookupPoster(title, req.query.year) });
+      }
       if (type === "categories") {
         const raw = await db.getSetting("custom_categories");
         return res.status(200).json({ categories: raw ? JSON.parse(raw) : [] });
@@ -106,6 +145,7 @@ export default async function handler(req, res) {
           ottPlatforms: await setting("custom_ott_platforms"),
           savingsGoal: await setting("savings_goal"),
           milestoneRewards: (await setting("milestone_rewards")) || {},
+          miniChallenges: (await setting("mini_challenges")) || [],
         });
       }
       return err(res, "Unknown type");
@@ -229,6 +269,17 @@ export default async function handler(req, res) {
         if (!targetAmount || targetAmount <= 0) return err(res, "Enter a target amount greater than 0");
         const goal = await db.setSavingsGoal({ targetAmount, targetDate: body.targetDate || null, label: (body.label || "").trim() });
         return res.status(201).json({ goal });
+      }
+
+      if (type === "mini-challenges") {
+        if (!Array.isArray(body.challenges)) return err(res, "Challenges must be a list");
+        const clean = body.challenges.slice(-20).map((c) => ({
+          id: String(c.id).slice(0, 60), template: String(c.template).slice(0, 40), start: String(c.start).slice(0, 10),
+          days: Math.min(31, Math.max(1, parseInt(c.days, 10) || 7)), param: c.param == null ? null : Number(c.param),
+          dismissed: !!c.dismissed,
+        }));
+        await db.setSetting("mini_challenges", JSON.stringify(clean));
+        return res.status(201).json({ challenges: clean });
       }
 
       if (type === "milestone-rewards") {

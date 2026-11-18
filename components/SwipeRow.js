@@ -72,7 +72,7 @@ export default function SwipeRow({ children, onDelete, disabled, className = "" 
           onClick={() => { close(); onDelete(); }}
           aria-label="Delete"
           style={{
-            width: REVEAL_WIDTH, background: "#A34A38", color: "#fff", border: "none", cursor: "pointer",
+            width: REVEAL_WIDTH, background: "var(--danger)", color: "#fff", border: "none", cursor: "pointer",
             display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, fontSize: 10,
           }}
         >
@@ -88,7 +88,7 @@ export default function SwipeRow({ children, onDelete, disabled, className = "" 
         style={{
           transform: `translateX(${dragX}px)`,
           transition: dragging.current ? "none" : "transform 0.2s var(--ease-fluid, ease)",
-          background: "var(--page-bg, #FBF8F2)",
+          background: "var(--page-bg, var(--bg))",
           position: "relative",
         }}
       >

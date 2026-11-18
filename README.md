@@ -4,6 +4,13 @@ A personal money-and-habits tracker you install on your phone as an app (PWA). B
 Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free tiers.
 
 ## Features
+- **Home:** a "left to spend today" ring, swipeable cards (money, sugar streak — mark today
+  right there — movies, savings goal, mini challenge), the day's top insight, today's entries.
+- **＋ quick add** (centre of the bottom bar): big keypad, category chips, one-tap "usual"
+  suggestions, paste a bank/UPI SMS, voice, receipt photo, split the bill (adds IOUs).
+- **Insights:** this month vs last, where the money went, plain-language observations,
+  money × movies × diet patterns, and a monthly **Wrapped** story you can share.
+- **Me:** level & badges, mini challenges (no-delivery week, daily cap, no-spend weekend…).
 - **Ledger:** log expenses by typing, voice, quick-add, or with a receipt photo. Wallet balance
   (top-ups or "set balance"), recurring expenses and income, budget rules, a savings goal.
 - **Movies:** what you watched, ticket and snack costs, theatre or streaming service, your
@@ -46,6 +53,7 @@ Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free ti
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | for push | Generate with `npx web-push generate-vapid-keys`. |
 | `WATER_NOTIFY_SECRET` | for water reminders | Shared secret for `/api/notify-water?secret=…`. |
 | `AUTH_SECRET` | no | Session signing secret. If unset, one is generated and stored in the database. |
+| `TMDB_API_KEY` | no | Free key from themoviedb.org (v3 key or v4 read token) for real movie posters. Without it, posters are generated tiles. |
 | `APP_TIMEZONE` | no | Defaults to `Asia/Kolkata`. Decides when "today" starts for recurring items and reminders. |
 
 ## Deploy
