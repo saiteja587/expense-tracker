@@ -151,7 +151,9 @@ export default async function handler(req, res) {
 
       if (type === "budget") {
         const amount = parseFloat(body.amount);
-        if (!["overall", "category", "savings"].includes(body.ruleType)) return err(res, "Invalid rule type");
+        // low_balance (alert threshold) and movie_count (monthly guideline) are set
+        // from the Rules page; they were missing here, so saving them always failed.
+        if (!["overall", "category", "savings", "low_balance", "movie_count"].includes(body.ruleType)) return err(res, "Invalid rule type");
         if (!amount || amount <= 0) return err(res, "Enter an amount greater than 0");
         if (body.ruleType === "category" && !body.category) return err(res, "Pick a category");
         const rule = await db.upsertBudgetRule({ ruleType: body.ruleType, category: body.category, amount });

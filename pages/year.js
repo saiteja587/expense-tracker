@@ -199,7 +199,7 @@ export default function YearPage() {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthly} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid stroke="#EAE5D9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
               <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={60} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
               <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
               <Line type="monotone" dataKey="spend" name="Total spend" stroke="#A34A38" strokeWidth={2} dot={{ r: 3 }} />
@@ -237,7 +237,7 @@ export default function YearPage() {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthly} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid stroke="#EAE5D9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
               <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={60} tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
               <Tooltip formatter={(v) => fmt(v)} contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
               <Line type="monotone" dataKey="balance" name="Balance" stroke="#2F6F5E" strokeWidth={2} dot={{ r: 3 }} />
@@ -252,8 +252,8 @@ export default function YearPage() {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthly} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid stroke="#EAE5D9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
+              <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={44} allowDecimals={false} />
               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
               <Line type="monotone" dataKey="movieCount" name="Movies watched" stroke="#7A3E56" strokeWidth={2} dot={{ r: 3 }} />
             </LineChart>
@@ -267,8 +267,8 @@ export default function YearPage() {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={monthly} margin={{ top: 6, right: 8, left: -20, bottom: 0 }}>
               <CartesianGrid stroke="#EAE5D9" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 10, fill: "#8a8477" }} axisLine={false} tickLine={false} interval={0} />
+              <YAxis tick={{ fontSize: 11, fill: "#8a8477" }} axisLine={false} tickLine={false} width={44} allowDecimals={false} />
               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #EAE5D9" }} />
               <Line type="monotone" dataKey="sugarFreeDays" name="Sugar-free" stroke="#2F6F5E" strokeWidth={2} dot={{ r: 3 }} />
               <Line type="monotone" dataKey="slipDays" name="Slips" stroke="#A34A38" strokeWidth={2} dot={{ r: 3 }} />

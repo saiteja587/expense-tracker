@@ -136,14 +136,20 @@ a {
 }
 
 /* ---------- Layout ---------- */
+/* minmax(0, 1fr), not plain 1fr: a 1fr track can't shrink below its
+   widest content, so one long no-wrap transaction note (or the chart) used
+   to stretch the column past the phone screen and clip the add-expense form. */
 .responsive-grid {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: 40px;
+}
+.responsive-grid > * {
+  min-width: 0;
 }
 @media (max-width: 680px) {
   .responsive-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 28px;
   }
 }
@@ -519,11 +525,14 @@ button[style*="background: rgb(36, 31, 26)"]:not(:disabled):active {
 .page-container > *:nth-child(n+9) { animation-delay: 0.42s; }
 
 /* ---------- Title: the app name in the flowing gradient ---------- */
+/* background-image, not the `background` shorthand: an !important shorthand
+   also resets background-clip with !important, overriding the clip: text
+   below and painting a solid gradient bar with invisible text. */
 .gradient-title {
-  background: var(--accent-gradient) !important;
+  background-image: var(--accent-gradient) !important;
   background-size: 220% 220% !important;
-  -webkit-background-clip: text;
-  background-clip: text;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
   -webkit-text-fill-color: transparent;
   color: transparent;
   animation: gradientFlow 7s ease infinite;

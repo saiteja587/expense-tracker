@@ -8,6 +8,7 @@ vi.mock("../lib/db", () => ({
   setSetting: async (k, v) => void settings.set(k, v),
   listExpenses: async () => [{ id: 1, amount: "10" }],
   deleteExpense: async () => {},
+  upsertBudgetRule: async (r) => ({ id: 1, rule_type: r.ruleType, category: "", amount: r.amount }),
 }));
 
 const { default: handler } = await import("../pages/api/data");
@@ -105,5 +106,15 @@ describe("API session gate", () => {
     await call("POST", { body: { type: "set-pin", pin: "1234" } });
     await call("POST", { body: { type: "logout" } });
     expect((await call("GET", { query: { type: "expenses" } })).status).toBe(401);
+  });
+});
+
+describe("budget rules", () => {
+  it("accepts the low-balance and movie-count rules the Rules page saves", async () => {
+    for (const ruleType of ["low_balance", "movie_count"]) {
+      const r = await call("POST", { body: { type: "budget", ruleType, amount: 5 } });
+      expect(r.status).toBe(201);
+    }
+    expect((await call("POST", { body: { type: "budget", ruleType: "bogus", amount: 5 } })).status).toBe(400);
   });
 });

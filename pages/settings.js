@@ -621,7 +621,7 @@ export default function SettingsPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Restore from a backup</div>
-            <div style={{ fontSize: 11, color: "#8a8477" }}>Adds every record from an exported .json file back into this database. Meant for restoring into a fresh setup, not merging with existing data.</div>
+            <div style={{ fontSize: 11, color: "#8a8477" }}>Adds the records from an exported .json file back into this database. Anything already here is skipped, so it's safe to import the same backup again.</div>
           </div>
           <label style={{ background: importing ? "#EAE5D9" : "#241F1A", color: importing ? "#241F1A" : "#FBF8F2", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 12, cursor: importing ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
             <Upload size={13} /> {importing ? "Importing…" : "Import"}

@@ -223,6 +223,9 @@ export default function SugarChallengePage() {
     for (let i = dayList.length - 1; i >= 0; i--) {
       const d = dayList[i];
       if (d.isFuture) continue;
+      // Today not marked yet isn't a slip — the day isn't over. Without this
+      // the ring read 0 every morning while the home screen showed the streak.
+      if (d.isToday && d.completed !== true && d.completed !== false) continue;
       if (d.completed === true) streak++;
       else break;
     }
@@ -231,15 +234,19 @@ export default function SugarChallengePage() {
 
   // Celebrate the moment a streak actually crosses a milestone, not every
   // render where it happens to already be past one.
+  // Starts counting only once data has loaded: otherwise the jump from the
+  // empty first render (0) to the real streak looked like crossing a
+  // milestone, and the celebration popped up just from opening the page.
   const prevStreakRef = useRef(null);
   useEffect(() => {
+    if (!loaded) return;
     const milestoneSet = [7, 14, 21, 30, 41];
     if (prevStreakRef.current !== null && milestoneSet.includes(currentStreak) && currentStreak > prevStreakRef.current) {
       const reward = milestoneRewards[currentStreak];
       celebrateMilestone(currentStreak, reward);
     }
     prevStreakRef.current = currentStreak;
-  }, [currentStreak, milestoneRewards]);
+  }, [currentStreak, milestoneRewards, loaded]);
 
   // Craving timer: a "wait it out" countdown in the same spirit as the
   // Pause page — no logging, just a short delay to let an urge pass.
