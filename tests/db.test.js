@@ -190,3 +190,56 @@ describe("schema v4 features", () => {
     expect(await db.listSharedEntries(g1.id)).toHaveLength(0);
   });
 });
+
+describe("schema v5: flows that finish later", () => {
+  it("a booked movie has no takes until it's rated; rating keeps the booking details", async () => {
+    const m = await db.createMovie({ title: "Kalki", date: "2026-12-01", time: "19:30", ticketPrice: 250, canteenPrice: 0, myTake: "", publicTake: "", venueName: "PVR" });
+    expect(m.my_take).toBe("");
+    const rated = await db.rateMovie(m.id, { myTake: "loved", publicTake: "liked", rating: 5, review: "Wow", canteenPrice: 180, companions: "Ravi" });
+    expect(rated.my_take).toBe("loved");
+    expect(rated.public_take).toBe("liked");
+    expect(rated.rating).toBe(5);
+    expect(parseFloat(rated.canteen_price)).toBe(180);
+    expect(parseFloat(rated.ticket_price)).toBe(250);
+    expect(rated.venue_name).toBe("PVR");
+    const bad = await db.rateMovie(m.id, { myTake: "amazing!!", publicTake: "", canteenPrice: null });
+    expect(bad.my_take).toBe("");
+    expect(parseFloat(bad.canteen_price)).toBe(180);
+  });
+
+  it("an amount-varies bill is never auto-logged; logging it once claims the month", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-05-20T06:00:00Z"));
+    const r = await db.createRecurring({ amount: 1200, category: "Bills", note: "Electricity", dayOfMonth: 12, affectsBalance: true, variable: true });
+    await db.listExpenses();
+    expect(await fake`SELECT * FROM expenses WHERE note = 'Electricity'`).toHaveLength(0);
+
+    const first = await db.logVariableBill(r.id, 1375.5);
+    expect(first).toBeTruthy();
+    const again = await db.logVariableBill(r.id, 999);
+    expect(again).toBeNull();
+    const rows = await fake`SELECT * FROM expenses WHERE note = 'Electricity'`;
+    expect(rows).toHaveLength(1);
+    expect(parseFloat(rows[0].amount)).toBe(1375.5);
+    const tpl = await fake`SELECT amount, last_generated_month FROM recurring_expenses WHERE id = ${r.id}`;
+    expect(parseFloat(tpl[0].amount)).toBe(1375.5); // next month's estimate
+    expect(tpl[0].last_generated_month).toBe("2026-05");
+  });
+
+  it("estimates can be finalised, and edits keep the flag unless told otherwise", async () => {
+    const e = await db.createExpense({ amount: 500, category: "Food", note: "Dinner", date: "2026-05-01", isEstimate: true, clientRequestId: "est-1" });
+    expect(e.is_estimate).toBe(true);
+    const kept = await db.updateExpense(e.id, { amount: 500, category: "Food", note: "Dinner out", date: "2026-05-01" });
+    expect(kept.is_estimate).toBe(true);
+    const fin = await db.finalizeExpense(e.id, { amount: 540 });
+    expect(fin.is_estimate).toBe(false);
+    expect(parseFloat(fin.amount)).toBe(540);
+  });
+
+  it("remembers which bills were paid this month", async () => {
+    await db.markBillPaid(7, "2026-05");
+    expect((await db.getBillsPaid())[7]).toBe("2026-05");
+    await db.markBillPaid(7, "2026-05", false);
+    expect((await db.getBillsPaid())[7]).toBeUndefined();
+  });
+});

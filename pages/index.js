@@ -7,7 +7,7 @@ import { WELCOMED_KEY } from "../lib/useLedger";
 import Link from "next/link";
 import { Search, ChevronRight, Check, X as XIcon, Sparkles, Wallet, Flame, Clapperboard, Target, Trophy } from "lucide-react";
 import { useLedger, notifyLedgerChanged } from "../lib/useLedger";
-import { todayBudget, sugarStreak, loggingStreak, itemsInMonth, ymOf } from "../lib/ledger";
+import { todayBudget, sugarStreak, loggingStreak, itemsInMonth, ymOf, movieStatus } from "../lib/ledger";
 import { generateInsights } from "../lib/insights";
 import { affordability } from "../lib/smart";
 import { seasonFor } from "../lib/festivals";
@@ -16,6 +16,7 @@ import { evaluateChallenge } from "../lib/miniChallenges";
 import { categoryColor } from "../lib/categories";
 import { fmt, greeting, dayLabel } from "../lib/format";
 import { openQuickAdd } from "../components/QuickAddSheet";
+import NeedsYou from "../components/NeedsYou";
 import CategoryIcon from "../components/CategoryIcon";
 import CountUp from "../components/CountUp";
 import PullToRefresh from "../components/PullToRefresh";
@@ -94,7 +95,8 @@ export default function Home() {
       .find((c) => c.status === "active" || c.status === "upcoming") || null;
     const overall = data.rules.find((r) => r.ruleType === "overall");
     const overBudget = overall && budget.spentMonth > overall.amount;
-    return { budget, monthItems, todayItems, upcoming, streak, sugarToday, moviesMonth, insight, challenge, overall, overBudget, logStreak: loggingStreak(data.expenses, today) };
+    const nextMovie = data.movies.filter((m) => movieStatus(m) === "upcoming").sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0] || null;
+    return { nextMovie, budget, monthItems, todayItems, upcoming, streak, sugarToday, moviesMonth, insight, challenge, overall, overBudget, logStreak: loggingStreak(data.expenses, today) };
   }, [data, derived, today]);
 
   async function markSugar(completed, reason = "") {
@@ -203,6 +205,8 @@ export default function Home() {
           </div>
         </section>
 
+        <NeedsYou data={data} derived={derived} today={today} focusBill={router.query.bill} />
+
         {/* Insight of the day */}
         {view.insight && (
           <Link href="/insights" style={{ textDecoration: "none", color: "inherit" }}>
@@ -289,7 +293,8 @@ export default function Home() {
             <Card href="/movies" icon={<Clapperboard size={14} />} title="Movies" accent="#B0567F">
               <div className="lora tabnum" style={{ fontSize: 28, fontWeight: 700 }}>{view.moviesMonth.length} <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-2)" }}>this month</span></div>
               <div style={{ fontSize: 13, color: "var(--text-2)" }}>
-                {data.movies[0] ? <>Last: <b>{data.movies[0].title}</b></> : "Log the movies you watch and what you thought."}
+                {view.nextMovie ? <>🎟️ Next: <b>{view.nextMovie.title}</b> · {dayLabel(view.nextMovie.date, today)}</>
+                  : data.movies[0] ? <>Last: <b>{data.movies[0].title}</b></> : "Log the movies you watch and what you thought."}
               </div>
             </Card>
           </div>
@@ -300,7 +305,9 @@ export default function Home() {
                 {coins && <div className="coin-drop" aria-hidden="true"><span>🪙</span><span>🪙</span><span>🪙</span></div>}
                 <div style={{ fontSize: 16, fontWeight: 600 }}>{data.savingsGoal.label || "Savings goal"}</div>
                 <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700 }}>{Math.min(100, Math.max(0, Math.round((derived.balance / data.savingsGoal.targetAmount) * 100)))}%</div>
-                <div style={{ fontSize: 13, color: "var(--text-2)" }}>{fmt(Math.max(0, derived.balance))} of {fmt(data.savingsGoal.targetAmount)}</div>
+                <div style={{ fontSize: 13, color: "var(--text-2)" }}>
+                  {derived.balance >= data.savingsGoal.targetAmount ? "🎉 Reached! Set your next goal below." : `${fmt(Math.max(0, derived.balance))} of ${fmt(data.savingsGoal.targetAmount)}`}
+                </div>
               </Card>
             </div>
           )}
@@ -350,7 +357,7 @@ export default function Home() {
                     <div style={{ fontSize: 14.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.note || x.category}</div>
                     <div style={{ fontSize: 12, color: "var(--muted)" }}>{x.category}{x.time ? ` · ${x.time}` : ""}{x.isRecurringPending ? " · scheduled" : ""}</div>
                   </div>
-                  <div className="tabnum" style={{ fontWeight: 600, fontSize: 15 }}>{fmt(x.amount)}</div>
+                  <div className="tabnum" style={{ fontWeight: 600, fontSize: 15 }}>{x.estimate ? "≈" : ""}{fmt(x.amount)}</div>
                 </div>
               ))}
             </div>
@@ -363,7 +370,7 @@ export default function Home() {
             {view.upcoming.map((x) => (
               <div key={x.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, padding: "6px 0", color: "var(--text-2)" }}>
                 <span>{dayLabel(x.date, today)} · {x.note || x.category}</span>
-                <span className="tabnum">{fmt(x.amount)}</span>
+                <span className="tabnum">{x.estimate ? "≈" : ""}{fmt(x.amount)}</span>
               </div>
             ))}
           </section>

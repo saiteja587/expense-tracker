@@ -14,7 +14,9 @@ function whatsappText(i) {
     : `Hey ${i.personName}! I owe you ${amount}${what}${due} — sending it soon. Thanks for covering! 🙏`;
 }
 import { showToast } from "../lib/toast";
-import { fmt, todayISO } from "../lib/format";
+import { fmt, todayISO, nowHHMM } from "../lib/format";
+import { notifyLedgerChanged } from "../lib/useLedger";
+import { newRequestId } from "../lib/offlineQueue";
 
 const emptyForm = { personName: "", amount: "", direction: "owed_to_me", note: "", dueDate: "" };
 
@@ -26,6 +28,9 @@ export default function IousPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
+  // After settling: offer to move the money in/out of your balance.
+  const [settlePrompt, setSettlePrompt] = useState(null);
+  const [promptBusy, setPromptBusy] = useState(false);
 
   async function load() {
     try {
@@ -133,7 +138,28 @@ export default function IousPage() {
       }),
     });
     if (!res.ok) setIous(prev);
-    else showToast(nowSettled ? "Marked settled" : "Marked unsettled", nowSettled ? "✅" : "↩️");
+    else {
+      showToast(nowSettled ? "Marked settled" : "Marked unsettled", nowSettled ? "✅" : "↩️");
+      setSettlePrompt(nowSettled ? i : null);
+    }
+  }
+
+  async function applySettlement(i) {
+    setPromptBusy(true);
+    const body = i.direction === "owed_to_me"
+      ? { type: "balance", amount: i.amount, note: `${i.personName} paid back${i.note ? ` — ${i.note}` : ""}`, date: todayISO(), mode: "add" }
+      : { type: "expenses", amount: i.amount, category: "Other", note: `Paid back ${i.personName}${i.note ? ` — ${i.note}` : ""}`, date: todayISO(), time: nowHHMM(), affectsBalance: true, clientRequestId: newRequestId() };
+    try {
+      const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error();
+      notifyLedgerChanged();
+      showToast(i.direction === "owed_to_me" ? `${fmt(i.amount)} added to your balance` : `${fmt(i.amount)} logged as spent`, "💰");
+      setSettlePrompt(null);
+    } catch {
+      showToast("Couldn't update your balance — try again", "⚠️");
+    } finally {
+      setPromptBusy(false);
+    }
   }
 
   async function remove(id) {
@@ -157,7 +183,7 @@ export default function IousPage() {
         <div className="lora" style={{ fontSize: 24, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
           <HandCoins size={22} color="var(--danger)" /> <span className="gradient-title">Who owes what</span>
         </div>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Track money owed to you and money you owe others. Doesn't touch your balance.</div>
+        <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Track money owed to you and money you owe others. When one is settled, you can add the money to (or take it from) your balance in one tap.</div>
       </div>
 
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
@@ -204,6 +230,25 @@ export default function IousPage() {
           Show settled
         </label>
       </div>
+
+      {settlePrompt && (
+        <div className="card" role="status" style={{ padding: "14px 16px", borderRadius: 16, marginBottom: 14, border: "1px solid var(--line-strong)" }}>
+          <div style={{ fontWeight: 600, fontSize: 14.5 }}>
+            {settlePrompt.direction === "owed_to_me"
+              ? `${settlePrompt.personName} paid you ${fmt(settlePrompt.amount)} — add it back to your balance?`
+              : `You paid ${settlePrompt.personName} ${fmt(settlePrompt.amount)} — take it from your balance?`}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
+            {settlePrompt.direction === "owed_to_me" ? "Your daily budget goes up to match." : "It's logged as an expense today."}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button type="button" className="btn btn-primary" style={{ flex: 1, minHeight: 40, fontSize: 13.5 }} disabled={promptBusy} onClick={() => applySettlement(settlePrompt)}>
+              {settlePrompt.direction === "owed_to_me" ? `Add ${fmt(settlePrompt.amount)}` : `Log ${fmt(settlePrompt.amount)}`}
+            </button>
+            <button type="button" className="btn btn-secondary" style={{ flex: 1, minHeight: 40, fontSize: 13.5 }} onClick={() => setSettlePrompt(null)}>No thanks</button>
+          </div>
+        </div>
+      )}
 
       {visible.length === 0 ? (
         <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>

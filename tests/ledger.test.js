@@ -108,3 +108,14 @@ describe("SMS / text parsing", () => {
     expect(parseExpenseText("Rs 50000 credited to your account").isCredit).toBe(true);
   });
 });
+
+describe("movieStatus", () => {
+  it("booked → watching → needs rating → rated", async () => {
+    const { movieStatus } = await import("../lib/ledger");
+    const m = { myTake: "", date: "2026-06-10", time: "19:00" };
+    expect(movieStatus(m, new Date("2026-06-10T18:00:00"))).toBe("upcoming");
+    expect(movieStatus(m, new Date("2026-06-10T20:00:00"))).toBe("watching");
+    expect(movieStatus(m, new Date("2026-06-10T22:30:00"))).toBe("rate");
+    expect(movieStatus({ ...m, myTake: "liked" }, new Date("2026-06-10T18:00:00"))).toBe("rated");
+  });
+});

@@ -68,6 +68,8 @@ function Sheet({ prefill, onClose }) {
   const [note, setNote] = useState(prefill.note || "");
   const [date, setDate] = useState(today);
   const [deduct, setDeduct] = useState(true);
+  // "Roughly ₹500" now, the real amount (and receipt) later.
+  const [estimate, setEstimate] = useState(false);
   const [photo, setPhoto] = useState("");
   const [splitNames, setSplitNames] = useState("");
   const [panel, setPanel] = useState(null); // null | "more" | "paste" | "split"
@@ -149,6 +151,7 @@ function Sheet({ prefill, onClose }) {
     const payload = {
       type: "expenses", clientRequestId: newRequestId(), amount: e.amount, category: e.category, note: e.note,
       date: e.date || today, time: (e.date || today) === today ? nowHHMM() : "", affectsBalance: e.deduct !== false, receiptPhoto: e.photo || "",
+      isEstimate: !entry && estimate,
     };
     const firstToday = data && !data.expenses.some((x) => x.date === today);
     try {
@@ -160,7 +163,7 @@ function Sheet({ prefill, onClose }) {
       notifyLedgerChanged();
       const msg = friends.length && !entry
         ? `${fmt(e.amount)} logged · ${friends.length} IOU${friends.length > 1 ? "s" : ""} of ${fmt(share)} added`
-        : `${e.note || e.category} · ${fmt(e.amount)} logged`;
+        : `${e.note || e.category} · ${!entry && estimate ? "≈" : ""}${fmt(e.amount)} logged${!entry && estimate ? " — update it when the bill comes" : ""}`;
       showToast(firstToday ? `First one today — ${msg}` : msg, firstToday ? "🎉" : "✅");
       onClose();
     } catch (err) {
@@ -230,6 +233,9 @@ function Sheet({ prefill, onClose }) {
           <button type="button" className={`chip${photo ? " active" : ""}`} onClick={() => fileRef.current?.click()}>
             <Camera size={14} /> {photo ? "Receipt ✓" : "Receipt"}
           </button>
+          <button type="button" className={`chip${estimate ? " active" : ""}`} aria-pressed={estimate} onClick={() => setEstimate(!estimate)} title="Don't know the exact amount yet? Log a rough one and update it later.">
+            ≈ {estimate ? "Estimate ✓" : "Estimate"}
+          </button>
           <button type="button" className={`chip${panel === "split" || friends.length ? " active" : ""}`} onClick={() => setPanel(panel === "split" ? null : "split")}>
             <Users size={14} /> Split
           </button>
@@ -293,7 +299,7 @@ function Sheet({ prefill, onClose }) {
         </div>
 
         <button type="button" className="btn btn-primary btn-block" disabled={saving} onClick={() => save()} style={{ minHeight: 52, fontSize: 16 }}>
-          <Check size={18} /> {saving ? "Saving…" : amt > 0 ? `Save ${fmt(amt)}` : "Save"}
+          <Check size={18} /> {saving ? "Saving…" : amt > 0 ? `Save ${estimate ? "≈" : ""}${fmt(amt)}` : "Save"}
         </button>
       </div>
     </>

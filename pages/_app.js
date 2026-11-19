@@ -305,11 +305,13 @@ function CelebrationHost() {
             <span key={p.key} className="confetti-piece" style={p.style} />
           ))}
           <div className="celebrate-card" onClick={(e) => e.stopPropagation()}>
-            <div className="celebrate-trophy">🏆</div>
+            <div className="celebrate-trophy">{party.emoji || "🏆"}</div>
             <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 24, fontWeight: 700, marginTop: 10, color: "var(--ink)" }}>
-              {party.day}-day streak!
+              {party.title || `${party.day}-day streak!`}
             </div>
-            {party.reward ? (
+            {party.message ? (
+              <div style={{ marginTop: 10, fontSize: 14, lineHeight: 1.45, color: "#4A4338" }}>{party.message}</div>
+            ) : party.reward ? (
               <div style={{ marginTop: 10, fontSize: 14, lineHeight: 1.45, color: "#4A4338" }}>
                 Your reward: <strong>{party.reward}</strong>
               </div>

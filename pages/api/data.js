@@ -1,5 +1,6 @@
 import * as db from "../../lib/db";
 import { getPinHash, issueSession, clearSessionCookie, hasValidSession, hashPin, verifyPin } from "../../lib/auth";
+import { localDateParts } from "../../lib/dates";
 
 // Calls the lock screen needs before the user has unlocked. Everything else
 // requires a valid session cookie whenever a PIN is set.
@@ -110,6 +111,7 @@ export default async function handler(req, res) {
       if (type === "ious") return res.status(200).json({ ious: await db.listIous() });
       if (type === "recurring-confirmations") return res.status(200).json({ confirmations: await db.getRecurringConfirmations() });
       if (type === "watchlist") return res.status(200).json({ watchlist: await db.listWatchlist() });
+      if (type === "bills-paid") return res.status(200).json({ paid: await db.getBillsPaid() });
       if (type === "savings-goal") return res.status(200).json({ goal: await db.getSavingsGoal() });
       if (type === "milestone-rewards") return res.status(200).json({ rewards: await db.getMilestoneRewards() });
       if (type === "mini-challenges") {
@@ -177,7 +179,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!body.date) return err(res, "Date is required");
-        const expense = await db.createExpense({ amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, clientRequestId: body.clientRequestId });
+        const expense = await db.createExpense({ amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, clientRequestId: body.clientRequestId, isEstimate: !!body.isEstimate });
         return res.status(201).json({ expense });
       }
 
@@ -246,7 +248,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurring = await db.createRecurring({ amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId });
+        const recurring = await db.createRecurring({ amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable });
         return res.status(201).json({ recurring });
       }
 
@@ -286,6 +288,49 @@ export default async function handler(req, res) {
         if (!targetAmount || targetAmount <= 0) return err(res, "Enter a target amount greater than 0");
         const goal = await db.setSavingsGoal({ targetAmount, targetDate: body.targetDate || null, label: (body.label || "").trim() });
         return res.status(201).json({ goal });
+      }
+
+      // Rate a movie after watching it (it may have been logged as a booking).
+      if (type === "movie-rate") {
+        const id = parseInt(body.id, 10);
+        if (isNaN(id)) return err(res, "Invalid id");
+        if (body.canteenPrice != null && body.canteenPrice !== "" && !(parseFloat(body.canteenPrice) >= 0)) return err(res, "Snacks can't be negative");
+        const movie = await db.rateMovie(id, body);
+        if (!movie) return err(res, "Movie not found", 404);
+        return res.status(200).json({ movie });
+      }
+
+      // "How much was Electricity this month?" for an amount-varies bill.
+      if (type === "variable-bill") {
+        const id = parseInt(body.id, 10);
+        const amount = parseFloat(body.amount);
+        if (isNaN(id)) return err(res, "Invalid id");
+        if (!amount || amount <= 0) return err(res, "Enter the amount");
+        const logged = await db.logVariableBill(id, amount);
+        if (!logged) return err(res, "Already logged for this month", 409);
+        const { ym } = localDateParts();
+        await db.markBillPaid(id, ym, true);
+        return res.status(201).json({ ok: true, expenseId: logged.id });
+      }
+
+      // After paying in a UPI app: "Did it go through?"
+      if (type === "bill-paid") {
+        const id = parseInt(body.id, 10);
+        if (isNaN(id)) return err(res, "Invalid id");
+        const { ym } = localDateParts();
+        const paid = await db.markBillPaid(id, ym, body.paid !== false);
+        return res.status(200).json({ paid });
+      }
+
+      // Estimate -> real amount (and maybe the receipt that came later).
+      if (type === "finalize-expense") {
+        const id = parseInt(body.id, 10);
+        const amount = parseFloat(body.amount);
+        if (isNaN(id)) return err(res, "Invalid id");
+        if (!amount || amount <= 0) return err(res, "Enter the final amount");
+        const expense = await db.finalizeExpense(id, { amount, receiptPhoto: body.receiptPhoto });
+        if (!expense) return err(res, "Expense not found", 404);
+        return res.status(200).json({ expense });
       }
 
       if (type === "backup-now") {
@@ -438,7 +483,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!body.date) return err(res, "Date is required");
-        const expense = await db.updateExpense(numId, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto });
+        const expense = await db.updateExpense(numId, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, isEstimate: body.isEstimate });
         return res.status(200).json({ expense });
       }
 
@@ -471,7 +516,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurring = await db.updateRecurring(numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId });
+        const recurring = await db.updateRecurring(numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable });
         return res.status(200).json({ recurring });
       }
 

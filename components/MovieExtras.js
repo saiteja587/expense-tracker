@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import Poster from "./Poster";
 import { vibrate } from "../lib/haptics";
+import { movieStatus } from "../lib/ledger";
 
 export function PosterWall({ movies }) {
   const [year, setYear] = useState(() => String(new Date().getFullYear()));
@@ -10,7 +11,7 @@ export function PosterWall({ movies }) {
   const wall = useMemo(() => {
     const seen = new Set();
     return movies
-      .filter((m) => m.date.startsWith(year))
+      .filter((m) => m.date.startsWith(year) && movieStatus(m) !== "upcoming")
       .sort((a, b) => (b.rating || 0) - (a.rating || 0) || b.date.localeCompare(a.date))
       .filter((m) => (seen.has(m.title.toLowerCase()) ? false : seen.add(m.title.toLowerCase())));
   }, [movies, year]);
