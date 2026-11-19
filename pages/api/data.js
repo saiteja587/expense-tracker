@@ -1,13 +1,23 @@
 import * as db from "../../lib/db";
-import { getPinHash, issueSession, clearSessionCookie, hasValidSession, hashPin, verifyPin } from "../../lib/auth";
+import crypto from "crypto";
+import { issueSession, clearSessionCookie, resolveUser, hashPin, verifyPin } from "../../lib/auth";
 import { localDateParts } from "../../lib/dates";
 
 // Calls the lock screen needs before the user has unlocked. Everything else
 // requires a valid session cookie whenever a PIN is set.
 const PUBLIC_TYPES = {
-  GET: new Set(["pin-status", "session", "vapid-public-key"]),
-  POST: new Set(["verify-pin", "logout"]),
+  GET: new Set(["pin-status", "session", "vapid-public-key", "invite-check"]),
+  POST: new Set(["verify-pin", "logout", "join"]),
 };
+
+// Invite codes: 8 letters/digits without look-alikes (0/O, 1/I/L).
+const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+function newInviteCode() {
+  const bytes = crypto.randomBytes(8);
+  return Array.from(bytes, (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
+}
+const cleanCode = (c) => String(c || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
+const cleanName = (n) => String(n || "").trim().replace(/\s+/g, " ").slice(0, 30);
 
 // Receipt photos arrive as a compressed base64 string in the JSON body,
 // which can run a few hundred KB — comfortably over the framework's 1MB
@@ -23,16 +33,16 @@ export const config = {
 // Everything except receipt photos (they'd blow past the response size
 // limit; the client fetches those via ?type=receipts). Also used for the
 // weekly server-side backups.
-export async function buildExport() {
+export async function buildExport(uid) {
   const [expenses, movies, topups, rules, recurring, recurringIncome, ious, watchlist] = await Promise.all([
-    db.listExpenses(), db.listMovies(), db.listTopups(), db.listBudgetRules(), db.listRecurring(),
-    db.listRecurringIncome(), db.listIous(), db.listWatchlist(),
+    db.listExpenses(uid), db.listMovies(uid), db.listTopups(uid), db.listBudgetRules(uid), db.listRecurring(uid),
+    db.listRecurringIncome(uid), db.listIous(uid), db.listWatchlist(uid),
   ]);
-  const challengeMeta = await db.getChallengeMeta();
-  const challengeDays = await db.listChallengeDays();
-  const challengeHistory = await db.listChallengeHistory();
+  const challengeMeta = await db.getChallengeMeta(uid);
+  const challengeDays = await db.listChallengeDays(uid);
+  const challengeHistory = await db.listChallengeHistory(uid);
   const setting = async (key) => {
-    const raw = await db.getSetting(key);
+    const raw = await db.getUserSetting(uid, key);
     return raw ? JSON.parse(raw) : null;
   };
   return {
@@ -83,39 +93,51 @@ function err(res, msg, status = 400) {
 
 export default async function handler(req, res) {
   try {
-    const pinHash = await getPinHash();
     const reqType = req.method === "GET" || req.method === "DELETE" ? req.query.type : req.body?.type;
     const isPublic = PUBLIC_TYPES[req.method]?.has(reqType);
-    if (pinHash && !isPublic && !(await hasValidSession(req, res, pinHash))) {
-      return err(res, "Locked — enter your PIN", 401);
-    }
+    // Every non-public call acts as exactly one person: the signed-in user.
+    const user = await resolveUser(req, isPublic ? null : res);
+    if (!user && !isPublic) return err(res, "Locked — enter your PIN", 401);
+    const uid = user?.id;
 
     if (req.method === "GET") {
       const { type } = req.query;
+      // What the lock screen needs: who you are (if signed in), and whether
+      // a name must be typed (only once there's more than one person).
       if (type === "session") {
-        const authenticated = !pinHash || (await hasValidSession(req, null, pinHash));
-        return res.status(200).json({ hasPin: !!pinHash, authenticated });
+        const users = await db.listUsers();
+        const hasPin = users.length > 1 || users.some((u) => u.has_pin);
+        return res.status(200).json({
+          hasPin, authenticated: !!user, multiUser: users.length > 1,
+          user: user ? { id: user.id, name: user.name, isOwner: user.is_owner, hasPin: !!user.pin_hash } : null,
+        });
       }
-      if (type === "expenses") return res.status(200).json({ expenses: await db.listExpenses() });
-      if (type === "movies") return res.status(200).json({ movies: await db.listMovies() });
-      if (type === "balance") return res.status(200).json({ topups: await db.listTopups() });
-      if (type === "budget") return res.status(200).json({ rules: await db.listBudgetRules() });
+      if (type === "invite-check") {
+        return res.status(200).json({ valid: !!(await db.checkInvite(cleanCode(req.query.code))) });
+      }
+      if (type === "invites") {
+        return res.status(200).json({ invites: await db.listInvites(uid), people: user.is_owner ? (await db.listUsers()).map((u) => ({ id: u.id, name: u.name, isOwner: u.is_owner })) : [] });
+      }
+      if (type === "expenses") return res.status(200).json({ expenses: await db.listExpenses(uid) });
+      if (type === "movies") return res.status(200).json({ movies: await db.listMovies(uid) });
+      if (type === "balance") return res.status(200).json({ topups: await db.listTopups(uid) });
+      if (type === "budget") return res.status(200).json({ rules: await db.listBudgetRules(uid) });
       if (type === "challenge") {
-        const meta = await db.getChallengeMeta();
-        const days = await db.listChallengeDays();
-        const history = await db.listChallengeHistory();
+        const meta = await db.getChallengeMeta(uid);
+        const days = await db.listChallengeDays(uid);
+        const history = await db.listChallengeHistory(uid);
         return res.status(200).json({ meta, days, history });
       }
-      if (type === "recurring") return res.status(200).json({ recurring: await db.listRecurring() });
-      if (type === "recurring-income") return res.status(200).json({ recurringIncome: await db.listRecurringIncome() });
-      if (type === "ious") return res.status(200).json({ ious: await db.listIous() });
-      if (type === "recurring-confirmations") return res.status(200).json({ confirmations: await db.getRecurringConfirmations() });
-      if (type === "watchlist") return res.status(200).json({ watchlist: await db.listWatchlist() });
-      if (type === "bills-paid") return res.status(200).json({ paid: await db.getBillsPaid() });
-      if (type === "savings-goal") return res.status(200).json({ goal: await db.getSavingsGoal() });
-      if (type === "milestone-rewards") return res.status(200).json({ rewards: await db.getMilestoneRewards() });
+      if (type === "recurring") return res.status(200).json({ recurring: await db.listRecurring(uid) });
+      if (type === "recurring-income") return res.status(200).json({ recurringIncome: await db.listRecurringIncome(uid) });
+      if (type === "ious") return res.status(200).json({ ious: await db.listIous(uid) });
+      if (type === "recurring-confirmations") return res.status(200).json({ confirmations: await db.getRecurringConfirmations(uid) });
+      if (type === "watchlist") return res.status(200).json({ watchlist: await db.listWatchlist(uid) });
+      if (type === "bills-paid") return res.status(200).json({ paid: await db.getBillsPaid(uid) });
+      if (type === "savings-goal") return res.status(200).json({ goal: await db.getSavingsGoal(uid) });
+      if (type === "milestone-rewards") return res.status(200).json({ rewards: await db.getMilestoneRewards(uid) });
       if (type === "mini-challenges") {
-        const raw = await db.getSetting("mini_challenges");
+        const raw = await db.getUserSetting(uid, "mini_challenges");
         return res.status(200).json({ challenges: raw ? JSON.parse(raw) : [] });
       }
       // Movie poster lookup via TMDB (free API key in TMDB_API_KEY). Without a
@@ -126,45 +148,47 @@ export default async function handler(req, res) {
         return res.status(200).json({ url: await lookupPoster(title, req.query.year) });
       }
       if (type === "categories") {
-        const raw = await db.getSetting("custom_categories");
+        const raw = await db.getUserSetting(uid, "custom_categories");
         return res.status(200).json({ categories: raw ? JSON.parse(raw) : [] });
       }
       if (type === "theatres") {
-        const raw = await db.getSetting("custom_theatres");
+        const raw = await db.getUserSetting(uid, "custom_theatres");
         return res.status(200).json({ theatres: raw ? JSON.parse(raw) : ["PVR", "INOX", "Cinepolis", "Miraj Cinemas", "Asian Cinemas", "AMB Cinemas", "Sudarshan 35MM"] });
       }
       if (type === "ott-platforms") {
-        const raw = await db.getSetting("custom_ott_platforms");
+        const raw = await db.getUserSetting(uid, "custom_ott_platforms");
         return res.status(200).json({ ottPlatforms: raw ? JSON.parse(raw) : ["Netflix", "Amazon Prime Video", "Disney+ Hotstar", "SonyLIV", "ZEE5", "JioCinema", "Apple TV+", "MX Player"] });
       }
       if (type === "vapid-public-key") {
         return res.status(200).json({ key: process.env.VAPID_PUBLIC_KEY || null });
       }
       if (type === "pin-status") {
-        return res.status(200).json({ hasPin: !!pinHash });
+        // hasPin: does this app need unlocking at all; mine: did YOU set one.
+        const users = await db.listUsers();
+        return res.status(200).json({ hasPin: users.length > 1 || users.some((u) => u.has_pin), mine: !!user?.pin_hash });
       }
       // Receipt photos by expense id: ?type=receipts&ids=1,2,3 (max 10 per call,
       // keeping the response well under Vercel's ~4.5MB limit).
       if (type === "receipts") {
         const ids = String(req.query.ids || "").split(",").map((n) => parseInt(n, 10)).filter((n) => !isNaN(n)).slice(0, 10);
         const receipts = {};
-        for (const id of ids) receipts[id] = await db.getExpenseReceipt(id);
+        for (const id of ids) receipts[id] = await db.getExpenseReceipt(uid, id);
         return res.status(200).json({ receipts });
       }
       if (type === "export-all") {
-        return res.status(200).json(await buildExport());
+        return res.status(200).json(await buildExport(uid));
       }
       // Weekly server-side backups (#14): list, or fetch one to download.
       if (type === "backups") {
-        return res.status(200).json({ backups: await db.listBackups() });
+        return res.status(200).json({ backups: await db.listBackups(uid) });
       }
       if (type === "backup") {
-        const payload = await db.getBackup(parseInt(req.query.id, 10));
+        const payload = await db.getBackup(uid, parseInt(req.query.id, 10));
         if (!payload) return err(res, "Backup not found", 404);
         return res.status(200).json(JSON.parse(payload));
       }
       if (type === "shared-groups") {
-        const groups = await db.listSharedGroups();
+        const groups = await db.listSharedGroups(uid);
         return res.status(200).json({ groups: groups.map((g) => ({ ...g, members: JSON.parse(g.members) })) });
       }
       return err(res, "Unknown type");
@@ -179,7 +203,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!body.date) return err(res, "Date is required");
-        const expense = await db.createExpense({ amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, clientRequestId: body.clientRequestId, isEstimate: !!body.isEstimate });
+        const expense = await db.createExpense(uid, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, clientRequestId: body.clientRequestId, isEstimate: !!body.isEstimate });
         return res.status(201).json({ expense });
       }
 
@@ -190,7 +214,7 @@ export default async function handler(req, res) {
         if (!body.title?.trim()) return err(res, "Movie title is required");
         if (!body.date) return err(res, "Date is required");
         if (ticketPrice < 0 || canteenPrice < 0) return err(res, "Prices can't be negative");
-        const movie = await db.createMovie({
+        const movie = await db.createMovie(uid, {
           title: body.title.trim(), date: body.date, time: body.time, ticketPrice, canteenPrice,
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
@@ -204,7 +228,7 @@ export default async function handler(req, res) {
         const amount = parseFloat(body.amount);
         if (!amount || amount <= 0) return err(res, "Enter an amount greater than 0");
         if (!body.date) return err(res, "Date is required");
-        const topup = await db.createTopup({ amount, note: body.note, date: body.date, mode: body.mode });
+        const topup = await db.createTopup(uid, { amount, note: body.note, date: body.date, mode: body.mode });
         return res.status(201).json({ topup });
       }
 
@@ -215,7 +239,7 @@ export default async function handler(req, res) {
         if (!["overall", "category", "savings", "low_balance", "movie_count"].includes(body.ruleType)) return err(res, "Invalid rule type");
         if (!amount || amount <= 0) return err(res, "Enter an amount greater than 0");
         if (body.ruleType === "category" && !body.category) return err(res, "Pick a category");
-        const rule = await db.upsertBudgetRule({ ruleType: body.ruleType, category: body.category, amount });
+        const rule = await db.upsertBudgetRule(uid, { ruleType: body.ruleType, category: body.category, amount });
         return res.status(201).json({ rule });
       }
 
@@ -225,20 +249,20 @@ export default async function handler(req, res) {
         if (lengthDays < 1 || lengthDays > 365) return err(res, "Length must be between 1 and 365 days");
         const sugarPerDay = parseFloat(body.sugarPerDay) || 0;
         const savingsPerDay = parseFloat(body.savingsPerDay) || 0;
-        const meta = await db.setChallengeMeta(body.startDate, lengthDays, sugarPerDay, savingsPerDay);
+        const meta = await db.setChallengeMeta(uid, body.startDate, lengthDays, sugarPerDay, savingsPerDay);
         return res.status(201).json({ meta });
       }
 
       if (type === "challenge-day") {
         if (!body.date) return err(res, "Date is required");
         if (typeof body.completed !== "boolean") return err(res, "Completed must be true or false");
-        const day = await db.upsertChallengeDay(body.date, body.completed, body.note, body.reason, body.naturalSugar);
+        const day = await db.upsertChallengeDay(uid, body.date, body.completed, body.note, body.reason, body.naturalSugar);
         return res.status(201).json({ day });
       }
 
       if (type === "confirm-recurring") {
         if (!body.id) return err(res, "Missing id");
-        const confirmations = await db.confirmRecurring(body.id);
+        const confirmations = await db.confirmRecurring(uid, body.id);
         return res.status(201).json({ ok: true, confirmations });
       }
 
@@ -248,7 +272,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurring = await db.createRecurring({ amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable });
+        const recurring = await db.createRecurring(uid, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable });
         return res.status(201).json({ recurring });
       }
 
@@ -257,7 +281,7 @@ export default async function handler(req, res) {
         const dayOfMonth = parseInt(body.dayOfMonth, 10);
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurringIncome = await db.createRecurringIncome({ amount, note: body.note, dayOfMonth });
+        const recurringIncome = await db.createRecurringIncome(uid, { amount, note: body.note, dayOfMonth });
         return res.status(201).json({ recurringIncome });
       }
 
@@ -266,7 +290,7 @@ export default async function handler(req, res) {
         if (!body.personName?.trim()) return err(res, "Name is required");
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!["owed_to_me", "i_owe"].includes(body.direction)) return err(res, "Invalid direction");
-        const iou = await db.createIou({
+        const iou = await db.createIou(uid, {
           personName: body.personName.trim(), amount, direction: body.direction,
           note: (body.note || "").trim(), dueDate: body.dueDate || null,
         });
@@ -275,18 +299,18 @@ export default async function handler(req, res) {
 
       if (type === "watchlist") {
         if (!body.title?.trim()) return err(res, "Title is required");
-        const item = await db.createWatchlistItem({ title: body.title.trim(), note: (body.note || "").trim() });
+        const item = await db.createWatchlistItem(uid, { title: body.title.trim(), note: (body.note || "").trim() });
         return res.status(201).json({ item });
       }
 
       if (type === "savings-goal") {
         if (body.clear) {
-          await db.setSavingsGoal(null);
+          await db.setSavingsGoal(uid, null);
           return res.status(201).json({ goal: null });
         }
         const targetAmount = parseFloat(body.targetAmount);
         if (!targetAmount || targetAmount <= 0) return err(res, "Enter a target amount greater than 0");
-        const goal = await db.setSavingsGoal({ targetAmount, targetDate: body.targetDate || null, label: (body.label || "").trim() });
+        const goal = await db.setSavingsGoal(uid, { targetAmount, targetDate: body.targetDate || null, label: (body.label || "").trim() });
         return res.status(201).json({ goal });
       }
 
@@ -295,7 +319,7 @@ export default async function handler(req, res) {
         const id = parseInt(body.id, 10);
         if (isNaN(id)) return err(res, "Invalid id");
         if (body.canteenPrice != null && body.canteenPrice !== "" && !(parseFloat(body.canteenPrice) >= 0)) return err(res, "Snacks can't be negative");
-        const movie = await db.rateMovie(id, body);
+        const movie = await db.rateMovie(uid, id, body);
         if (!movie) return err(res, "Movie not found", 404);
         return res.status(200).json({ movie });
       }
@@ -306,10 +330,10 @@ export default async function handler(req, res) {
         const amount = parseFloat(body.amount);
         if (isNaN(id)) return err(res, "Invalid id");
         if (!amount || amount <= 0) return err(res, "Enter the amount");
-        const logged = await db.logVariableBill(id, amount);
+        const logged = await db.logVariableBill(uid, id, amount);
         if (!logged) return err(res, "Already logged for this month", 409);
         const { ym } = localDateParts();
-        await db.markBillPaid(id, ym, true);
+        await db.markBillPaid(uid, id, ym, true);
         return res.status(201).json({ ok: true, expenseId: logged.id });
       }
 
@@ -318,7 +342,7 @@ export default async function handler(req, res) {
         const id = parseInt(body.id, 10);
         if (isNaN(id)) return err(res, "Invalid id");
         const { ym } = localDateParts();
-        const paid = await db.markBillPaid(id, ym, body.paid !== false);
+        const paid = await db.markBillPaid(uid, id, ym, body.paid !== false);
         return res.status(200).json({ paid });
       }
 
@@ -328,20 +352,20 @@ export default async function handler(req, res) {
         const amount = parseFloat(body.amount);
         if (isNaN(id)) return err(res, "Invalid id");
         if (!amount || amount <= 0) return err(res, "Enter the final amount");
-        const expense = await db.finalizeExpense(id, { amount, receiptPhoto: body.receiptPhoto });
+        const expense = await db.finalizeExpense(uid, id, { amount, receiptPhoto: body.receiptPhoto });
         if (!expense) return err(res, "Expense not found", 404);
         return res.status(200).json({ expense });
       }
 
       if (type === "backup-now") {
-        await db.saveBackup(JSON.stringify(await buildExport()));
-        return res.status(201).json({ backups: await db.listBackups() });
+        await db.saveBackup(uid, JSON.stringify(await buildExport(uid)));
+        return res.status(201).json({ backups: await db.listBackups(uid) });
       }
       // Restoring merges the snapshot back in; rows already present are skipped.
       if (type === "restore-backup") {
-        const payload = await db.getBackup(parseInt(body.id, 10));
+        const payload = await db.getBackup(uid, parseInt(body.id, 10));
         if (!payload) return err(res, "Backup not found", 404);
-        const results = await db.importAll(JSON.parse(payload));
+        const results = await db.importAll(uid, JSON.parse(payload));
         return res.status(201).json({ ok: true, results });
       }
 
@@ -351,7 +375,7 @@ export default async function handler(req, res) {
         if (!name) return err(res, "Give the space a name");
         if (members.length < 2) return err(res, "Add at least two people (including you)");
         const token = require("crypto").randomBytes(18).toString("base64url");
-        const group = await db.createSharedGroup({ name, members: members.slice(0, 12), token });
+        const group = await db.createSharedGroup(uid, { name, members: members.slice(0, 12), token });
         return res.status(201).json({ group: { ...group, members: JSON.parse(group.members) } });
       }
 
@@ -362,38 +386,38 @@ export default async function handler(req, res) {
           days: Math.min(31, Math.max(1, parseInt(c.days, 10) || 7)), param: c.param == null ? null : Number(c.param),
           dismissed: !!c.dismissed,
         }));
-        await db.setSetting("mini_challenges", JSON.stringify(clean));
+        await db.setUserSetting(uid, "mini_challenges", JSON.stringify(clean));
         return res.status(201).json({ challenges: clean });
       }
 
       if (type === "milestone-rewards") {
         if (!body.rewards || typeof body.rewards !== "object") return err(res, "Rewards must be an object");
-        const rewards = await db.setMilestoneRewards(body.rewards);
+        const rewards = await db.setMilestoneRewards(uid, body.rewards);
         return res.status(201).json({ rewards });
       }
 
       if (type === "categories") {
         if (!Array.isArray(body.categories)) return err(res, "Categories must be a list");
-        await db.setSetting("custom_categories", JSON.stringify(body.categories));
+        await db.setUserSetting(uid, "custom_categories", JSON.stringify(body.categories));
         return res.status(201).json({ ok: true });
       }
 
       if (type === "theatres") {
         if (!Array.isArray(body.theatres)) return err(res, "Theatres must be a list");
-        await db.setSetting("custom_theatres", JSON.stringify(body.theatres));
+        await db.setUserSetting(uid, "custom_theatres", JSON.stringify(body.theatres));
         return res.status(201).json({ ok: true });
       }
 
       if (type === "ott-platforms") {
         if (!Array.isArray(body.ottPlatforms)) return err(res, "Platforms must be a list");
-        await db.setSetting("custom_ott_platforms", JSON.stringify(body.ottPlatforms));
+        await db.setUserSetting(uid, "custom_ott_platforms", JSON.stringify(body.ottPlatforms));
         return res.status(201).json({ ok: true });
       }
 
       if (type === "save-subscription") {
         const sub = body.subscription;
         if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) return err(res, "Invalid subscription");
-        await db.saveSubscription({ endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth });
+        await db.saveSubscription(uid, { endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth });
         return res.status(201).json({ ok: true });
       }
 
@@ -405,14 +429,22 @@ export default async function handler(req, res) {
 
       if (type === "set-pin") {
         if (body.pin && !/^[0-9]{4,8}$/.test(body.pin)) return err(res, "PIN must be 4-8 digits");
+        // With more than one person, everyone needs a PIN to sign in.
+        if (!body.pin && (await db.countUsers()) > 1) return err(res, "Everyone needs a PIN once more than one person uses the app");
         const hash = body.pin ? hashPin(body.pin) : "";
-        await db.setSetting("app_pin_hash", hash);
-        await db.setSetting("pin_failed_attempts", "0");
-        await db.setSetting("pin_locked_until", "0");
-        // The new PIN invalidates every other device's session; keep this one signed in.
-        if (hash) await issueSession(res, hash);
+        await db.setUserPin(uid, hash);
+        // The new PIN signs out your other devices; this one stays signed in.
+        if (hash) await issueSession(res, { ...user, pin_hash: hash });
         else clearSessionCookie(res);
         return res.status(201).json({ ok: true });
+      }
+
+      if (type === "rename") {
+        const name = cleanName(body.name);
+        if (!name) return err(res, "Enter a name");
+        const other = await db.getUserByName(name);
+        if (other && other.id !== uid) return err(res, "Someone already uses that name");
+        return res.status(200).json({ user: await db.renameUser(uid, name) });
       }
 
       if (type === "logout") {
@@ -420,47 +452,82 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
+      // Sign in with name + PIN. The name can be left out while the app has
+      // a single person (the original one-PIN lock screen keeps working).
       if (type === "verify-pin") {
-        if (!pinHash) return res.status(200).json({ ok: true });
+        const users = await db.listUsers();
+        let target = null;
+        if (body.name) target = await db.getUserByName(body.name);
+        else if (users.length === 1) target = await db.getUser(users[0].id);
+        else return res.status(200).json({ ok: false, needName: true, error: "Enter your name" });
+        if (target && !target.pin_hash && users.length === 1) {
+          await issueSession(res, target);
+          return res.status(200).json({ ok: true });
+        }
+        // Unknown name: same answer as a wrong PIN, so names can't be probed.
+        if (!target) return res.status(200).json({ ok: false, error: "Name or PIN doesn't match" });
 
-        const lockedUntil = parseInt((await db.getSetting("pin_locked_until")) || "0", 10);
+        const lockedUntil = Number(target.locked_until) || 0;
         if (Date.now() < lockedUntil) {
           return res.status(200).json({ ok: false, locked: true, waitSeconds: Math.ceil((lockedUntil - Date.now()) / 1000) });
         }
-
-        const check = verifyPin(String(body.pin || ""), pinHash);
+        const check = verifyPin(String(body.pin || ""), target.pin_hash);
         if (check.ok) {
-          await db.setSetting("pin_failed_attempts", "0");
-          await db.setSetting("pin_locked_until", "0");
-          let currentHash = pinHash;
+          let current = target;
           if (check.needsUpgrade) {
             // One-time move from the old unsalted SHA-256 to scrypt.
-            currentHash = hashPin(String(body.pin));
-            await db.setSetting("app_pin_hash", currentHash);
+            current = { ...target, pin_hash: hashPin(String(body.pin)) };
+            await db.setUserPin(target.id, current.pin_hash);
+          } else {
+            await db.recordLoginAttempt(target.id, { ok: true });
           }
-          await issueSession(res, currentHash);
-          return res.status(200).json({ ok: true });
+          await issueSession(res, current);
+          return res.status(200).json({ ok: true, user: { id: current.id, name: current.name } });
         }
+        const attempts = (Number(target.failed_attempts) || 0) + 1;
+        const waitSeconds = attempts >= 5 ? Math.min(300, 15 * Math.pow(2, attempts - 5)) : 0;
+        await db.recordLoginAttempt(target.id, { ok: false, failedAttempts: attempts, lockedUntil: waitSeconds ? Date.now() + waitSeconds * 1000 : 0 });
+        return res.status(200).json({ ok: false, locked: waitSeconds > 0, waitSeconds, attemptsLeft: Math.max(0, 5 - attempts), error: "Name or PIN doesn't match" });
+      }
 
-        const attempts = parseInt((await db.getSetting("pin_failed_attempts")) || "0", 10) + 1;
-        await db.setSetting("pin_failed_attempts", String(attempts));
-        let waitSeconds = 0;
-        if (attempts >= 5) {
-          waitSeconds = Math.min(300, 15 * Math.pow(2, attempts - 5));
-          await db.setSetting("pin_locked_until", String(Date.now() + waitSeconds * 1000));
+      // Invite a friend: a one-time code, valid 7 days. Only the owner
+      // invites, and only once they have a PIN (with two people, nobody can
+      // be signed in automatically any more).
+      if (type === "invite") {
+        if (!user.is_owner) return err(res, "Only the app's owner can invite people", 403);
+        if (!user.pin_hash) return err(res, "Set a PIN for yourself first (Security, below) — with two people, everyone signs in with a PIN");
+        const invite = await db.createInvite(uid, newInviteCode());
+        return res.status(201).json({ invite });
+      }
+
+      // Join with an invite: pick a name and PIN, get your own empty ledger.
+      if (type === "join") {
+        const code = cleanCode(body.code);
+        const name = cleanName(body.name);
+        if (!name) return err(res, "Enter your name");
+        if (!/^[0-9]{4,8}$/.test(String(body.pin || ""))) return err(res, "PIN must be 4-8 digits");
+        if (await db.getUserByName(name)) return err(res, "That name is taken — try adding an initial");
+        let created;
+        try {
+          created = await db.joinWithInvite(code, { name, pinHash: hashPin(String(body.pin)) });
+        } catch (e) {
+          if (e?.code === "23505") return err(res, "That name is taken — try adding an initial");
+          throw e;
         }
-        return res.status(200).json({ ok: false, locked: waitSeconds > 0, waitSeconds, attemptsLeft: Math.max(0, 5 - attempts) });
+        if (!created) return err(res, "This invite code is wrong, used or expired — ask for a new one", 404);
+        await issueSession(res, created);
+        return res.status(201).json({ ok: true, user: { id: created.id, name: created.name } });
       }
 
       if (type === "import-all") {
         if (!body.data || typeof body.data !== "object") return err(res, "No import data received");
-        const results = await db.importAll(body.data);
+        const results = await db.importAll(uid, body.data);
         return res.status(201).json({ ok: true, results });
       }
 
       if (type === "challenge-archive") {
         if (!body.startDate || !body.lengthDays) return err(res, "Missing challenge info");
-        await db.archiveChallenge({
+        await db.archiveChallenge(uid, {
           startDate: body.startDate,
           lengthDays: body.lengthDays,
           completedDays: body.completedDays || 0,
@@ -483,7 +550,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!body.date) return err(res, "Date is required");
-        const expense = await db.updateExpense(numId, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, isEstimate: body.isEstimate });
+        const expense = await db.updateExpense(uid, numId, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, isEstimate: body.isEstimate });
         return res.status(200).json({ expense });
       }
 
@@ -493,7 +560,7 @@ export default async function handler(req, res) {
         const quantity = Math.max(1, parseInt(body.quantity, 10) || 1);
         if (!body.title?.trim()) return err(res, "Movie title is required");
         if (!body.date) return err(res, "Date is required");
-        const movie = await db.updateMovie(numId, {
+        const movie = await db.updateMovie(uid, numId, {
           title: body.title.trim(), date: body.date, time: body.time, ticketPrice, canteenPrice,
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
@@ -506,7 +573,7 @@ export default async function handler(req, res) {
         const amount = parseFloat(body.amount);
         if (!amount || amount <= 0) return err(res, "Enter an amount greater than 0");
         if (!body.date) return err(res, "Date is required");
-        const topup = await db.updateTopup(numId, { amount, note: body.note, date: body.date, mode: body.mode });
+        const topup = await db.updateTopup(uid, numId, { amount, note: body.note, date: body.date, mode: body.mode });
         return res.status(200).json({ topup });
       }
 
@@ -516,7 +583,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurring = await db.updateRecurring(numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable });
+        const recurring = await db.updateRecurring(uid, numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable });
         return res.status(200).json({ recurring });
       }
 
@@ -525,7 +592,7 @@ export default async function handler(req, res) {
         const dayOfMonth = parseInt(body.dayOfMonth, 10);
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurringIncome = await db.updateRecurringIncome(numId, { amount, note: body.note, dayOfMonth });
+        const recurringIncome = await db.updateRecurringIncome(uid, numId, { amount, note: body.note, dayOfMonth });
         return res.status(200).json({ recurringIncome });
       }
 
@@ -534,7 +601,7 @@ export default async function handler(req, res) {
         if (!body.personName?.trim()) return err(res, "Name is required");
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!["owed_to_me", "i_owe"].includes(body.direction)) return err(res, "Invalid direction");
-        const iou = await db.updateIou(numId, {
+        const iou = await db.updateIou(uid, numId, {
           personName: body.personName.trim(), amount, direction: body.direction,
           note: (body.note || "").trim(), dueDate: body.dueDate || null, settled: !!body.settled,
         });
@@ -546,17 +613,21 @@ export default async function handler(req, res) {
 
     if (req.method === "DELETE") {
       const { type, id } = req.query;
+      if (type === "invite") {
+        await db.deleteInvite(uid, cleanCode(req.query.code));
+        return res.status(200).json({ ok: true });
+      }
       const numId = parseInt(id, 10);
       if (isNaN(numId)) return err(res, "Invalid id");
-      if (type === "expenses") await db.deleteExpense(numId);
-      else if (type === "movies") await db.deleteMovie(numId);
-      else if (type === "balance") await db.deleteTopup(numId);
-      else if (type === "budget") await db.deleteBudgetRule(numId);
-      else if (type === "recurring") await db.deleteRecurring(numId);
-      else if (type === "recurring-income") await db.deleteRecurringIncome(numId);
-      else if (type === "ious") await db.deleteIou(numId);
-      else if (type === "watchlist") await db.deleteWatchlistItem(numId);
-      else if (type === "shared-group") await db.deleteSharedGroup(numId);
+      if (type === "expenses") await db.deleteExpense(uid, numId);
+      else if (type === "movies") await db.deleteMovie(uid, numId);
+      else if (type === "balance") await db.deleteTopup(uid, numId);
+      else if (type === "budget") await db.deleteBudgetRule(uid, numId);
+      else if (type === "recurring") await db.deleteRecurring(uid, numId);
+      else if (type === "recurring-income") await db.deleteRecurringIncome(uid, numId);
+      else if (type === "ious") await db.deleteIou(uid, numId);
+      else if (type === "watchlist") await db.deleteWatchlistItem(uid, numId);
+      else if (type === "shared-group") await db.deleteSharedGroup(uid, numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }

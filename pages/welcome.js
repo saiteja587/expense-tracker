@@ -1,10 +1,11 @@
 // First-run setup: starting balance → monthly limit → PIN. Every step can
 // be skipped; Home sends brand-new users here once.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import { Wallet, Target, Lock, Sparkles } from "lucide-react";
 import { notifyLedgerChanged, WELCOMED_KEY } from "../lib/useLedger";
 import { todayISO } from "../lib/format";
+import { getAccount } from "../lib/account";
 
 
 async function post(body) {
@@ -25,7 +26,11 @@ export default function Welcome() {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const s = STEPS[step];
+  // Someone who joined with an invite already picked a PIN.
+  const [skipPin, setSkipPin] = useState(false);
+  useEffect(() => { setSkipPin(!!getAccount()?.hasPin); }, []);
+  const steps = skipPin ? STEPS.filter((x) => x.field !== "pin") : STEPS;
+  const s = steps[Math.min(step, steps.length - 1)];
 
   function finish() {
     try { localStorage.setItem(WELCOMED_KEY, "1"); } catch { /* ignore */ }
@@ -35,7 +40,7 @@ export default function Welcome() {
   function next() {
     setValue("");
     setError("");
-    if (step === STEPS.length - 1) finish();
+    if (step === steps.length - 1) finish();
     else setStep(step + 1);
   }
 
@@ -62,8 +67,8 @@ export default function Welcome() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", padding: "calc(28px + env(safe-area-inset-top, 0px)) 24px 32px", maxWidth: 460, margin: "0 auto" }}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 40 }} aria-label={`Step ${step + 1} of ${STEPS.length}`}>
-        {STEPS.map((_, i) => <span key={i} style={{ flex: 1, height: 4, borderRadius: 3, background: i <= step ? "var(--accent-gradient)" : "var(--line)" }} />)}
+      <div style={{ display: "flex", gap: 6, marginBottom: 40 }} aria-label={`Step ${step + 1} of ${steps.length}`}>
+        {steps.map((_, i) => <span key={i} style={{ flex: 1, height: 4, borderRadius: 3, background: i <= step ? "var(--accent-gradient)" : "var(--line)" }} />)}
       </div>
       <div key={step} style={{ flex: 1, animation: "riseIn 0.5s var(--ease-fluid)" }}>
         <div style={{ width: 64, height: 64, borderRadius: 20, background: "var(--accent-gradient)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "var(--accent-glow)" }}>
@@ -87,7 +92,7 @@ export default function Welcome() {
         {error && <div role="alert" style={{ color: "var(--danger)", fontSize: 14, marginTop: 10 }}>{error}</div>}
       </div>
       <button type="button" className="btn btn-primary btn-block" disabled={busy} onClick={save} style={{ minHeight: 54, fontSize: 16 }}>
-        {busy ? "Saving…" : step === 0 ? "Let's go" : step === STEPS.length - 1 ? "Finish" : "Continue"}
+        {busy ? "Saving…" : step === 0 ? "Let's go" : step === steps.length - 1 ? "Finish" : "Continue"}
       </button>
       {s.field && (
         <button type="button" onClick={next} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 14, marginTop: 12, padding: 10, cursor: "pointer" }}>

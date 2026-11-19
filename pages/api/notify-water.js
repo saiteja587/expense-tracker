@@ -1,5 +1,5 @@
-import { getChallengeMeta, listChallengeDays, getSetting, setSetting } from "../../lib/db";
-import { sendToAllDevices } from "../../lib/push";
+import { getChallengeMeta, listChallengeDays, getUserSetting, setUserSetting, listUsers } from "../../lib/db";
+import { sendToUser } from "../../lib/push";
 
 function toISODate(v) {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -33,6 +33,12 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Invalid secret" });
   }
   try {
+    // A personal reminder set up by the app's owner (via an external
+    // scheduler) — it goes to the owner's devices only, not to everyone.
+    const owner = (await listUsers()).find((u) => u.is_owner);
+    if (!owner) return res.status(200).json({ ok: true, result: null });
+    const uid = owner.id;
+    const sendToAllDevices = (payload) => sendToUser(uid, payload);
     const result = await sendToAllDevices({
       title: "💧 Drink some water",
       body: pick(WATER_MESSAGES),
@@ -48,11 +54,11 @@ export default async function handler(req, res) {
     const todayIST = new Date(nowUTC.getTime() + 5.5 * 60 * 60000).toISOString().slice(0, 10);
 
     if (istHour >= 20) {
-      const lastSent = await getSetting("last_sugar_reminder_date");
+      const lastSent = await getUserSetting(uid, "last_sugar_reminder_date");
       if (lastSent !== todayIST) {
-        const meta = await getChallengeMeta();
+        const meta = await getChallengeMeta(uid);
         if (meta) {
-          const days = await listChallengeDays();
+          const days = await listChallengeDays(uid);
           const markedToday = days.some((d) => toISODate(d.day_date) === todayIST);
           if (!markedToday) {
             await sendToAllDevices({
@@ -63,7 +69,7 @@ export default async function handler(req, res) {
             });
           }
         }
-        await setSetting("last_sugar_reminder_date", todayIST);
+        await setUserSetting(uid, "last_sugar_reminder_date", todayIST);
       }
     }
 

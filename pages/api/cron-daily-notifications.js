@@ -1,6 +1,6 @@
-import { listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup, getBillsPaid } from "../../lib/db";
+import { listUsers, listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup, getBillsPaid } from "../../lib/db";
 import { buildExport } from "./data";
-import { sendToAllDevices } from "../../lib/push";
+import { sendToUser } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
 import { localDateParts, effectiveDay, addDaysISO } from "../../lib/dates";
 
@@ -9,17 +9,36 @@ function toISODate(v) {
   return String(v).slice(0, 10);
 }
 
-// Runs once a day via Vercel Cron (see vercel.json). Checks for anything
-// due TODAY and sends one notification per thing found.
+// Runs once a day via Vercel Cron (see vercel.json). For each person, checks
+// for anything due TODAY and sends one notification per thing found to that
+// person's devices only.
 export default async function handler(req, res) {
   if (!isAuthorizedCron(req)) return rejectCron(res);
   try {
     // All "today" logic uses the app's local date (IST), not the server's UTC.
     const local = localDateParts();
-    const today = local.iso;
-    const sentItems = [];
+    const sent = {};
+    for (const u of await listUsers()) {
+      try {
+        sent[u.id] = await runForUser(u.id, local);
+      } catch (e) {
+        console.error(`[cron-daily] user ${u.id} failed:`, e);
+      }
+    }
+    return res.status(200).json({ ok: true, sent });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Failed to run daily notification check" });
+  }
+}
 
-    const movies = await listMovies();
+async function runForUser(uid, local) {
+    const today = local.iso;
+    const day = local.day;
+    const sentItems = [];
+    const sendToAllDevices = (payload) => sendToUser(uid, payload);
+
+    const movies = await listMovies(uid);
     const yesterday = addDaysISO(today, -1);
     for (const m of movies) {
       if (m.my_take) continue; // already watched and rated
@@ -35,11 +54,10 @@ export default async function handler(req, res) {
       }
     }
 
-    const recurring = await listRecurring();
-    const day = local.day;
+    const recurring = await listRecurring(uid);
     // Tomorrow's date parts (handles month ends).
     const tmr = localDateParts(new Date(Date.now() + 86400000));
-    const paid = await getBillsPaid();
+    const paid = await getBillsPaid(uid);
     for (const r of recurring) {
       const label = r.note || r.category;
       const amt = `${r.variable ? "about " : ""}₹${Math.round(r.amount)}`;
@@ -70,7 +88,7 @@ export default async function handler(req, res) {
     // you to save one to your phone too.
     if (local.weekday === 0) {
       try {
-        await saveBackup(JSON.stringify(await buildExport()));
+        await saveBackup(uid, JSON.stringify(await buildExport(uid)));
         await sendToAllDevices({ title: "🛟 Weekly backup saved", body: "A copy is stored on the server. Tap to download one to your phone as well.", url: "/settings?backup=1" });
         sentItems.push("weekly-backup");
       } catch (e) {
@@ -96,14 +114,14 @@ export default async function handler(req, res) {
     if (local.weekday === 0) {
       const weekAgoStr = addDaysISO(today, -7);
 
-      const allExpenses = await listExpenses();
+      const allExpenses = await listExpenses(uid);
       const weekSpend = allExpenses
         .filter((x) => toISODate(x.expense_date) > weekAgoStr && toISODate(x.expense_date) <= today)
         .reduce((s, x) => s + parseFloat(x.amount), 0);
 
       const weekMovies = movies.filter((m) => toISODate(m.watched_date) > weekAgoStr && toISODate(m.watched_date) <= today).length;
 
-      const days = await listChallengeDays();
+      const days = await listChallengeDays(uid);
       let streak = 0;
       const sorted = [...days].sort((a, b) => (toISODate(a.day_date) < toISODate(b.day_date) ? 1 : -1));
       for (const d of sorted) {
@@ -119,9 +137,5 @@ export default async function handler(req, res) {
       sentItems.push("weekly-digest");
     }
 
-    return res.status(200).json({ ok: true, sentItems });
-  } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "Failed to run daily notification check" });
-  }
+    return sentItems;
 }
