@@ -1013,3 +1013,17 @@ button:has(> svg[class*="lucide-trash"]:only-child) {
 }
 button:has(> svg[class*="lucide-trash"]:only-child):hover { color: var(--danger) !important; background: var(--danger-bg); }
 button:has(> svg[class*="lucide-pencil"]:only-child):hover { color: var(--ink) !important; background: var(--surface-2); }
+
+/* ---------- Features batch 2: little reactions + seasons ---------- */
+@keyframes ringPulse { 0% { transform: scale(1); } 35% { transform: scale(0.94); } 70% { transform: scale(1.03); } 100% { transform: scale(1); } }
+.ring-pulse { animation: ringPulse 0.8s var(--ease-spring); }
+@keyframes flameFlicker { 0%, 100% { transform: rotate(-4deg) scale(1); } 50% { transform: rotate(4deg) scale(1.08); } }
+.flame-grow { display: inline-block; animation: flameFlicker 1.6s ease-in-out infinite; transform-origin: 50% 90%; }
+.coin-drop { position: absolute; top: 0; right: 18px; pointer-events: none; }
+.coin-drop span { position: absolute; font-size: 22px; animation: coinDrop 1.4s ease-in forwards; opacity: 0; }
+.coin-drop span:nth-child(2) { right: 18px; animation-delay: 0.15s; }
+.coin-drop span:nth-child(3) { right: 36px; animation-delay: 0.3s; }
+@keyframes coinDrop { 0% { transform: translateY(-30px) rotate(0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(70px) rotate(360deg); opacity: 0; } }
+.home-card { position: relative; overflow: hidden; }
+@keyframes seasonBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+.season-emoji { display: inline-block; animation: seasonBob 2.4s ease-in-out infinite; }

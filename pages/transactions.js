@@ -159,6 +159,7 @@ export default function TransactionsPage() {
         time: x.expense_time ? x.expense_time.slice(0, 5) : "",
         affectsBalance: x.affects_balance !== false,
         hasReceipt: !!x.has_receipt,
+        estimate: !!x.is_estimate,
       }));
       setExpenses(mappedExpenses);
       let mappedMovies = [];
@@ -371,7 +372,7 @@ export default function TransactionsPage() {
 
   function startEditExpense(x) {
     setEditingExpenseId(x.id);
-    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false, receiptPhoto: null, hasReceipt: !!x.hasReceipt });
+    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false, receiptPhoto: null, hasReceipt: !!x.hasReceipt, estimate: !!x.estimate, origAmount: x.amount });
     // Editing always shows the full form — the person may specifically be
     // here to fix the date or the deduct toggle.
     setExpenseMoreOpen(true);
@@ -492,6 +493,8 @@ export default function TransactionsPage() {
       affectsBalance: expenseForm.affectsBalance,
       // On edit: null keeps the stored photo, "" removes it, a data URL replaces it.
       receiptPhoto: isEdit ? expenseForm.receiptPhoto : expenseForm.receiptPhoto || "",
+      // Changing an estimate's amount means you now know the real figure.
+      ...(isEdit && expenseForm.estimate && amt !== expenseForm.origAmount ? { isEstimate: false } : {}),
     };
 
     let res;
@@ -1173,7 +1176,7 @@ export default function TransactionsPage() {
                             </div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                            <span className="tabnum" style={{ fontSize: 14, fontWeight: 500 }}>{fmt(x.amount)}</span>
+                            <span className="tabnum" style={{ fontSize: 14, fontWeight: 500 }}>{x.estimate ? <span title="Estimate — update when you know the exact amount" style={{ color: "var(--amber)" }}>≈</span> : null}{fmt(x.amount)}</span>
                             {!isMovie && !x.pending && !x.isRecurringPending && (
                               <>
                                 <button onClick={() => startEditExpense(x)} aria-label="Edit" className="icon-btn">

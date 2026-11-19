@@ -110,7 +110,7 @@ export default function ReportPage() {
 
   // Movies
   const totalViewings = monthMovies.reduce((s, m) => s + m.quantity, 0);
-  const matchedTaste = monthMovies.filter((m) => m.myTake === m.publicTake).length;
+  const matchedTaste = monthMovies.filter((m) => m.myTake && m.myTake === m.publicTake).length;
 
   // "Worth a look" — wastage/attention flags
   const otherExpenses = monthExpenses.filter((x) => x.category === "Other");

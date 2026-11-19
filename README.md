@@ -11,6 +11,12 @@ Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free ti
 - **Insights:** this month vs last, where the money went, plain-language observations,
   money × movies × diet patterns, and a monthly **Wrapped** story you can share.
 - **Me:** level & badges, mini challenges (no-delivery week, daily cap, no-spend weekend…).
+- **Smarter money:** "Can I afford it?", spending calendar, subscriptions finder, envelope
+  jars from category limits, categories learned from your own history.
+- **Reminders:** 9 PM nudge if nothing's logged (or you went over), bills due tomorrow with a
+  one-tap UPI pay page, weekly server backups (last 4 kept, restorable from Settings).
+- **Shared spaces:** split costs with a flatmate or partner through a private link — they
+  only see that space, no PIN or account needed.
 - **Ledger:** log expenses by typing, voice, quick-add, or with a receipt photo. Wallet balance
   (top-ups or "set balance"), recurring expenses and income, budget rules, a savings goal.
 - **Movies:** what you watched, ticket and snack costs, theatre or streaming service, your

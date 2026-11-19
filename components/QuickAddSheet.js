@@ -6,6 +6,8 @@ import { Camera, Mic, ClipboardPaste, Users, X, Delete, Check, CalendarDays } fr
 import { useLedger, notifyLedgerChanged } from "../lib/useLedger";
 import { allCategories, MOVIE_CATEGORY } from "../lib/categories";
 import { quickSuggestions, addDays } from "../lib/ledger";
+import { learnCategory } from "../lib/smart";
+import { guessCategory } from "../lib/smsParse";
 import { parseExpenseText } from "../lib/smsParse";
 import { fmt, todayISO, nowHHMM } from "../lib/format";
 import { queueRequest, newRequestId } from "../lib/offlineQueue";
@@ -60,9 +62,14 @@ function Sheet({ prefill, onClose }) {
 
   const [amount, setAmount] = useState(prefill.amount ? String(prefill.amount) : "");
   const [category, setCategory] = useState(prefill.category || "");
+  // True once you tap a category yourself; until then the note can pick one.
+  const [pickedByHand, setPickedByHand] = useState(!!prefill.category);
+  const [autoPicked, setAutoPicked] = useState(false);
   const [note, setNote] = useState(prefill.note || "");
   const [date, setDate] = useState(today);
   const [deduct, setDeduct] = useState(true);
+  // "Roughly ₹500" now, the real amount (and receipt) later.
+  const [estimate, setEstimate] = useState(false);
   const [photo, setPhoto] = useState("");
   const [splitNames, setSplitNames] = useState("");
   const [panel, setPanel] = useState(null); // null | "more" | "paste" | "split"
@@ -75,6 +82,15 @@ function Sheet({ prefill, onClose }) {
   const amt = parseFloat(amount) || 0;
   const friends = splitNames.split(",").map((s) => s.trim()).filter(Boolean);
   const share = friends.length ? Math.round((amt / (friends.length + 1)) * 100) / 100 : 0;
+
+  // Learn the category from what you usually log with these words (falls back
+  // to well-known merchants like Swiggy/Uber), unless you picked one yourself.
+  function onNote(v) {
+    setNote(v);
+    if (pickedByHand) return;
+    const guess = (data && learnCategory(data.expenses, v)) || guessCategory(v);
+    if (guess && categories.some((c) => c.name === guess)) { setCategory(guess); setAutoPicked(true); }
+  }
 
   function press(k) {
     vibrate(4);
@@ -135,6 +151,7 @@ function Sheet({ prefill, onClose }) {
     const payload = {
       type: "expenses", clientRequestId: newRequestId(), amount: e.amount, category: e.category, note: e.note,
       date: e.date || today, time: (e.date || today) === today ? nowHHMM() : "", affectsBalance: e.deduct !== false, receiptPhoto: e.photo || "",
+      isEstimate: !entry && estimate,
     };
     const firstToday = data && !data.expenses.some((x) => x.date === today);
     try {
@@ -146,7 +163,7 @@ function Sheet({ prefill, onClose }) {
       notifyLedgerChanged();
       const msg = friends.length && !entry
         ? `${fmt(e.amount)} logged · ${friends.length} IOU${friends.length > 1 ? "s" : ""} of ${fmt(share)} added`
-        : `${e.note || e.category} · ${fmt(e.amount)} logged`;
+        : `${e.note || e.category} · ${!entry && estimate ? "≈" : ""}${fmt(e.amount)} logged${!entry && estimate ? " — update it when the bill comes" : ""}`;
       showToast(firstToday ? `First one today — ${msg}` : msg, firstToday ? "🎉" : "✅");
       onClose();
     } catch (err) {
@@ -198,13 +215,16 @@ function Sheet({ prefill, onClose }) {
         <div className="h-scroll" style={{ margin: "10px 0" }} role="radiogroup" aria-label="Category">
           {categories.map((c) => (
             <button key={c.name} type="button" role="radio" aria-checked={category === c.name}
-              className={`chip${category === c.name ? " active" : ""}`} onClick={() => { vibrate(4); setCategory(c.name); setError(""); }}>
+              className={`chip${category === c.name ? " active" : ""}`} onClick={() => { vibrate(4); setCategory(c.name); setPickedByHand(true); setAutoPicked(false); setError(""); }}>
               <span aria-hidden="true">{c.emoji}</span> {c.name}
             </button>
           ))}
         </div>
 
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional) — e.g. Swiggy dinner" maxLength={120} style={{ marginBottom: 10 }} />
+        <input value={note} onChange={(e) => onNote(e.target.value)} placeholder="Note (optional) — e.g. Swiggy dinner" maxLength={120} style={{ marginBottom: autoPicked ? 4 : 10 }} />
+        {autoPicked && category && (
+          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>✨ Category set to <b>{category}</b> from your past entries — tap another to change.</div>
+        )}
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
           <button type="button" className={`chip${panel === "more" ? " active" : ""}`} onClick={() => setPanel(panel === "more" ? null : "more")}>
@@ -212,6 +232,9 @@ function Sheet({ prefill, onClose }) {
           </button>
           <button type="button" className={`chip${photo ? " active" : ""}`} onClick={() => fileRef.current?.click()}>
             <Camera size={14} /> {photo ? "Receipt ✓" : "Receipt"}
+          </button>
+          <button type="button" className={`chip${estimate ? " active" : ""}`} aria-pressed={estimate} onClick={() => setEstimate(!estimate)} title="Don't know the exact amount yet? Log a rough one and update it later.">
+            ≈ {estimate ? "Estimate ✓" : "Estimate"}
           </button>
           <button type="button" className={`chip${panel === "split" || friends.length ? " active" : ""}`} onClick={() => setPanel(panel === "split" ? null : "split")}>
             <Users size={14} /> Split
@@ -276,7 +299,7 @@ function Sheet({ prefill, onClose }) {
         </div>
 
         <button type="button" className="btn btn-primary btn-block" disabled={saving} onClick={() => save()} style={{ minHeight: 52, fontSize: 16 }}>
-          <Check size={18} /> {saving ? "Saving…" : amt > 0 ? `Save ${fmt(amt)}` : "Save"}
+          <Check size={18} /> {saving ? "Saving…" : amt > 0 ? `Save ${estimate ? "≈" : ""}${fmt(amt)}` : "Save"}
         </button>
       </div>
     </>

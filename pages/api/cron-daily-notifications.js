@@ -1,4 +1,5 @@
-import { listMovies, listRecurring, listExpenses, listChallengeDays } from "../../lib/db";
+import { listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup, getBillsPaid } from "../../lib/db";
+import { buildExport } from "./data";
 import { sendToAllDevices } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
 import { localDateParts, effectiveDay, addDaysISO } from "../../lib/dates";
@@ -19,27 +20,61 @@ export default async function handler(req, res) {
     const sentItems = [];
 
     const movies = await listMovies();
+    const yesterday = addDaysISO(today, -1);
     for (const m of movies) {
-      if (toISODate(m.watched_date) === today) {
-        await sendToAllDevices({
-          title: "🎬 Movie today",
-          body: `You've got "${m.title}" scheduled for today.`,
-          url: "/movies",
-        });
+      if (m.my_take) continue; // already watched and rated
+      const d = toISODate(m.watched_date);
+      if (d === today) {
+        const at = m.watched_time ? ` at ${String(m.watched_time).slice(0, 5)}` : "";
+        await sendToAllDevices({ title: "🎬 Movie today", body: `"${m.title}"${at} — enjoy! We'll ask how it was afterwards.`, url: "/movies" });
         sentItems.push(`movie:${m.title}`);
+      } else if (d === yesterday) {
+        // Late shows (and anything the evening check missed).
+        await sendToAllDevices({ title: `🍿 How was ${m.title}?`, body: "Rate it while it's fresh — and add what you spent on snacks.", url: `/movies?rate=${m.id}` });
+        sentItems.push(`rate:${m.title}`);
       }
     }
 
     const recurring = await listRecurring();
     const day = local.day;
+    // Tomorrow's date parts (handles month ends).
+    const tmr = localDateParts(new Date(Date.now() + 86400000));
+    const paid = await getBillsPaid();
     for (const r of recurring) {
-      if (effectiveDay(r.day_of_month, local.year, local.month) === day) {
-        await sendToAllDevices({
-          title: "💳 Recurring expense today",
-          body: `${r.note || r.category} — ₹${Math.round(r.amount)} is due today.`,
-          url: "/",
-        });
-        sentItems.push(`recurring:${r.note || r.category}`);
+      const label = r.note || r.category;
+      const amt = `${r.variable ? "about " : ""}₹${Math.round(r.amount)}`;
+      // Bills with a UPI id open a "Pay now" page that launches the UPI app;
+      // amount-varies bills without one open Home to enter the amount.
+      const url = r.upi_id ? `/pay?r=${r.id}` : r.variable ? `/?bill=${r.id}` : "/";
+      const dueDay = effectiveDay(r.day_of_month, local.year, local.month);
+      const settled = r.variable ? r.last_generated_month === local.ym : paid[r.id] === local.ym;
+      if (dueDay === day) {
+        const body = r.variable
+          ? `${label} is due today — how much was it this month? Tap to log it${r.upi_id ? " and pay" : ""}.`
+          : `${label} — ${amt} is due today.${r.upi_id ? " Tap to pay via UPI." : ""}`;
+        await sendToAllDevices({ title: r.variable ? "🧾 Bill due today" : "💳 Due today", body, url });
+        sentItems.push(`recurring:${label}`);
+      } else if (effectiveDay(r.day_of_month, tmr.year, tmr.month) === tmr.day) {
+        await sendToAllDevices({ title: "⏰ Bill due tomorrow", body: `${label} — ${amt} is due tomorrow.${r.upi_id ? " Tap to pay now via UPI." : ""}`, url });
+        sentItems.push(`recurring-tomorrow:${label}`);
+      } else if (!settled && (r.upi_id || r.variable) && (day - dueDay === 1 || day - dueDay === 3)) {
+        // Asked "Did it go through?" and said not yet (or never answered):
+        // a reminder the next day, and once more two days later.
+        const body = r.variable ? `How much was ${label} this month? Tap to log it.` : `${label} — ${amt} was due on the ${dueDay}. Paid already? Tap to mark it.`;
+        await sendToAllDevices({ title: r.variable ? "🧾 Still to log" : "💳 Still unpaid?", body, url });
+        sentItems.push(`recurring-unpaid:${label}`);
+      }
+    }
+
+    // Sundays: keep a server-side backup copy (last 4 are kept) and remind
+    // you to save one to your phone too.
+    if (local.weekday === 0) {
+      try {
+        await saveBackup(JSON.stringify(await buildExport()));
+        await sendToAllDevices({ title: "🛟 Weekly backup saved", body: "A copy is stored on the server. Tap to download one to your phone as well.", url: "/settings?backup=1" });
+        sentItems.push("weekly-backup");
+      } catch (e) {
+        console.error("[cron-daily] weekly backup failed:", e);
       }
     }
 

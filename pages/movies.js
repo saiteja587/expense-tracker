@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import Poster from "../components/Poster";
+import { PosterWall, PickForMe } from "../components/MovieExtras";
 import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3, Bookmark, Sparkles } from "lucide-react";
 import { queueRequest, newRequestId } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
 import CountUp from "../components/CountUp";
 import { fmt, todayISO } from "../lib/format";
+import { isRated, movieStatus } from "../lib/ledger";
+import RateMovieSheet, { TAKE_CHOICES } from "../components/RateMovieSheet";
 
 const TAKES = [
   { value: "loved", label: "Loved it", score: 3, color: "var(--success)" },
@@ -24,14 +27,16 @@ function nowTimeHHMM() {
 function takeInfo(value) {
   return TAKES.find((t) => t.value === value) || TAKES[TAKES.length - 1];
 }
+// Only movies with both takes say anything about you vs the crowd.
+const bothTakes = (m) => !!m.myTake && !!m.publicTake;
 
 const GENRES = ["Action", "Comedy", "Drama", "Thriller", "Romance", "Horror", "Sci-Fi", "Animation", "Documentary", "Other"];
 
 function getEmptyForm() {
   return {
     title: "", date: todayISO(), time: nowTimeHHMM(), ticketPrice: "", canteenPrice: "", companions: "",
-    myTake: "liked", publicTake: "liked", note: "", affectsBalance: true, quantity: 1,
-    venueType: "Theatre", venueName: "", venueNameOther: "", genre: "",
+    myTake: "", publicTake: "", note: "", affectsBalance: true, quantity: 1, booked: false,
+    venueType: "Theatre", venueName: "", venueNameOther: "", genre: "", rating: 0, review: "",
   };
 }
 
@@ -90,6 +95,7 @@ export default function MoviesPage() {
   const [watchlistError, setWatchlistError] = useState("");
   const [showWrapUp, setShowWrapUp] = useState(false);
   const [pendingWatchlistId, setPendingWatchlistId] = useState(null);
+  const [rateTarget, setRateTarget] = useState(null);
 
   async function loadWatchlist() {
     try {
@@ -126,6 +132,8 @@ export default function MoviesPage() {
         companions: m.companions || "",
         myTake: m.my_take,
         publicTake: m.public_take,
+        rating: m.rating || 0,
+        review: m.review || "",
         note: m.note || "",
         affectsBalance: m.affects_balance !== false,
         quantity: m.quantity || 1,
@@ -163,6 +171,13 @@ export default function MoviesPage() {
     }
   }, [theatreOptions, editingId]);
 
+  useEffect(() => {
+    if (!loaded || typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("rate");
+    const m = id && movies.find((x) => String(x.id) === id);
+    if (m) setRateTarget(m);
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const titleInputRef = useRef(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -188,8 +203,11 @@ export default function MoviesPage() {
       ticketPrice: String(m.ticketPrice),
       canteenPrice: String(m.canteenPrice),
       companions: m.companions,
-      myTake: m.myTake,
-      publicTake: m.publicTake,
+      myTake: m.myTake || "",
+      publicTake: m.publicTake || "",
+      rating: m.rating || 0,
+      review: m.review || "",
+      booked: !isRated(m) && movieStatus(m) === "upcoming",
       note: m.note,
       affectsBalance: m.affectsBalance !== false,
       quantity: m.quantity || 1,
@@ -231,9 +249,18 @@ export default function MoviesPage() {
       setFormError(`Name the ${form.venueType === "OTT" ? "platform" : "theatre"}`);
       return;
     }
+    if (form.booked && form.date < todayISO()) {
+      setFormError("That date has passed — switch to “Watched it”");
+      return;
+    }
+    if (!form.booked && form.date > todayISO()) {
+      setFormError("That's in the future — switch to “Booked”");
+      return;
+    }
     setFormError("");
     setSubmitting(true);
     const isEdit = editingId !== null;
+    const booked = form.booked;
     const payload = {
       type: "movies",
       ...(isEdit ? { id: editingId } : {}),
@@ -241,16 +268,18 @@ export default function MoviesPage() {
       date: form.date,
       time: form.time,
       ticketPrice: tp,
-      canteenPrice: cp,
+      canteenPrice: booked ? 0 : cp,
       companions: form.companions.trim(),
-      myTake: form.myTake,
-      publicTake: form.publicTake,
+      myTake: booked ? "" : form.myTake,
+      publicTake: booked ? "" : form.publicTake,
       note: form.note.trim(),
       affectsBalance: form.affectsBalance,
       quantity: form.quantity,
       venueType: form.venueType,
       venueName: resolvedVenueName,
       genre: form.genre,
+      rating: booked ? null : form.rating || null,
+      review: booked ? "" : (form.review || "").trim(),
       ...(isEdit ? {} : { clientRequestId: newRequestId() }),
     };
 
@@ -284,7 +313,7 @@ export default function MoviesPage() {
       cancelEdit();
       await load();
       if (watchlistIdToClear) await removeFromWatchlist(watchlistIdToClear);
-      showToast(wasEdit ? "Movie updated" : "Movie logged", "🎬");
+      showToast(wasEdit ? "Movie updated" : booked ? "Booked — we'll ask how it was after the show" : "Movie logged", booked ? "🎟️" : "🎬");
     } catch (err) {
       setFormError(err.message || "Couldn't save that. Try again.");
     } finally {
@@ -359,8 +388,12 @@ export default function MoviesPage() {
   const canteenSpend = monthMovies.reduce((s, x) => s + x.canteenPrice * x.quantity, 0);
   const viewingsCount = monthMovies.reduce((s, x) => s + x.quantity, 0);
 
-  const matchedCount = monthMovies.filter((x) => takeInfo(x.myTake).score === takeInfo(x.publicTake).score).length;
-  const divergedCount = monthMovies.filter((x) => Math.abs(takeInfo(x.myTake).score - takeInfo(x.publicTake).score) >= 2).length;
+  const judged = monthMovies.filter(bothTakes);
+  const matchedCount = judged.filter((x) => takeInfo(x.myTake).score === takeInfo(x.publicTake).score).length;
+  const divergedCount = judged.filter((x) => Math.abs(takeInfo(x.myTake).score - takeInfo(x.publicTake).score) >= 2).length;
+  // Booked but not yet seen, and seen but not yet rated (all months).
+  const upcomingMovies = useMemo(() => movies.filter((m) => !m.pending && ["upcoming", "watching"].includes(movieStatus(m))).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)), [movies]);
+  const toRate = useMemo(() => movies.filter((m) => !m.pending && movieStatus(m) === "rate"), [movies]);
 
   const allTimeStats = useMemo(() => {
     if (movies.length === 0) return null;
@@ -368,8 +401,9 @@ export default function MoviesPage() {
     const totalSpend = movies.reduce((s, m) => s + (m.ticketPrice + m.canteenPrice) * (m.quantity || 1), 0);
     const rewatches = movies.filter((m) => (m.quantity || 1) > 1).length;
     const avgCost = totalViewings > 0 ? totalSpend / totalViewings : 0;
-    const matched = movies.filter((m) => takeInfo(m.myTake).score === takeInfo(m.publicTake).score).length;
-    const agreementRate = Math.round((matched / movies.length) * 100);
+    const judgedAll = movies.filter(bothTakes);
+    const matched = judgedAll.filter((m) => takeInfo(m.myTake).score === takeInfo(m.publicTake).score).length;
+    const agreementRate = judgedAll.length ? Math.round((matched / judgedAll.length) * 100) : 0;
 
     const companionCounts = {};
     for (const m of movies) {
@@ -447,6 +481,7 @@ export default function MoviesPage() {
   }, [movies]);
 
   function diverges(m) {
+    if (!bothTakes(m)) return false;
     return Math.abs(takeInfo(m.myTake).score - takeInfo(m.publicTake).score) >= 2;
   }
 
@@ -513,7 +548,7 @@ export default function MoviesPage() {
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>{monthMovies.length} titles, some rewatched</div>
           )}
         </div>
-        {monthMovies.length > 0 && (
+        {judged.length > 0 && (
           <div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>You vs the crowd</div>
             <div style={{ fontSize: 14, marginTop: 10 }}>
@@ -639,11 +674,54 @@ export default function MoviesPage() {
         </div>
       )}
 
+      {toRate.length > 0 && (
+        <section aria-label="Rate these" style={{ marginBottom: 24 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>⭐ How were they?</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {toRate.map((m) => (
+              <button key={m.id} type="button" onClick={() => setRateTarget(m)} className="card"
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: 10, borderRadius: 16, border: "1px solid var(--line)", cursor: "pointer", textAlign: "left", color: "inherit", width: "100%" }}>
+                <Poster title={m.title} width={40} radius={7} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>{m.title}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Watched {new Date(m.date + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })} · tap to rate</div>
+                </div>
+                <span style={{ fontSize: 22, letterSpacing: -2 }} aria-hidden="true">{TAKE_CHOICES.map((t) => t.emoji).slice(0, 3).join("")}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {upcomingMovies.length > 0 && (
+        <section aria-label="Coming up" style={{ marginBottom: 24 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>🎟️ Coming up</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {upcomingMovies.map((m) => (
+              <div key={m.id} className="card" style={{ display: "flex", alignItems: "center", gap: 12, padding: 10, borderRadius: 16, border: "1px solid var(--line)" }}>
+                <Poster title={m.title} width={40} radius={7} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>{m.title}</div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                    {movieStatus(m) === "watching" ? "Showing now — enjoy! 🍿" : new Date(m.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                    {movieStatus(m) !== "watching" && m.time ? ` · ${m.time}` : ""}{m.venueName ? ` · ${m.venueName}` : ""}{m.ticketPrice ? ` · ${fmt(m.ticketPrice * m.quantity)}` : ""}
+                  </div>
+                </div>
+                <button type="button" className="icon-btn" aria-label={`Edit ${m.title}`} onClick={() => { startEdit(m); titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><Pencil size={16} /></button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <PosterWall movies={movies} />
+
       {/* Watchlist: movies you want to watch, kept separate from what you've logged */}
       <div style={{ marginBottom: 32 }}>
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
           <Bookmark size={15} color="#7A3E56" /> Watchlist
         </div>
+        <PickForMe watchlist={watchlist} movies={movies} />
         <form onSubmit={addToWatchlist} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           <input type="text" placeholder="Movie to watch" value={watchlistForm.title} onChange={(e) => setWatchlistForm({ ...watchlistForm, title: e.target.value })} maxLength={100} style={{ flex: "1 1 160px" }} />
           <input type="text" placeholder="Note (optional)" value={watchlistForm.note} onChange={(e) => setWatchlistForm({ ...watchlistForm, note: e.target.value })} maxLength={100} style={{ flex: "1 1 140px" }} />
@@ -681,9 +759,19 @@ export default function MoviesPage() {
             {editingId ? "Edit movie" : "Log a movie"}
           </div>
           <form onSubmit={submitMovie} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div role="radiogroup" aria-label="Watched or booked" style={{ display: "flex", gap: 6 }}>
+              {[[false, "✅ Watched it"], [true, "🎟️ Booked — watching later"]].map(([b, label]) => (
+                <button key={String(b)} type="button" role="radio" aria-checked={form.booked === b}
+                  onClick={() => setForm({ ...form, booked: b, date: b ? (form.date < todayISO() ? todayISO() : form.date) : (form.date > todayISO() ? todayISO() : form.date) })}
+                  className={`chip${form.booked === b ? " active" : ""}`} style={{ flex: 1, justifyContent: "center" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {form.booked && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4 }}>Just the booking for now — after the show we&apos;ll ask how it was and what you spent on snacks.</div>}
             <input ref={titleInputRef} type="text" placeholder="Movie title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} />
             <div>
-              <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Watched via</label>
+              <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>{form.booked ? "Watching at" : "Watched via"}</label>
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
                 {["Theatre", "OTT"].map((vt) => (
                   <button
@@ -721,18 +809,35 @@ export default function MoviesPage() {
               )}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} max={todayISO()} style={{ flex: 1 }} />
+              <input type="date" aria-label={form.booked ? "Show date" : "Date watched"} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} {...(form.booked ? { min: todayISO() } : { max: todayISO() })} style={{ flex: 1 }} />
               <input type="time" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} style={{ flex: 1 }} />
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <input type="number" inputMode="decimal" placeholder="Ticket (₹)" value={form.ticketPrice} onChange={(e) => setForm({ ...form, ticketPrice: e.target.value })} step="0.01" min="0" />
-              <input type="number" inputMode="decimal" placeholder="Canteen (₹)" value={form.canteenPrice} onChange={(e) => setForm({ ...form, canteenPrice: e.target.value })} step="0.01" min="0" />
+              {!form.booked && <input type="number" inputMode="decimal" placeholder="Canteen (₹)" value={form.canteenPrice} onChange={(e) => setForm({ ...form, canteenPrice: e.target.value })} step="0.01" min="0" />}
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4 }}>Per-viewing price — total below accounts for rewatches</div>
             <QuantityStepper value={form.quantity} onChange={(v) => setForm({ ...form, quantity: v })} />
             {form.quantity > 1 && (
               <div style={{ fontSize: 12, color: "var(--text-2)" }}>
                 Total for this entry: {fmt((parseFloat(form.ticketPrice) || 0) * form.quantity + (parseFloat(form.canteenPrice) || 0) * form.quantity)}
+              </div>
+            )}
+            {!form.booked && (
+              <div>
+                <div className="field-label">How was it? (you can rate later too)</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                  {TAKE_CHOICES.map((t) => {
+                    const on = form.myTake === t.value;
+                    return (
+                      <button key={t.value} type="button" aria-pressed={on} onClick={() => setForm({ ...form, myTake: on ? "" : t.value })}
+                        style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "6px 2px", borderRadius: 12, cursor: "pointer", border: `1.5px solid ${on ? "var(--ink)" : "var(--line-strong)"}`, background: on ? "var(--surface-2)" : "transparent", color: "var(--ink)" }}>
+                        <span style={{ fontSize: 22 }} aria-hidden="true">{t.emoji}</span>
+                        <span style={{ fontSize: 11 }}>{t.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
             {moreDetailsOpen ? (
@@ -745,22 +850,30 @@ export default function MoviesPage() {
                     {GENRES.map((g) => <option key={g} value={g}>{g}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>Your take</label>
-                  <select value={form.myTake} onChange={(e) => setForm({ ...form, myTake: e.target.value })}>
-                    {TAKES.map((t) => (
-                      <option key={t.value} value={t.value}>{t.label}</option>
-                    ))}
-                  </select>
-                </div>
+                {!form.booked && (<>
                 <div>
                   <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>How the public/critics received it</label>
                   <select value={form.publicTake} onChange={(e) => setForm({ ...form, publicTake: e.target.value })}>
+                    <option value="">Not sure / skip</option>
                     {TAKES.map((t) => (
                       <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
                   </select>
                 </div>
+                <div>
+                  <div className="field-label">Your rating</div>
+                  <div role="radiogroup" aria-label="Your rating" style={{ display: "flex", gap: 4 }}>
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button key={n} type="button" role="radio" aria-checked={form.rating === n} aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                        onClick={() => setForm({ ...form, rating: form.rating === n ? 0 : n })}
+                        style={{ background: "none", border: "none", padding: 4, cursor: "pointer", fontSize: 28, lineHeight: 1, color: n <= form.rating ? "#F5A524" : "var(--line-strong)" }}>
+                        ★
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input type="text" placeholder="One-line review (optional)" value={form.review} onChange={(e) => setForm({ ...form, review: e.target.value })} maxLength={280} />
+                </>)}
                 <input type="text" placeholder="Note (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} maxLength={140} />
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-2)", cursor: "pointer" }}>
                   <input type="checkbox" checked={form.affectsBalance} onChange={(e) => setForm({ ...form, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
@@ -774,7 +887,7 @@ export default function MoviesPage() {
               </>
             ) : (
               <button type="button" onClick={() => setMoreDetailsOpen(true)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "var(--muted)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
-                Who with, genre, ratings, note →
+                {form.booked ? "Who with, genre, note →" : "Who with, genre, stars, review, note →"}
               </button>
             )}
             {formError && <div style={{ fontSize: 12, color: "var(--danger)" }}>{formError}</div>}
@@ -784,7 +897,7 @@ export default function MoviesPage() {
                 disabled={submitting}
                 style={{ flex: 1, marginTop: 4, background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: submitting ? "default" : "pointer", opacity: submitting ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
               >
-                <Plus size={16} /> {submitting ? "Saving…" : editingId ? "Save changes" : "Add movie"}
+                <Plus size={16} /> {submitting ? "Saving…" : editingId ? "Save changes" : form.booked ? "Save booking" : "Add movie"}
               </button>
               {editingId && (
                 <button type="button" onClick={cancelEdit} style={{ marginTop: 4, background: "var(--line)", color: "var(--ink)", border: "none", borderRadius: 8, padding: "10px 14px", fontSize: 14, fontWeight: 500, cursor: "pointer" }}>
@@ -797,7 +910,7 @@ export default function MoviesPage() {
 
         <div>
           <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-            Watched this month
+            This month
           </div>
           {sorted.length === 0 ? (
             <div style={{ border: "1px dashed var(--line-strong)", borderRadius: 4, padding: "40px 20px", textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
@@ -857,18 +970,34 @@ export default function MoviesPage() {
                       {fmt(m.ticketPrice)} ticket · {fmt(m.canteenPrice)} canteen{m.quantity > 1 && <> · ×{m.quantity} viewings</>}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+                      {!isRated(m) ? (
+                        ["upcoming", "watching"].includes(movieStatus(m)) ? (
+                          <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 20, background: "var(--surface-2)", color: "var(--text-2)", fontWeight: 500 }}>🎟️ Booked</span>
+                        ) : !m.pending && (
+                          <button type="button" className="chip active" onClick={() => setRateTarget(m)} style={{ fontSize: 12, minHeight: 28, padding: "3px 10px" }}>⭐ Rate it</button>
+                        )
+                      ) : (<>
                       <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 20, background: mine.color + "1A", color: mine.color, fontWeight: 500 }}>
                         You: {mine.label}
                       </span>
+                      {m.publicTake && (
                       <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 20, background: pub.color + "1A", color: pub.color, fontWeight: 500 }}>
                         Public: {pub.label}
                       </span>
+                      )}
+                      </>)}
                       {mismatch && (
                         <span style={{ fontSize: 12, padding: "3px 8px", borderRadius: 20, background: "#5B3A5C1A", color: "#5B3A5C", fontWeight: 500 }}>
                           You disagreed with the crowd
                         </span>
                       )}
                     </div>
+                    {(m.rating > 0 || m.review) && (
+                      <div style={{ marginTop: 8 }}>
+                        {m.rating > 0 && <span aria-label={`${m.rating} of 5 stars`} style={{ color: "#F5A524", fontSize: 15, letterSpacing: 1 }}>{"★".repeat(m.rating)}<span style={{ color: "var(--line-strong)" }}>{"★".repeat(5 - m.rating)}</span></span>}
+                        {m.review && <div style={{ fontSize: 13, color: "var(--ink)", marginTop: 2 }}>“{m.review}”</div>}
+                      </div>
+                    )}
                     {m.note && (
                       <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 8, fontStyle: "italic" }}>{m.note}</div>
                     )}
@@ -880,6 +1009,7 @@ export default function MoviesPage() {
           )}
         </div>
       </div>
+      {rateTarget && <RateMovieSheet movie={rateTarget} onClose={() => setRateTarget(null)} onSaved={() => load()} />}
     </div>
   );
 }

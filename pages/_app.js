@@ -25,10 +25,13 @@ const TAB_FOR_PATH = {
   "/transactions": "/",
   "/report": "/insights", "/year": "/insights", "/wrapped": "/insights",
   "/budget": "/me", "/sugar-challenge": "/me", "/settings": "/me", "/ious": "/me",
-  "/search": "/me", "/pause": "/me", "/badges": "/me", "/challenges": "/me",
+  "/search": "/me", "/pause": "/me", "/badges": "/me", "/challenges": "/me", "/shared": "/me", "/pay": "/",
 };
 // Full-screen pages with no nav bar or top bar.
-const IMMERSIVE = new Set(["/wrapped", "/welcome"]);
+const IMMERSIVE = new Set(["/wrapped", "/welcome", "/shared/[token]"]);
+// Pages anyone with the link may open without the PIN. They only talk to
+// their own token-scoped API (/api/shared), never to /api/data.
+const PUBLIC_PAGES = new Set(["/shared/[token]"]);
 
 export function tabFor(path) {
   return TAB_FOR_PATH[path] || path;
@@ -302,11 +305,13 @@ function CelebrationHost() {
             <span key={p.key} className="confetti-piece" style={p.style} />
           ))}
           <div className="celebrate-card" onClick={(e) => e.stopPropagation()}>
-            <div className="celebrate-trophy">🏆</div>
+            <div className="celebrate-trophy">{party.emoji || "🏆"}</div>
             <div style={{ fontFamily: "'Lora', Georgia, serif", fontSize: 24, fontWeight: 700, marginTop: 10, color: "var(--ink)" }}>
-              {party.day}-day streak!
+              {party.title || `${party.day}-day streak!`}
             </div>
-            {party.reward ? (
+            {party.message ? (
+              <div style={{ marginTop: 10, fontSize: 14, lineHeight: 1.45, color: "#4A4338" }}>{party.message}</div>
+            ) : party.reward ? (
               <div style={{ marginTop: 10, fontSize: 14, lineHeight: 1.45, color: "#4A4338" }}>
                 Your reward: <strong>{party.reward}</strong>
               </div>
@@ -684,7 +689,12 @@ export default function App({ Component, pageProps }) {
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Ledger" />
       </Head>
-      {locked === null ? null : locked ? (
+      {PUBLIC_PAGES.has(router.pathname) ? (
+        <>
+          <Component {...pageProps} />
+          <ToastHost />
+        </>
+      ) : locked === null ? null : locked ? (
         <LockScreen
           onUnlock={() => {
             setLocked(false);

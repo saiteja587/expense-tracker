@@ -1,18 +1,22 @@
 // Home: one clear story for today. A ring with what's left to spend today,
 // swipeable cards for money / sugar / movies / goal / challenge, the most
 // useful insight, and today's entries. Everything detailed lives one tap away.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { WELCOMED_KEY } from "../lib/useLedger";
 import Link from "next/link";
 import { Search, ChevronRight, Check, X as XIcon, Sparkles, Wallet, Flame, Clapperboard, Target, Trophy } from "lucide-react";
 import { useLedger, notifyLedgerChanged } from "../lib/useLedger";
-import { todayBudget, sugarStreak, loggingStreak, itemsInMonth, ymOf } from "../lib/ledger";
+import { todayBudget, sugarStreak, loggingStreak, itemsInMonth, ymOf, movieStatus } from "../lib/ledger";
 import { generateInsights } from "../lib/insights";
+import { affordability } from "../lib/smart";
+import { seasonFor } from "../lib/festivals";
+import { TRIGGERS } from "../lib/slipTriggers";
 import { evaluateChallenge } from "../lib/miniChallenges";
 import { categoryColor } from "../lib/categories";
 import { fmt, greeting, dayLabel } from "../lib/format";
 import { openQuickAdd } from "../components/QuickAddSheet";
+import NeedsYou from "../components/NeedsYou";
 import CategoryIcon from "../components/CategoryIcon";
 import CountUp from "../components/CountUp";
 import PullToRefresh from "../components/PullToRefresh";
@@ -56,6 +60,13 @@ function Card({ href, icon, title, children, accent, onClick }) {
 export default function Home() {
   const { data, derived, today, loaded, error, refresh } = useLedger();
   const [marking, setMarking] = useState(false);
+  const [affordOpen, setAffordOpen] = useState(false);
+  const [price, setPrice] = useState("");
+  const [askTrigger, setAskTrigger] = useState(false);
+  const [pulse, setPulse] = useState(false);
+  const [coins, setCoins] = useState(false);
+  const prevLeft = useRef(null);
+  const prevBalance = useRef(null);
   const router = useRouter();
 
   // Brand-new user (nothing logged, no balance, never welcomed): set up first.
@@ -84,16 +95,19 @@ export default function Home() {
       .find((c) => c.status === "active" || c.status === "upcoming") || null;
     const overall = data.rules.find((r) => r.ruleType === "overall");
     const overBudget = overall && budget.spentMonth > overall.amount;
-    return { budget, monthItems, todayItems, upcoming, streak, sugarToday, moviesMonth, insight, challenge, overall, overBudget, logStreak: loggingStreak(data.expenses, today) };
+    const nextMovie = data.movies.filter((m) => movieStatus(m) === "upcoming").sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0] || null;
+    return { nextMovie, budget, monthItems, todayItems, upcoming, streak, sugarToday, moviesMonth, insight, challenge, overall, overBudget, logStreak: loggingStreak(data.expenses, today) };
   }, [data, derived, today]);
 
-  async function markSugar(completed) {
+  async function markSugar(completed, reason = "") {
     setMarking(true);
     vibrate(10);
     try {
-      const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "challenge-day", date: today, completed }) });
+      const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "challenge-day", date: today, completed, reason }) });
       if (!res.ok) throw new Error();
-      showToast(completed ? "Sugar-free today — streak +1" : "Logged. Tomorrow's a fresh start.", completed ? "🔥" : "💪");
+      if (reason) showToast("Noted — spotting the pattern helps 💡", "💪");
+      else showToast(completed ? "Sugar-free today — streak +1" : "Logged. Tomorrow's a fresh start.", completed ? "🔥" : "💪");
+      setAskTrigger(!completed && !reason);
       notifyLedgerChanged();
     } catch {
       showToast("Couldn't save that — try again", "⚠️");
@@ -101,6 +115,29 @@ export default function Home() {
       setMarking(false);
     }
   }
+
+  // App-icon badge = rupees left today (Android shows a dot, iOS the number).
+  useEffect(() => {
+    if (!view || typeof navigator === "undefined" || !navigator.setAppBadge) return;
+    const left = Math.round(view.budget.left);
+    if (view.budget.hasMoney && left > 0) navigator.setAppBadge(left).catch(() => {});
+    else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+  }, [view]);
+
+  // Little reactions: the ring pulses when you spend, coins drop when money comes in.
+  useEffect(() => {
+    if (!view || !derived) return;
+    if (prevLeft.current !== null && view.budget.left < prevLeft.current - 0.5) {
+      setPulse(true);
+      setTimeout(() => setPulse(false), 900);
+    }
+    if (prevBalance.current !== null && derived.balance > prevBalance.current + 0.5) {
+      setCoins(true);
+      setTimeout(() => setCoins(false), 1600);
+    }
+    prevLeft.current = view.budget.left;
+    prevBalance.current = derived.balance;
+  }, [view, derived]);
 
   if (!loaded || !view) {
     return (
@@ -118,6 +155,8 @@ export default function Home() {
   const ringPct = budget.hasMoney && budget.perDay > 0 ? Math.max(0, budget.left) / budget.perDay : 0;
   const dateLine = new Date(today + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
   const showWrapped = Number(today.slice(8, 10)) <= 7 && data.expenses.length > 0;
+  const season = seasonFor(today);
+  const afford = affordOpen ? affordability(budget, price, { goal: data.savingsGoal, balance: derived.balance }) : null;
 
   return (
     <div className="page-container home" style={{ maxWidth: 560, margin: "0 auto", padding: "28px 20px 100px" }}>
@@ -126,7 +165,7 @@ export default function Home() {
           <div>
             <div style={{ fontSize: 13, color: "var(--muted)" }}>{dateLine}</div>
             <h1 className="lora" style={{ fontSize: 26, fontWeight: 700, margin: "2px 0 0", letterSpacing: "-0.01em" }}>
-              {greeting()} <span aria-hidden="true">👋</span>
+              {season?.greeting || greeting()} <span aria-hidden="true" className={season ? "season-emoji" : ""}>{season?.emoji || "👋"}</span>
             </h1>
           </div>
           <Link href="/search" className="icon-btn" aria-label="Search" style={{ background: "var(--surface)", boxShadow: "var(--shadow-sm)" }}>
@@ -138,6 +177,7 @@ export default function Home() {
 
         {/* Today ring */}
         <section aria-label="Today's budget" style={{ display: "flex", flexDirection: "column", alignItems: "center", margin: "18px 0 22px" }}>
+          <div className={pulse ? "ring-pulse" : ""}>
           <Ring pct={ringPct} color={ringColor}>
             {budget.hasMoney ? (
               <>
@@ -154,15 +194,18 @@ export default function Home() {
               </>
             )}
           </Ring>
+          </div>
           <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", justifyContent: "center" }}>
             <span className="chip" style={{ cursor: "default" }}>Spent today · <b className="tabnum">{fmt(budget.spentToday)}</b></span>
             {budget.hasMoney ? (
-              <span className="chip" style={{ cursor: "default" }}>{budget.daysLeft} days left in month</span>
+              <button type="button" className="chip" onClick={() => { setAffordOpen(true); setPrice(""); }}>🤔 Can I afford it?</button>
             ) : (
               <Link href="/transactions?topup=1" className="btn btn-primary" style={{ textDecoration: "none", minHeight: 36 }}>Add money</Link>
             )}
           </div>
         </section>
+
+        <NeedsYou data={data} derived={derived} today={today} focusBill={router.query.bill} />
 
         {/* Insight of the day */}
         {view.insight && (
@@ -212,9 +255,21 @@ export default function Home() {
               {data.challengeMeta ? (
                 <>
                   <Link href="/sugar-challenge" style={{ textDecoration: "none", color: "inherit" }}>
-                    <div className="lora tabnum" style={{ fontSize: 28, fontWeight: 700 }}>{view.streak} <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-2)" }}>day streak 🔥</span></div>
+                    <div className="lora tabnum" style={{ fontSize: 28, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                      {view.streak} <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-2)" }}>day streak</span>
+                      <span aria-hidden="true" className="flame-grow" style={{ fontSize: 16 + Math.min(view.streak, 30) * 0.7 }}>🔥</span>
+                    </div>
                   </Link>
-                  {view.sugarToday === undefined ? (
+                  {askTrigger && view.sugarToday === false ? (
+                    <div style={{ marginTop: "auto" }}>
+                      <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>What triggered it? (optional)</div>
+                      <div className="h-scroll">
+                        {TRIGGERS.map((t) => (
+                          <button key={t.id} type="button" className="chip" disabled={marking} onClick={() => markSugar(false, t.label)}>{t.emoji} {t.label}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : view.sugarToday === undefined ? (
                     <div style={{ display: "flex", gap: 8, marginTop: "auto" }}>
                       <button type="button" className="btn btn-primary" disabled={marking} onClick={() => markSugar(true)} style={{ flex: 1, minHeight: 40, fontSize: 13 }}><Check size={15} /> Sugar-free</button>
                       <button type="button" className="btn btn-secondary" disabled={marking} onClick={() => markSugar(false)} style={{ flex: 1, minHeight: 40, fontSize: 13 }}><XIcon size={15} /> Slipped</button>
@@ -238,7 +293,8 @@ export default function Home() {
             <Card href="/movies" icon={<Clapperboard size={14} />} title="Movies" accent="#B0567F">
               <div className="lora tabnum" style={{ fontSize: 28, fontWeight: 700 }}>{view.moviesMonth.length} <span style={{ fontSize: 15, fontWeight: 500, color: "var(--text-2)" }}>this month</span></div>
               <div style={{ fontSize: 13, color: "var(--text-2)" }}>
-                {data.movies[0] ? <>Last: <b>{data.movies[0].title}</b></> : "Log the movies you watch and what you thought."}
+                {view.nextMovie ? <>🎟️ Next: <b>{view.nextMovie.title}</b> · {dayLabel(view.nextMovie.date, today)}</>
+                  : data.movies[0] ? <>Last: <b>{data.movies[0].title}</b></> : "Log the movies you watch and what you thought."}
               </div>
             </Card>
           </div>
@@ -246,9 +302,12 @@ export default function Home() {
           {data.savingsGoal && data.savingsGoal.targetAmount > 0 && (
             <div style={{ flex: "0 0 78%", scrollSnapAlign: "start" }}>
               <Card href="/budget" icon={<Target size={14} />} title="Goal" accent="var(--accent-solid)">
+                {coins && <div className="coin-drop" aria-hidden="true"><span>🪙</span><span>🪙</span><span>🪙</span></div>}
                 <div style={{ fontSize: 16, fontWeight: 600 }}>{data.savingsGoal.label || "Savings goal"}</div>
                 <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700 }}>{Math.min(100, Math.max(0, Math.round((derived.balance / data.savingsGoal.targetAmount) * 100)))}%</div>
-                <div style={{ fontSize: 13, color: "var(--text-2)" }}>{fmt(Math.max(0, derived.balance))} of {fmt(data.savingsGoal.targetAmount)}</div>
+                <div style={{ fontSize: 13, color: "var(--text-2)" }}>
+                  {derived.balance >= data.savingsGoal.targetAmount ? "🎉 Reached! Set your next goal below." : `${fmt(Math.max(0, derived.balance))} of ${fmt(data.savingsGoal.targetAmount)}`}
+                </div>
               </Card>
             </div>
           )}
@@ -298,7 +357,7 @@ export default function Home() {
                     <div style={{ fontSize: 14.5, fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.note || x.category}</div>
                     <div style={{ fontSize: 12, color: "var(--muted)" }}>{x.category}{x.time ? ` · ${x.time}` : ""}{x.isRecurringPending ? " · scheduled" : ""}</div>
                   </div>
-                  <div className="tabnum" style={{ fontWeight: 600, fontSize: 15 }}>{fmt(x.amount)}</div>
+                  <div className="tabnum" style={{ fontWeight: 600, fontSize: 15 }}>{x.estimate ? "≈" : ""}{fmt(x.amount)}</div>
                 </div>
               ))}
             </div>
@@ -311,12 +370,43 @@ export default function Home() {
             {view.upcoming.map((x) => (
               <div key={x.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5, padding: "6px 0", color: "var(--text-2)" }}>
                 <span>{dayLabel(x.date, today)} · {x.note || x.category}</span>
-                <span className="tabnum">{fmt(x.amount)}</span>
+                <span className="tabnum">{x.estimate ? "≈" : ""}{fmt(x.amount)}</span>
               </div>
             ))}
           </section>
         )}
       </PullToRefresh>
+
+      {afford && (
+        <>
+          <div className="sheet-scrim" onClick={() => setAffordOpen(false)} />
+          <div className="sheet" role="dialog" aria-modal="true" aria-label="Can I afford it?" data-no-tab-swipe="1">
+            <div className="sheet-handle" />
+            <div className="lora" style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Can I afford it? 🤔</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>Type a price — see what it does to your daily budget.</div>
+            <input autoFocus type="number" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="₹ price, e.g. 4500" aria-label="Price" style={{ fontSize: 22, padding: "12px 14px" }} />
+            {afford.verdict !== "enter" && (
+              <div className="card" style={{ marginTop: 14, padding: 16, borderRadius: 18, borderLeft: `5px solid ${afford.verdict === "yes" ? "var(--success)" : afford.verdict === "tight" ? "var(--warn)" : "var(--danger)"}` }}>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>
+                  {afford.verdict === "yes" ? "✅ Yes, comfortably" : afford.verdict === "tight" ? "⚠️ Yes, but it's tight" : "❌ Not this month"}
+                </div>
+                <div style={{ fontSize: 14, color: "var(--text-2)", marginTop: 6, lineHeight: 1.5 }}>
+                  {afford.verdict === "no"
+                    ? <>You&apos;d be short by <b>{fmt(afford.shortBy)}</b> before the month ends.</>
+                    : <>Your daily budget goes from <b>{fmt(afford.perDayBefore)}</b> to <b>{fmt(afford.perDayAfter)}</b> for the next {budget.daysLeft} days.</>}
+                  {afford.goalAfter !== null && <><br />Savings goal would be at <b>{Math.round(afford.goalAfter * 100)}%</b>.</>}
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setAffordOpen(false)}>Close</button>
+              {afford.verdict !== "enter" && afford.verdict !== "no" && (
+                <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => { setAffordOpen(false); openQuickAdd({ amount: afford.price, category: "Shopping" }); }}>I bought it — log it</button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { celebrateMilestone, popHeart } from "../lib/celebrate";
 import CountUp from "../components/CountUp";
 import { todayISO } from "../lib/format";
 
-const SLIP_REASONS = ["Stress", "Social occasion", "Craving", "Travel", "Tiredness", "Other"];
+import { TRIGGERS, analyseSlips } from "../lib/slipTriggers";
 
 function addDays(iso, n) {
   const d = new Date(iso + "T00:00:00");
@@ -283,6 +283,11 @@ export default function SugarChallengePage() {
 
   // Tally why slips happened, so a pattern (e.g. "mostly stress") shows up
   // instead of getting buried in individual day notes.
+  const slipAnalysis = useMemo(
+    () => analyseSlips(Object.values(days).map((d) => ({ completed: d.completed, reason: d.naturalSugar ? "" : d.reason }))),
+    [days]
+  );
+
   const reasonTally = useMemo(() => {
     const map = {};
     for (const d of dayList) {
@@ -524,11 +529,14 @@ export default function SugarChallengePage() {
           {reasonTally.length > 0 && (
             <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "14px 16px", marginBottom: 24 }}>
               <div className="lora" style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Why slips happen</div>
+              {slipAnalysis.headline && (
+                <div style={{ fontSize: 13.5, fontWeight: 600, marginBottom: 10, color: "var(--ink)" }}>💡 {slipAnalysis.headline}</div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {reasonTally.map(([reason, count]) => (
                   <div key={reason} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-2)" }}>
                     <span>{reason}</span>
-                    <span className="tabnum" style={{ color: "var(--danger)", fontWeight: 500 }}>{count}×</span>
+                    <span className="tabnum" style={{ color: "var(--danger)", fontWeight: 500 }}>{count}× {slipAnalysis.tagged ? `· ${Math.round((count / Math.max(1, slipAnalysis.total)) * 100)}%` : ""}</span>
                   </div>
                 ))}
               </div>
@@ -609,10 +617,17 @@ export default function SugarChallengePage() {
                 </label>
               )}
               {pendingChoice === false && !naturalSugarDraft && (
-                <select value={reasonDraft} onChange={(e) => setReasonDraft(e.target.value)} style={{ marginBottom: 10, borderColor: "var(--danger)" }}>
-                  <option value="">Reason — pick one</option>
-                  {SLIP_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
+                <div style={{ marginBottom: 10 }}>
+                  <div className="field-label">What triggered it?</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }} role="radiogroup" aria-label="Trigger">
+                    {TRIGGERS.map((t) => (
+                      <button key={t.id} type="button" role="radio" aria-checked={reasonDraft === t.label}
+                        className={`chip${reasonDraft === t.label ? " active" : ""}`} onClick={() => setReasonDraft(t.label)}>
+                        {t.emoji} {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
               <input type="text" placeholder={pendingChoice === false && !naturalSugarDraft ? "What happened? (required)" : "Note (optional)"} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} maxLength={140} style={{ marginBottom: 10, borderColor: pendingChoice === false && !naturalSugarDraft ? "var(--danger)" : undefined }} />
               <div style={{ display: "flex", gap: 8 }}>
