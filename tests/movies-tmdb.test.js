@@ -120,13 +120,17 @@ describe("watchlist alerts (daily cron)", () => {
   });
 
   it("alerts when a watchlist movie starts streaming (not on the first look)", async () => {
-    // Earlier runs recorded "not streaming". Now Prime gets Kalki.
+    // Earlier runs recorded "not streaming". Now Prime gets Kalki — and a
+    // day passes, so cached details (kept for 24h) are looked up again.
     primeHasKalki = true;
-    const { clearTmdbMemory } = await import("../lib/tmdb");
-    clearTmdbMemory();
-    await fake`DELETE FROM tmdb_cache WHERE key = 'movie:5'`;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 25 * 3600 * 1000);
     pushes.length = 0;
-    await call(cron, "GET", { headers: { authorization: "Bearer cron-test" } });
+    try {
+      await call(cron, "GET", { headers: { authorization: "Bearer cron-test" } });
+    } finally {
+      vi.useRealTimers();
+    }
     expect(pushes.find((p) => p.title.startsWith("📺 Kalki 2898 AD is now on"))).toMatchObject({ url: "/movies?details=5" });
   });
 });
