@@ -24,6 +24,14 @@ export function createFakeNeon() {
     };
   }
 
+  // sql.query(text, params): a plain-string query (e.g. dynamic table names).
+  sql.query = (text, params = []) => ({
+    text, params,
+    then(resolve, reject) {
+      return db.query(text, params).then((r) => r.rows).then(resolve, reject);
+    },
+  });
+
   sql.transaction = async (queries) =>
     db.transaction(async (tx) => {
       const out = [];

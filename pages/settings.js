@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import PeopleSection from "../components/PeopleSection";
 import { THEMES, getTheme, saveTheme } from "../lib/theme";
 import AutoBackups from "../components/AutoBackups";
 import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy, Fingerprint } from "lucide-react";
@@ -74,7 +75,7 @@ export default function SettingsPage() {
       if (recRes.ok) setRecurring((await recRes.json()).recurring || []);
       if (incRes.ok) setRecurringIncome((await incRes.json()).recurringIncome || []);
       if (confRes.ok) setRecurringConfirmations((await confRes.json()).confirmations || {});
-      if (pinRes.ok) setHasPin((await pinRes.json()).hasPin);
+      if (pinRes.ok) setHasPin((await pinRes.json()).mine);
       if (theatreRes.ok) setTheatres((await theatreRes.json()).theatres || []);
       if (ottRes.ok) setOttPlatforms((await ottRes.json()).ottPlatforms || []);
       if (goalRes.ok) {
@@ -615,6 +616,8 @@ export default function SettingsPage() {
         </Link>
         <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Settings</div>
       </div>
+
+      <PeopleSection />
 
       <details className="settings-group">
         <summary>💾 Backup & restore</summary>

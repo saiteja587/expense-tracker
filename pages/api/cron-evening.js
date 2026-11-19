@@ -2,7 +2,7 @@
 // nothing was logged today, or a heads-up if today went over the daily
 // budget — plus "How was <movie>?" for today's unrated movies.
 import * as db from "../../lib/db";
-import { sendToAllDevices } from "../../lib/push";
+import { sendToUser } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
 import { localDateParts } from "../../lib/dates";
 import { mapExpense, mapMovie, mapTopup, movieItems, recurringPending, balanceOf, todayBudget } from "../../lib/ledger";
@@ -12,7 +12,24 @@ export default async function handler(req, res) {
   if (!isAuthorizedCron(req)) return rejectCron(res);
   try {
     const today = localDateParts().iso;
-    const [expRows, movieRows, topupRows, recurring] = await Promise.all([db.listExpenses(), db.listMovies(), db.listTopups(), db.listRecurring()]);
+    const out = {};
+    for (const u of await db.listUsers()) {
+      try {
+        out[u.id] = await runForUser(u.id, today);
+      } catch (e) {
+        console.error(`[cron-evening] user ${u.id} failed:`, e);
+      }
+    }
+    return res.status(200).json({ ok: true, out });
+  } catch (e) {
+    console.error("[cron-evening]", e);
+    return res.status(500).json({ error: "Failed to run evening check" });
+  }
+}
+
+async function runForUser(uid, today) {
+    const sendToAllDevices = (payload) => sendToUser(uid, payload);
+    const [expRows, movieRows, topupRows, recurring] = await Promise.all([db.listExpenses(uid), db.listMovies(uid), db.listTopups(uid), db.listRecurring(uid)]);
     const expenses = expRows.map(mapExpense);
     const items = [...expenses, ...movieItems(movieRows.map(mapMovie)), ...recurringPending(recurring, today)];
     const topups = topupRows.map(mapTopup);
@@ -36,9 +53,5 @@ export default async function handler(req, res) {
     for (const m of toRate) {
       await sendToAllDevices({ title: `🍿 How was ${m.title}?`, body: "Rate it in ten seconds — and add what you spent on snacks.", url: `/movies?rate=${m.id}` });
     }
-    return res.status(200).json({ ok: true, sent: note?.title || null, rated: toRate.map((m) => m.title), result });
-  } catch (e) {
-    console.error("[cron-evening]", e);
-    return res.status(500).json({ error: "Failed to run evening check" });
-  }
+    return { sent: note?.title || null, rated: toRate.map((m) => m.title), result };
 }

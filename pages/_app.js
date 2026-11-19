@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Head from "next/head";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import "../styles/globals.css";
 import { flushQueue, getQueue } from "../lib/offlineQueue";
@@ -12,6 +13,7 @@ import QuickAddSheet, { openQuickAdd } from "../components/QuickAddSheet";
 import { parseExpenseText } from "../lib/smsParse";
 import { todayISO } from "../lib/format";
 import { notifyLedgerChanged } from "../lib/useLedger";
+import { getAccount, rememberAccount, LAST_NAME_KEY } from "../lib/account";
 
 const NAV_ITEMS = [
   { href: "/", label: "Home", Icon: Home },
@@ -28,10 +30,12 @@ const TAB_FOR_PATH = {
   "/search": "/me", "/pause": "/me", "/badges": "/me", "/challenges": "/me", "/shared": "/me", "/pay": "/",
 };
 // Full-screen pages with no nav bar or top bar.
-const IMMERSIVE = new Set(["/wrapped", "/welcome", "/shared/[token]"]);
+const IMMERSIVE = new Set(["/wrapped", "/welcome", "/shared/[token]", "/join"]);
 // Pages anyone with the link may open without the PIN. They only talk to
 // their own token-scoped API (/api/shared), never to /api/data.
-const PUBLIC_PAGES = new Set(["/shared/[token]"]);
+// /join lets an invited friend create their account (it only uses the
+// public "join" and "invite-check" calls).
+const PUBLIC_PAGES = new Set(["/shared/[token]", "/join"]);
 
 export function tabFor(path) {
   return TAB_FOR_PATH[path] || path;
@@ -57,7 +61,7 @@ if (typeof window !== "undefined" && !window.__ledgerFetchWrapped) {
 
 async function fetchSession() {
   const r = await fetch("/api/data?type=session");
-  return r.json(); // { hasPin, authenticated }
+  return r.json(); // { hasPin, authenticated, multiUser, user }
 }
 
 // Which way the next page should slide in. Set just before navigating by
@@ -336,8 +340,15 @@ function fromBase64url(str) {
   return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 }
 
-function LockScreen({ onUnlock }) {
+function LockScreen({ onUnlock, multiUser }) {
   const [pin, setPin] = useState("");
+  // With more than one person, sign-in is name + PIN. The name is
+  // remembered on this phone, so normally it's still just the PIN.
+  const [name, setName] = useState(() => {
+    try { return localStorage.getItem(LAST_NAME_KEY) || ""; } catch { return ""; }
+  });
+  const [editingName, setEditingName] = useState(false);
+  const askName = multiUser && (editingName || !name);
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const [bioAvailable, setBioAvailable] = useState(false);
@@ -370,7 +381,7 @@ function LockScreen({ onUnlock }) {
           return;
         }
         extendSession();
-        onUnlock();
+        onUnlock(s);
       }
     } catch (e) {
       setError("Biometric check didn't succeed — use your PIN instead.");
@@ -383,19 +394,21 @@ function LockScreen({ onUnlock }) {
 
   async function submit() {
     if (pin.length < 4 || checking) return;
+    if (multiUser && !name.trim()) { setError("Enter your name first"); return; }
     setChecking(true);
     setError("");
     try {
       const res = await fetch("/api/data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "verify-pin", pin }),
+        body: JSON.stringify({ type: "verify-pin", pin, ...(multiUser ? { name: name.trim() } : {}) }),
       });
       const data = await res.json();
       if (data.ok) {
         vibrate(15);
         extendSession();
-        onUnlock();
+        setEditingName(false);
+        onUnlock(await fetchSession().catch(() => null));
         return;
       }
       vibrate([30, 40, 30]);
@@ -405,9 +418,11 @@ function LockScreen({ onUnlock }) {
       setError(
         data.locked
           ? `Too many wrong attempts — wait ${data.waitSeconds}s and try again.`
-          : data.attemptsLeft !== undefined
-            ? `Wrong PIN — ${data.attemptsLeft} attempt${data.attemptsLeft !== 1 ? "s" : ""} left before a cooldown.`
-            : "Wrong PIN"
+          : data.needName
+            ? "Enter your name first"
+            : data.attemptsLeft !== undefined
+              ? `${multiUser ? "Name or PIN doesn't match" : "Wrong PIN"} — ${data.attemptsLeft} attempt${data.attemptsLeft !== 1 ? "s" : ""} left before a cooldown.`
+              : multiUser ? "Name or PIN doesn't match" : "Wrong PIN"
       );
     } catch {
       setError("Couldn't check PIN. Try again.");
@@ -426,6 +441,10 @@ function LockScreen({ onUnlock }) {
   // Physical keyboards still work.
   useEffect(() => {
     function onKey(e) {
+      if (e.target && e.target.tagName === "INPUT") {
+        if (e.key === "Enter") e.target.blur();
+        return; // typing the name, not the PIN
+      }
       if (/^\d$/.test(e.key)) press(e.key);
       else if (e.key === "Backspace") press("del");
       else if (e.key === "Enter") submit();
@@ -440,7 +459,15 @@ function LockScreen({ onUnlock }) {
       <div style={{ textAlign: "center", width: "100%", maxWidth: 320 }} role="form" aria-label="Unlock">
         <img src="/icon-192.png" alt="" width={64} height={64} style={{ borderRadius: 18, boxShadow: "var(--shadow-md)" }} />
         <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 700, marginTop: 12 }}>Expense Ledger</div>
-        <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 4 }}>Enter your PIN</div>
+        {askName ? (
+          <input aria-label="Your name" placeholder="Your name" value={name} autoComplete="username" autoCapitalize="words"
+            onChange={(e) => { setName(e.target.value); setError(""); }} maxLength={30}
+            style={{ marginTop: 14, textAlign: "center", fontSize: 16 }} />
+        ) : (
+          <div style={{ fontSize: 14, color: "var(--muted)", marginTop: 4 }}>
+            {multiUser ? <>Hi <b style={{ color: "var(--ink)" }}>{name}</b> — enter your PIN · <button type="button" onClick={() => { setEditingName(true); setPin(""); }} style={{ background: "none", border: "none", padding: 0, color: "var(--accent-solid)", fontWeight: 600, cursor: "pointer", fontSize: 14 }}>Not you?</button></> : "Enter your PIN"}
+          </div>
+        )}
         <div className={`pin-dots${shake ? " shake" : ""}`} aria-label={`${pin.length} digits entered`}>
           {Array.from({ length: dots }, (_, i) => <span key={i} className={`pin-dot${i < pin.length ? " filled" : ""}`} />)}
         </div>
@@ -460,6 +487,7 @@ function LockScreen({ onUnlock }) {
         <button type="button" className="btn btn-primary btn-block" onClick={submit} disabled={checking || pin.length < 4} style={{ marginTop: 22, minHeight: 50 }}>
           {checking ? "Checking…" : "Unlock"}
         </button>
+        <Link href="/join" style={{ display: "inline-block", marginTop: 16, fontSize: 13.5, color: "var(--accent-solid)", fontWeight: 600, textDecoration: "none" }}>New here? Join with an invite code →</Link>
       </div>
     </div>
   );
@@ -524,6 +552,19 @@ function InstallBanner() {
 export default function App({ Component, pageProps }) {
   const router = useRouter();
   const [locked, setLocked] = useState(null); // null = checking, true/false once known
+  const [multiUser, setMultiUser] = useState(() => !!getAccount()?.multiUser);
+
+  // Note who's signed in; if it's a different person than this phone last
+  // saw, their cached data was just wiped — reload so nothing stale shows.
+  function adoptSession(s) {
+    if (!s) return false;
+    setMultiUser(!!s.multiUser);
+    if (s.user && rememberAccount(s.user, { multiUser: !!s.multiUser })) {
+      window.location.reload();
+      return true;
+    }
+    return false;
+  }
 
   // App-icon shortcuts and the phone's Share sheet land on a URL with a hint
   // (?quickadd=expense, ?mark=sugar, ?shared_text=…). Act on it once unlocked.
@@ -599,6 +640,8 @@ export default function App({ Component, pageProps }) {
     if (recentlyUnlocked) setLocked(false);
     fetchSession()
       .then((s) => {
+        if (s.authenticated && adoptSession(s)) return;
+        if (!s.authenticated) setMultiUser(!!s.multiUser);
         if (s.hasPin && (!s.authenticated || !recentlyUnlocked)) {
           clearSession();
           setLocked(true);
@@ -696,7 +739,9 @@ export default function App({ Component, pageProps }) {
         </>
       ) : locked === null ? null : locked ? (
         <LockScreen
-          onUnlock={() => {
+          multiUser={multiUser}
+          onUnlock={(s) => {
+            if (adoptSession(s)) return;
             setLocked(false);
             // Anything saved while locked out was rejected; send it now.
             syncQueue();

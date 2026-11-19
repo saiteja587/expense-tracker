@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
 import { WELCOMED_KEY } from "../lib/useLedger";
+import { getAccount } from "../lib/account";
 import Link from "next/link";
 import { Search, ChevronRight, Check, X as XIcon, Sparkles, Wallet, Flame, Clapperboard, Target, Trophy } from "lucide-react";
 import { useLedger, notifyLedgerChanged } from "../lib/useLedger";
@@ -68,6 +69,11 @@ export default function Home() {
   const prevLeft = useRef(null);
   const prevBalance = useRef(null);
   const router = useRouter();
+  const [myName, setMyName] = useState("");
+  useEffect(() => {
+    const n = getAccount()?.name || "";
+    setMyName(n && n.toLowerCase() !== "me" ? n.split(" ")[0] : "");
+  }, []);
 
   // Brand-new user (nothing logged, no balance, never welcomed): set up first.
   useEffect(() => {
@@ -165,7 +171,7 @@ export default function Home() {
           <div>
             <div style={{ fontSize: 13, color: "var(--muted)" }}>{dateLine}</div>
             <h1 className="lora" style={{ fontSize: 26, fontWeight: 700, margin: "2px 0 0", letterSpacing: "-0.01em" }}>
-              {season?.greeting || greeting()} <span aria-hidden="true" className={season ? "season-emoji" : ""}>{season?.emoji || "👋"}</span>
+              {season?.greeting || greeting()}{myName ? `, ${myName}` : ""} <span aria-hidden="true" className={season ? "season-emoji" : ""}>{season?.emoji || "👋"}</span>
             </h1>
           </div>
           <Link href="/search" className="icon-btn" aria-label="Search" style={{ background: "var(--surface)", boxShadow: "var(--shadow-sm)" }}>
