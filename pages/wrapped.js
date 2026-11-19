@@ -32,7 +32,7 @@ function buildSlides(w, badgeCount) {
   if (w.habit) s.push({ kicker: "Your signature move", big: `${w.habit.count}×`, title: w.habit.note, sub: `${fmt(w.habit.total)} in total` });
   if (w.bigDay) s.push({ kicker: "Biggest day", big: fmt(w.bigDay.amount), sub: new Date(w.bigDay.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" }) });
   s.push({ kicker: "No-spend days", big: String(w.noSpendDays), sub: w.noSpendDays >= 3 ? "Your wallet thanks you 🌿" : "Try for a few more next month" });
-  if (w.movies) s.push({ kicker: "At the movies", big: `🎬 ${w.movies}`, sub: w.lovedMovie ? `Favourite: ${w.lovedMovie}` : "" });
+  if (w.movies) s.push({ kicker: "At the movies", big: `🎬 ${w.movies}`, sub: [w.lovedMovie && `Favourite: ${w.lovedMovie}`, w.movieHours && `${w.movieHours} hours of movies`, w.topActor && `Most seen: ${w.topActor}`].filter(Boolean).join(" · ") });
   if (w.sugarFree) s.push({ kicker: "Sugar-free days", big: `🍬 ${w.sugarFree}`, sub: "Every one of them counted." });
   s.push({ big: "🏅", title: `${badgeCount} badge${badgeCount !== 1 ? "s" : ""} earned so far`, sub: "See you next month!", share: true });
   return s;
@@ -75,7 +75,26 @@ export default function WrappedPage() {
   const { data, derived } = useLedger();
   const today = todayISO();
   const ym = typeof router.query.month === "string" && /^\d{4}-\d{2}$/.test(router.query.month) ? router.query.month : prevMonth(today.slice(0, 7));
-  const w = useMemo(() => (derived ? wrappedFor({ ym, items: derived.items, movies: data.movies, challengeDays: data.challengeDays, custom: data.customCategories, todayIso: today }) : null), [derived, data, ym, today]);
+  // Runtimes and cast from TMDB, for "hours of movies" and "most seen".
+  const [movieMeta, setMovieMeta] = useState(null);
+  useEffect(() => {
+    fetch("/api/data?type=movie-meta").then((r) => (r.ok ? r.json() : null)).then((d) => d && setMovieMeta(d)).catch(() => {});
+  }, []);
+  const w = useMemo(() => {
+    if (!derived) return null;
+    const base = wrappedFor({ ym, items: derived.items, movies: data.movies, challengeDays: data.challengeDays, custom: data.customCategories, todayIso: today });
+    if (!movieMeta) return base;
+    let mins = 0;
+    const actors = {};
+    for (const m of data.movies.filter((x) => x.date.slice(0, 7) === ym)) {
+      const d = movieMeta.meta[movieMeta.ids[m.id]];
+      if (!d) continue;
+      mins += (d.runtime || 0) * (m.quantity || 1);
+      for (const a of d.cast.slice(0, 4)) actors[a] = (actors[a] || 0) + 1;
+    }
+    const topActor = Object.entries(actors).sort((a, b) => b[1] - a[1])[0];
+    return { ...base, movieHours: mins >= 60 ? Math.round(mins / 60) : 0, topActor: topActor && topActor[1] > 1 ? topActor[0] : "" };
+  }, [derived, data, ym, today, movieMeta]);
   const badgeCount = useMemo(() => (data ? computeBadges(data, today).filter((b) => b.earned).length : 0), [data, today]);
   const slides = useMemo(() => (w ? buildSlides(w, badgeCount) : []), [w, badgeCount]);
   const [i, setI] = useState(0);

@@ -27,7 +27,7 @@ const TAB_FOR_PATH = {
   "/transactions": "/",
   "/report": "/insights", "/year": "/insights", "/wrapped": "/insights",
   "/budget": "/me", "/sugar-challenge": "/me", "/settings": "/me", "/ious": "/me",
-  "/search": "/me", "/pause": "/me", "/badges": "/me", "/challenges": "/me", "/shared": "/me", "/pay": "/",
+  "/search": "/me", "/pause": "/me", "/badges": "/me", "/challenges": "/me", "/shared": "/me", "/pay": "/", "/shows": "/movies",
 };
 // Full-screen pages with no nav bar or top bar.
 const IMMERSIVE = new Set(["/wrapped", "/welcome", "/shared/[token]", "/join"]);

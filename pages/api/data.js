@@ -2,6 +2,7 @@ import * as db from "../../lib/db";
 import crypto from "crypto";
 import { issueSession, clearSessionCookie, resolveUser, hashPin, verifyPin } from "../../lib/auth";
 import { localDateParts } from "../../lib/dates";
+import * as tmdbApi from "../../lib/tmdb";
 
 // Calls the lock screen needs before the user has unlocked. Everything else
 // requires a valid session cookie whenever a PIN is set.
@@ -34,9 +35,9 @@ export const config = {
 // limit; the client fetches those via ?type=receipts). Also used for the
 // weekly server-side backups.
 export async function buildExport(uid) {
-  const [expenses, movies, topups, rules, recurring, recurringIncome, ious, watchlist] = await Promise.all([
+  const [expenses, movies, topups, rules, recurring, recurringIncome, ious, watchlist, tvShows] = await Promise.all([
     db.listExpenses(uid), db.listMovies(uid), db.listTopups(uid), db.listBudgetRules(uid), db.listRecurring(uid),
-    db.listRecurringIncome(uid), db.listIous(uid), db.listWatchlist(uid),
+    db.listRecurringIncome(uid), db.listIous(uid), db.listWatchlist(uid), db.listTvShows(uid),
   ]);
   const challengeMeta = await db.getChallengeMeta(uid);
   const challengeDays = await db.listChallengeDays(uid);
@@ -48,7 +49,7 @@ export async function buildExport(uid) {
   return {
     exportedAt: new Date().toISOString(),
     formatVersion: 2,
-    expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious, watchlist,
+    expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious, watchlist, tvShows,
     sugarChallenge: { meta: challengeMeta, days: challengeDays, history: challengeHistory },
     customCategories: (await setting("custom_categories")) || [],
     theatres: await setting("custom_theatres"),
@@ -87,71 +88,31 @@ async function lookupPoster(title, year) {
   return poster;
 }
 
-// ---- TMDB search / now showing (needs TMDB_API_KEY; empty without it) ----
-// TMDB genre ids → the app's genre list.
-const TMDB_GENRES = {
-  28: "Action", 12: "Action", 10752: "Action", 37: "Action", 16: "Animation", 35: "Comedy", 10751: "Comedy",
-  80: "Thriller", 53: "Thriller", 9648: "Thriller", 99: "Documentary", 18: "Drama", 36: "Drama",
-  27: "Horror", 10749: "Romance", 878: "Sci-Fi", 14: "Sci-Fi",
-};
-// The crowd's verdict from TMDB's audience score (only with enough votes).
-function crowdTake(avg, votes) {
-  if (!votes || votes < 15 || !avg) return "";
-  return avg >= 7.5 ? "loved" : avg >= 6.5 ? "liked" : avg >= 5.5 ? "okay" : "disliked";
+// Run fn over items, a few at a time (TMDB calls in parallel, but polite).
+async function inBatches(items, size, fn) {
+  const out = [];
+  for (let k = 0; k < items.length; k += size) out.push(...(await Promise.all(items.slice(k, k + size).map(fn))));
+  return out;
 }
-async function tmdb(path, params = {}) {
-  const apiKey = process.env.TMDB_API_KEY;
-  const isBearer = apiKey.startsWith("eyJ");
-  const url = new URL(`https://api.themoviedb.org/3${path}`);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-  if (!isBearer) url.searchParams.set("api_key", apiKey);
-  const r = await fetch(url, { headers: isBearer ? { Authorization: `Bearer ${apiKey}` } : {} });
-  if (!r.ok) throw new Error(`TMDB ${r.status}`);
-  return r.json();
-}
-const LANGS = { te: "Telugu", ta: "Tamil", hi: "Hindi", ml: "Malayalam", kn: "Kannada", en: "English", bn: "Bengali", mr: "Marathi", ko: "Korean", ja: "Japanese" };
-function shapeMovie(m) {
-  const year = (m.release_date || "").slice(0, 4);
-  return {
-    tmdbId: m.id,
-    title: m.title || m.original_title,
-    year,
-    releaseDate: m.release_date || "",
-    poster: m.poster_path ? `https://image.tmdb.org/t/p/w154${m.poster_path}` : null,
-    genre: (m.genre_ids || []).map((g) => TMDB_GENRES[g]).find(Boolean) || "",
-    rating: m.vote_count >= 15 ? Math.round(m.vote_average * 10) / 10 : null,
-    votes: m.vote_count || 0,
-    crowdTake: crowdTake(m.vote_average, m.vote_count),
-    language: LANGS[m.original_language] || "",
-    overview: (m.overview || "").slice(0, 220),
-  };
-}
-const searchCache = new Map(); // query → { at, results }
-const SEARCH_TTL = 6 * 3600 * 1000;
-async function searchMovies(q) {
-  const key = q.toLowerCase();
-  const hit = searchCache.get(key);
-  if (hit && Date.now() - hit.at < SEARCH_TTL) return hit.results;
-  const d = await tmdb("/search/movie", { query: q, include_adult: "false", region: "IN" });
-  // Popular, well-known matches first; then whatever else matched.
-  const results = (d.results || [])
-    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
-    .slice(0, 7)
-    .map(shapeMovie);
-  if (searchCache.size > 500) searchCache.clear();
-  searchCache.set(key, { at: Date.now(), results });
-  return results;
-}
-let nowCache = null;
-async function nowShowing() {
-  if (nowCache && Date.now() - nowCache.at < SEARCH_TTL) return nowCache;
-  const [now, soon] = await Promise.all([
-    tmdb("/movie/now_playing", { region: "IN", page: 1 }),
-    tmdb("/movie/upcoming", { region: "IN", page: 1 }),
-  ]);
-  const shape = (list) => (list.results || []).filter((m) => m.poster_path).sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 12).map(shapeMovie);
-  nowCache = { at: Date.now(), nowPlaying: shape(now), upcoming: shape(soon) };
-  return nowCache;
+const safe = (p) => p.catch((e) => { console.error("[tmdb]", e.message); return null; });
+
+// Fill in missing TMDB ids for a person's logged movies (a few per call;
+// 0 marks "looked, no match" so it isn't searched again).
+async function resolveMovieIds(uid, movies, limit = 12) {
+  const missing = movies.filter((m) => m.tmdb_id == null).slice(0, limit);
+  await inBatches(missing, 6, async (m) => {
+    let hit;
+    try {
+      hit = await tmdbApi.matchMovie(m.title, String(m.watched_date instanceof Date ? m.watched_date.toISOString() : m.watched_date).slice(0, 4));
+    } catch (e) {
+      console.error("[tmdb] match failed:", e.message);
+      return; // try again next time rather than marking "no match"
+    }
+    const id = hit?.tmdbId || 0;
+    m.tmdb_id = id;
+    await db.setMovieTmdbId(uid, m.id, id);
+  });
+  return movies.filter((m) => m.tmdb_id == null).length;
 }
 
 function err(res, msg, status = 400) {
@@ -209,27 +170,120 @@ export default async function handler(req, res) {
       }
       // Movie poster lookup via TMDB (free API key in TMDB_API_KEY). Without a
       // key the app shows generated poster tiles instead.
-      // Type-ahead for movie titles.
-      if (type === "movie-search") {
+      // ---- TMDB-powered movie features (all empty without a TMDB key) ----
+      if (type === "movie-search" || type === "tv-search") {
         const q = String(req.query.q || "").trim().slice(0, 80);
-        if (q.length < 2 || !process.env.TMDB_API_KEY) return res.status(200).json({ results: [] });
-        try {
-          return res.status(200).json({ results: await searchMovies(q) });
-        } catch (e) {
-          console.error("[movie-search]", e.message);
-          return res.status(200).json({ results: [] });
-        }
+        if (q.length < 2 || !tmdbApi.hasTmdb()) return res.status(200).json({ results: [] });
+        const results = await safe(type === "tv-search" ? tmdbApi.searchTv(q) : tmdbApi.searchMovies(q));
+        return res.status(200).json({ results: results || [] });
       }
-      // What's in Indian theatres now, and coming soon.
+      // What's in Indian theatres now, coming soon, trending, new by language.
       if (type === "now-showing") {
-        if (!process.env.TMDB_API_KEY) return res.status(200).json({ nowPlaying: [], upcoming: [] });
-        try {
-          const d = await nowShowing();
-          return res.status(200).json({ nowPlaying: d.nowPlaying, upcoming: d.upcoming });
-        } catch (e) {
-          console.error("[now-showing]", e.message);
-          return res.status(200).json({ nowPlaying: [], upcoming: [] });
+        if (!tmdbApi.hasTmdb()) return res.status(200).json({ nowPlaying: [], upcoming: [], trending: [], byLanguage: {} });
+        const langs = String(req.query.langs || "").split(",").map((l) => l.trim()).filter((l) => tmdbApi.LANGS[l]).slice(0, 2);
+        const [ns, tr, ...byLang] = await Promise.all([safe(tmdbApi.nowShowing()), safe(tmdbApi.trending()), ...langs.map((l) => safe(tmdbApi.newInLanguage(l)))]);
+        return res.status(200).json({
+          nowPlaying: ns?.nowPlaying || [], upcoming: ns?.upcoming || [], trending: tr || [],
+          byLanguage: Object.fromEntries(langs.map((l, k) => [l, byLang[k] || []])),
+        });
+      }
+      // Everything about one film: by TMDB id, or by title (+ year) for
+      // movies logged before ids were stored.
+      if (type === "movie-details") {
+        if (!tmdbApi.hasTmdb()) return res.status(200).json({ details: null });
+        let id = parseInt(req.query.id, 10);
+        if (!id && req.query.title) id = (await safe(tmdbApi.matchMovie(String(req.query.title).slice(0, 100), req.query.year)))?.tmdbId;
+        if (!id) return res.status(200).json({ details: null });
+        const details = await safe(tmdbApi.movieDetails(id));
+        const coll = details?.collection ? await safe(tmdbApi.collection(details.collection.id)) : null;
+        return res.status(200).json({ details: details ? { ...details, collectionParts: coll?.parts || [] } : null });
+      }
+      // Runtime, people, language and franchise for each logged movie (for
+      // stats). Resolves missing ids a few at a time; "pending" says how
+      // many are still to look up (the page asks again).
+      if (type === "movie-meta") {
+        const movies = await db.listMovies(uid);
+        if (!tmdbApi.hasTmdb()) return res.status(200).json({ meta: {}, collections: {}, ids: {}, pending: 0 });
+        const pending = await resolveMovieIds(uid, movies);
+        const ids = [...new Set(movies.map((m) => m.tmdb_id).filter((x) => x > 0))];
+        const details = await inBatches(ids, 8, (id) => safe(tmdbApi.movieDetails(id)));
+        const meta = {};
+        const collIds = new Set();
+        details.forEach((d) => {
+          if (!d) return;
+          meta[d.tmdbId] = { runtime: d.runtime, cast: d.cast.map((c) => c.name), directors: d.directors, language: d.language, collection: d.collection };
+          if (d.collection) collIds.add(d.collection.id);
+        });
+        const colls = await inBatches([...collIds], 6, (id) => safe(tmdbApi.collection(id)));
+        const collections = {};
+        colls.forEach((c) => { if (c) collections[c.id] = { name: c.name, parts: c.parts.map((p) => ({ tmdbId: p.tmdbId, title: p.title, releaseDate: p.releaseDate })) }; });
+        return res.status(200).json({ meta, collections, ids: Object.fromEntries(movies.map((m) => [m.id, m.tmdb_id || null])), pending });
+      }
+      // Watchlist with release date (India), streaming apps and poster.
+      if (type === "watchlist-info") {
+        const items = await db.listWatchlist(uid);
+        if (!tmdbApi.hasTmdb()) return res.status(200).json({ items: {} });
+        const ns = await safe(tmdbApi.nowShowing());
+        const inTheatres = new Set((ns?.nowPlaying || []).map((m) => m.tmdbId));
+        const out = {};
+        await inBatches(items, 6, async (w) => {
+          let id = w.tmdb_id;
+          if (!id) {
+            id = (await safe(tmdbApi.matchMovie(w.title)))?.tmdbId || null;
+            if (id) await db.updateWatchlistMeta(uid, w.id, { tmdbId: id });
+          }
+          if (!id) return;
+          const d = await safe(tmdbApi.movieDetails(id));
+          if (!d) return;
+          const rel = d.indiaRelease || d.releaseDate;
+          if (rel && String(w.release_date || "").slice(0, 10) !== rel) await db.updateWatchlistMeta(uid, w.id, { releaseDate: rel });
+          out[w.id] = { tmdbId: id, poster: d.poster, rating: d.rating, releaseDate: rel, genre: d.genre, stream: d.providers.stream, inTheatres: inTheatres.has(id), runtime: d.runtime };
+        });
+        return res.status(200).json({ items: out });
+      }
+      // "Because you loved …": TMDB recommendations from your favourites,
+      // minus what you've seen or saved, with where to watch them.
+      if (type === "recommendations") {
+        if (!tmdbApi.hasTmdb()) return res.status(200).json({ results: [] });
+        const [movies, watchlist] = await Promise.all([db.listMovies(uid), db.listWatchlist(uid)]);
+        await resolveMovieIds(uid, movies, 6);
+        const favs = movies.filter((m) => m.tmdb_id > 0 && ((m.rating || 0) >= 4 || m.my_take === "loved")).slice(0, 4);
+        const seeds = favs.length ? favs : movies.filter((m) => m.tmdb_id > 0 && m.my_take === "liked").slice(0, 3);
+        const skip = new Set([...movies.map((m) => m.tmdb_id), ...watchlist.map((w) => w.tmdb_id)].filter(Boolean));
+        const skipTitles = new Set([...movies, ...watchlist].map((m) => m.title.toLowerCase()));
+        const seedDetails = await inBatches(seeds, 4, (m) => safe(tmdbApi.movieDetails(m.tmdb_id)));
+        const picks = [];
+        // Round-robin so each favourite contributes.
+        for (let k = 0; k < 12 && picks.length < 10; k++) {
+          for (const sd of seedDetails) {
+            const r = sd?.recommendations?.[k];
+            if (r && !skip.has(r.tmdbId) && !skipTitles.has(r.title.toLowerCase()) && !picks.some((p) => p.tmdbId === r.tmdbId)) picks.push({ ...r, because: sd.title });
+          }
         }
+        const ns = await safe(tmdbApi.nowShowing());
+        const inTheatres = new Set((ns?.nowPlaying || []).map((m) => m.tmdbId));
+        const withWhere = await inBatches(picks.slice(0, 10), 5, async (p) => {
+          const d = await safe(tmdbApi.movieDetails(p.tmdbId));
+          return { ...p, stream: d?.providers?.stream || [], inTheatres: inTheatres.has(p.tmdbId) };
+        });
+        return res.status(200).json({ results: withWhere });
+      }
+      if (type === "tv-details") {
+        const id = parseInt(req.query.id, 10);
+        if (!id || !tmdbApi.hasTmdb()) return res.status(200).json({ details: null });
+        return res.status(200).json({ details: await safe(tmdbApi.tvDetails(id)) });
+      }
+      if (type === "tv-shows") {
+        const shows = await db.listTvShows(uid);
+        // Season/episode counts and the next episode date, from TMDB.
+        const info = {};
+        if (tmdbApi.hasTmdb()) {
+          await inBatches(shows.filter((t) => t.tmdb_id), 6, async (t) => {
+            const d = await safe(tmdbApi.tvDetails(t.tmdb_id));
+            if (d) info[t.id] = { seasons: d.seasons, nextEpisode: d.nextEpisode, status: d.status, stream: d.providers.stream, poster: d.poster, episodeRuntime: d.episodeRuntime };
+          });
+        }
+        return res.status(200).json({ shows, info });
       }
       if (type === "poster") {
         const title = String(req.query.title || "").trim().slice(0, 120);
@@ -308,7 +362,7 @@ export default async function handler(req, res) {
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
           venueType: body.venueType, venueName: (body.venueName || "").trim(), genre: (body.genre || "").trim(), rating: body.rating, review: (body.review || "").trim(),
-          clientRequestId: body.clientRequestId,
+          clientRequestId: body.clientRequestId, tmdbId: body.tmdbId,
         });
         return res.status(201).json({ movie });
       }
@@ -388,7 +442,7 @@ export default async function handler(req, res) {
 
       if (type === "watchlist") {
         if (!body.title?.trim()) return err(res, "Title is required");
-        const item = await db.createWatchlistItem(uid, { title: body.title.trim(), note: (body.note || "").trim() });
+        const item = await db.createWatchlistItem(uid, { title: body.title.trim(), note: (body.note || "").trim(), tmdbId: body.tmdbId, releaseDate: body.releaseDate });
         return res.status(201).json({ item });
       }
 
@@ -401,6 +455,13 @@ export default async function handler(req, res) {
         if (!targetAmount || targetAmount <= 0) return err(res, "Enter a target amount greater than 0");
         const goal = await db.setSavingsGoal(uid, { targetAmount, targetDate: body.targetDate || null, label: (body.label || "").trim() });
         return res.status(201).json({ goal });
+      }
+
+      if (type === "tv-show") {
+        const title = String(body.title || "").trim().slice(0, 120);
+        if (!title) return err(res, "Pick a show");
+        const show = await db.createTvShow(uid, { ...body, title, platform: String(body.platform || "").slice(0, 40), note: String(body.note || "").slice(0, 140) });
+        return res.status(201).json({ show });
       }
 
       // Rate a movie after watching it (it may have been logged as a booking).
@@ -654,6 +715,7 @@ export default async function handler(req, res) {
           companions: (body.companions || "").trim(), myTake: body.myTake, publicTake: body.publicTake,
           note: (body.note || "").trim(), affectsBalance: body.affectsBalance, quantity,
           venueType: body.venueType, venueName: (body.venueName || "").trim(), genre: (body.genre || "").trim(), rating: body.rating, review: (body.review || "").trim(),
+          tmdbId: body.tmdbId,
         });
         return res.status(200).json({ movie });
       }
@@ -683,6 +745,12 @@ export default async function handler(req, res) {
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
         const recurringIncome = await db.updateRecurringIncome(uid, numId, { amount, note: body.note, dayOfMonth });
         return res.status(200).json({ recurringIncome });
+      }
+
+      if (type === "tv-show") {
+        const show = await db.updateTvShow(uid, numId, { ...body, platform: String(body.platform || "").slice(0, 40), note: String(body.note || "").slice(0, 140) });
+        if (!show) return err(res, "Show not found", 404);
+        return res.status(200).json({ show });
       }
 
       if (type === "ious") {
@@ -717,6 +785,7 @@ export default async function handler(req, res) {
       else if (type === "ious") await db.deleteIou(uid, numId);
       else if (type === "watchlist") await db.deleteWatchlistItem(uid, numId);
       else if (type === "shared-group") await db.deleteSharedGroup(uid, numId);
+      else if (type === "tv-show") await db.deleteTvShow(uid, numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }

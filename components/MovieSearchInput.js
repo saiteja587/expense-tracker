@@ -6,16 +6,16 @@ import { rememberPoster } from "./Poster";
 
 const cache = new Map();
 
-async function search(q) {
-  const key = q.toLowerCase();
+async function search(q, kind) {
+  const key = `${kind}:${q.toLowerCase()}`;
   if (cache.has(key)) return cache.get(key);
-  const res = await fetch(`/api/data?type=movie-search&q=${encodeURIComponent(q)}`);
+  const res = await fetch(`/api/data?type=${kind === "tv" ? "tv-search" : "movie-search"}&q=${encodeURIComponent(q)}`);
   const d = res.ok ? await res.json() : { results: [] };
   cache.set(key, d.results || []);
   return d.results || [];
 }
 
-const MovieSearchInput = forwardRef(function MovieSearchInput({ value, onChange, onPick, placeholder = "Movie title", id, style }, ref) {
+const MovieSearchInput = forwardRef(function MovieSearchInput({ value, onChange, onPick, placeholder = "Movie title", id, style, kind = "movie" }, ref) {
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -32,7 +32,7 @@ const MovieSearchInput = forwardRef(function MovieSearchInput({ value, onChange,
     setLoading(true);
     const t = setTimeout(async () => {
       try {
-        const r = await search(q);
+        const r = await search(q, kind);
         if (!live) return;
         setResults(r);
         setOpen(r.length > 0);
@@ -42,7 +42,7 @@ const MovieSearchInput = forwardRef(function MovieSearchInput({ value, onChange,
       }
     }, 280);
     return () => { live = false; clearTimeout(t); };
-  }, [value]);
+  }, [value, kind]);
 
   // Close when tapping elsewhere.
   useEffect(() => {

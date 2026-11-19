@@ -1,7 +1,7 @@
 // "Me": your level and badges, plus every page that isn't a main tab.
 import { useMemo } from "react";
 import Link from "next/link";
-import { Flame, PiggyBank, HandCoins, Search, Settings, Trophy, Wind, ChevronRight, Award, Wallet, Users } from "lucide-react";
+import { Flame, PiggyBank, HandCoins, Search, Settings, Trophy, Wind, ChevronRight, Award, Wallet, Users, Tv } from "lucide-react";
 import { useLedger } from "../lib/useLedger";
 import { computeBadges, levelFor } from "../lib/achievements";
 import { sugarStreak, loggingStreak } from "../lib/ledger";
@@ -94,10 +94,14 @@ export default function MePage() {
           <Row href="/budget" Icon={PiggyBank} color="#7C3AED" title="Budget & goals" sub="Limits, savings goal, alerts" />
           <Row href="/transactions" Icon={Wallet} color="#2F4858" title="Balance & transactions" sub={`${fmt(derived.balance)} balance`} />
           <Row href="/ious" Icon={HandCoins} color="#B5533C" title="Who owes what" sub={view.owedToMe || view.iOwe ? `${fmt(view.owedToMe)} owed to you · you owe ${fmt(view.iOwe)}` : "Track money between friends"} />
+          <Row href="/shows" Icon={Tv} color="#4F6FB0" title="Shows" sub="Series you're watching — next episode, where it streams" />
           <Row href="/shared" Icon={Users} color="#0D9488" title="Shared spaces" sub="Split rent, groceries or a trip with someone" />
           <Row href="/search" Icon={Search} color="#3F6E5B" title="Search" sub="Every expense, movie and note" />
           <Row href="/pause" Icon={Wind} color="#4F6BED" title="Pause" sub="A moment before you spend" />
           <Row href="/settings" Icon={Settings} color="#6B6558" title="Settings" sub="PIN, backup, theme, notifications" />
+        </div>
+        <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", marginTop: 20, lineHeight: 1.5 }}>
+          Movie and TV data from TMDB; streaming info via JustWatch.<br />This app uses the TMDB API but is not endorsed or certified by TMDB.
         </div>
       </div>
     </div>
