@@ -1,7 +1,7 @@
 // "How was it?" — rate a movie after watching it. Opened from the Movies
 // page, the Home card, or a notification (/movies?rate=<id>). Only fills in
 // what you know afterwards: your take, the crowd's, stars, snacks, who came.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { showToast } from "../lib/toast";
 import { vibrate } from "../lib/haptics";
 
@@ -46,6 +46,24 @@ export default function RateMovieSheet({ movie, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const theatre = movie.venueType !== "OTT";
+  const [tmdbHint, setTmdbHint] = useState(null);
+
+  // Don't know what the crowd thought? Suggest it from TMDB's audience score.
+  useEffect(() => {
+    if (movie.publicTake) return;
+    let live = true;
+    fetch(`/api/data?type=movie-search&q=${encodeURIComponent(movie.title)}`)
+      .then((r) => (r.ok ? r.json() : { results: [] }))
+      .then(({ results }) => {
+        if (!live || !results?.length) return;
+        const m = results.find((x) => x.title.toLowerCase() === movie.title.toLowerCase()) || results[0];
+        if (!m.crowdTake) return;
+        setPublicTake((cur) => cur || m.crowdTake);
+        setTmdbHint(m);
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [movie.title, movie.publicTake]);
 
   async function save() {
     if (!myTake) { setError("Pick how you found it"); return; }
@@ -79,6 +97,9 @@ export default function RateMovieSheet({ movie, onClose, onSaved }) {
 
         <TakeRow label="You" value={myTake} onChange={(v) => { setMyTake(v); setError(""); }} />
         <TakeRow label="The crowd / reviews" value={publicTake} onChange={setPublicTake} allowUnsure />
+        {tmdbHint && publicTake === tmdbHint.crowdTake && (
+          <div style={{ fontSize: 12, color: "var(--text-2)", margin: "-8px 0 12px" }}>Suggested from TMDB ★ {tmdbHint.rating?.toFixed(1)} ({tmdbHint.votes.toLocaleString("en-IN")} votes) — change it if you heard otherwise.</div>
+        )}
 
         <div className="field-label">Stars</div>
         <div role="radiogroup" aria-label="Your rating" style={{ display: "flex", gap: 2, marginBottom: 12 }}>

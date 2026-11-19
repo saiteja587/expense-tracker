@@ -9,6 +9,8 @@ import CountUp from "../components/CountUp";
 import { fmt, todayISO } from "../lib/format";
 import { isRated, movieStatus } from "../lib/ledger";
 import RateMovieSheet, { TAKE_CHOICES } from "../components/RateMovieSheet";
+import MovieSearchInput from "../components/MovieSearchInput";
+import NowShowing from "../components/NowShowing";
 
 const TAKES = [
   { value: "loved", label: "Loved it", score: 3, color: "var(--success)" },
@@ -96,6 +98,8 @@ export default function MoviesPage() {
   const [showWrapUp, setShowWrapUp] = useState(false);
   const [pendingWatchlistId, setPendingWatchlistId] = useState(null);
   const [rateTarget, setRateTarget] = useState(null);
+  // The TMDB match picked from the title dropdown (for the little hint).
+  const [picked, setPicked] = useState(null);
 
   async function loadWatchlist() {
     try {
@@ -220,7 +224,29 @@ export default function MoviesPage() {
     setFormError("");
   }
 
+  // A movie picked from the TMDB dropdown (or Now showing): fill in what we
+  // know — title, genre, and the crowd's verdict from TMDB's audience score.
+  // An unreleased film switches the form to "Booked" on its release date.
+  function applyPicked(m, { forceBooked } = {}) {
+    const today = todayISO();
+    const future = forceBooked || (m.releaseDate && m.releaseDate > today);
+    setPicked(m);
+    setForm((f) => {
+      const booked = future ? true : f.booked;
+      const date = booked && m.releaseDate > today && !forceBooked ? m.releaseDate : booked && f.date < today ? today : f.date;
+      return {
+        ...f,
+        title: m.title,
+        genre: f.genre || m.genre || "",
+        publicTake: booked ? "" : f.publicTake || m.crowdTake || "",
+        booked,
+        date,
+      };
+    });
+  }
+
   function cancelEdit() {
+    setPicked(null);
     setEditingId(null);
     setForm(getEmptyForm());
     setMoreDetailsOpen(false);
@@ -334,9 +360,10 @@ export default function MoviesPage() {
     }
   }
 
-  async function addToWatchlist(e) {
-    e.preventDefault();
-    if (!watchlistForm.title.trim()) {
+  async function addToWatchlist(e, direct) {
+    e?.preventDefault?.();
+    const entry = direct || { title: watchlistForm.title.trim(), note: watchlistForm.note.trim() };
+    if (!entry.title) {
       setWatchlistError("Enter a movie title");
       return;
     }
@@ -344,14 +371,14 @@ export default function MoviesPage() {
     const res = await fetch("/api/data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "watchlist", title: watchlistForm.title.trim(), note: watchlistForm.note.trim() }),
+      body: JSON.stringify({ type: "watchlist", title: entry.title, note: entry.note || "" }),
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
       setWatchlistError(d.error || "Couldn't save. Try again.");
       return;
     }
-    setWatchlistForm({ title: "", note: "" });
+    if (!direct) setWatchlistForm({ title: "", note: "" });
     await loadWatchlist();
     showToast("Added to watchlist", "🔖");
   }
@@ -714,6 +741,18 @@ export default function MoviesPage() {
         </section>
       )}
 
+      <NowShowing
+        savedTitles={watchlist.map((w) => w.title)}
+        onSave={(m) => addToWatchlist(null, { title: m.title, note: [m.language, m.releaseDate > todayISO() ? `releases ${new Date(m.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""].filter(Boolean).join(" · ") })}
+        onBook={(m) => {
+          cancelEdit();
+          applyPicked(m, { forceBooked: true });
+          setTimeout(() => {
+            titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }, 50);
+        }}
+      />
+
       <PosterWall movies={movies} />
 
       {/* Watchlist: movies you want to watch, kept separate from what you've logged */}
@@ -723,7 +762,10 @@ export default function MoviesPage() {
         </div>
         <PickForMe watchlist={watchlist} movies={movies} />
         <form onSubmit={addToWatchlist} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <input type="text" placeholder="Movie to watch" value={watchlistForm.title} onChange={(e) => setWatchlistForm({ ...watchlistForm, title: e.target.value })} maxLength={100} style={{ flex: "1 1 160px" }} />
+          <MovieSearchInput id="watch-title" placeholder="Movie to watch — type to search" value={watchlistForm.title}
+            onChange={(v) => setWatchlistForm((w) => ({ ...w, title: v }))}
+            onPick={(m) => setWatchlistForm((w) => ({ title: m.title, note: w.note || [m.language, m.releaseDate > todayISO() ? `releases ${new Date(m.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : m.year].filter(Boolean).join(" · ") }))}
+            style={{ flex: "1 1 160px" }} />
           <input type="text" placeholder="Note (optional)" value={watchlistForm.note} onChange={(e) => setWatchlistForm({ ...watchlistForm, note: e.target.value })} maxLength={100} style={{ flex: "1 1 140px" }} />
           <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
             <Plus size={13} /> Add
@@ -769,7 +811,17 @@ export default function MoviesPage() {
               ))}
             </div>
             {form.booked && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4 }}>Just the booking for now — after the show we&apos;ll ask how it was and what you spent on snacks.</div>}
-            <input ref={titleInputRef} type="text" placeholder="Movie title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} />
+            <MovieSearchInput ref={titleInputRef} id="log-title" placeholder="Movie title — start typing to search" value={form.title}
+              onChange={(v) => { setForm((f) => ({ ...f, title: v })); if (picked && v !== picked.title) setPicked(null); }}
+              onPick={(m) => applyPicked(m)} />
+            {picked && (
+              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: -4 }}>
+                ✓ {[picked.year, picked.language, picked.genre].filter(Boolean).join(" · ")}
+                {picked.rating != null && <> · TMDB ★ {picked.rating.toFixed(1)}</>}
+                {!form.booked && picked.crowdTake && form.publicTake === picked.crowdTake && <> — crowd take set to “{TAKES.find((t) => t.value === picked.crowdTake)?.label}”</>}
+                {picked.overview && <div style={{ color: "var(--muted)", marginTop: 2, lineHeight: 1.4 }}>{picked.overview}{picked.overview.length >= 220 ? "…" : ""}</div>}
+              </div>
+            )}
             <div>
               <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>{form.booked ? "Watching at" : "Watched via"}</label>
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>

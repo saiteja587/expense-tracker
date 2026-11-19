@@ -87,6 +87,73 @@ async function lookupPoster(title, year) {
   return poster;
 }
 
+// ---- TMDB search / now showing (needs TMDB_API_KEY; empty without it) ----
+// TMDB genre ids → the app's genre list.
+const TMDB_GENRES = {
+  28: "Action", 12: "Action", 10752: "Action", 37: "Action", 16: "Animation", 35: "Comedy", 10751: "Comedy",
+  80: "Thriller", 53: "Thriller", 9648: "Thriller", 99: "Documentary", 18: "Drama", 36: "Drama",
+  27: "Horror", 10749: "Romance", 878: "Sci-Fi", 14: "Sci-Fi",
+};
+// The crowd's verdict from TMDB's audience score (only with enough votes).
+function crowdTake(avg, votes) {
+  if (!votes || votes < 15 || !avg) return "";
+  return avg >= 7.5 ? "loved" : avg >= 6.5 ? "liked" : avg >= 5.5 ? "okay" : "disliked";
+}
+async function tmdb(path, params = {}) {
+  const apiKey = process.env.TMDB_API_KEY;
+  const isBearer = apiKey.startsWith("eyJ");
+  const url = new URL(`https://api.themoviedb.org/3${path}`);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
+  if (!isBearer) url.searchParams.set("api_key", apiKey);
+  const r = await fetch(url, { headers: isBearer ? { Authorization: `Bearer ${apiKey}` } : {} });
+  if (!r.ok) throw new Error(`TMDB ${r.status}`);
+  return r.json();
+}
+const LANGS = { te: "Telugu", ta: "Tamil", hi: "Hindi", ml: "Malayalam", kn: "Kannada", en: "English", bn: "Bengali", mr: "Marathi", ko: "Korean", ja: "Japanese" };
+function shapeMovie(m) {
+  const year = (m.release_date || "").slice(0, 4);
+  return {
+    tmdbId: m.id,
+    title: m.title || m.original_title,
+    year,
+    releaseDate: m.release_date || "",
+    poster: m.poster_path ? `https://image.tmdb.org/t/p/w154${m.poster_path}` : null,
+    genre: (m.genre_ids || []).map((g) => TMDB_GENRES[g]).find(Boolean) || "",
+    rating: m.vote_count >= 15 ? Math.round(m.vote_average * 10) / 10 : null,
+    votes: m.vote_count || 0,
+    crowdTake: crowdTake(m.vote_average, m.vote_count),
+    language: LANGS[m.original_language] || "",
+    overview: (m.overview || "").slice(0, 220),
+  };
+}
+const searchCache = new Map(); // query → { at, results }
+const SEARCH_TTL = 6 * 3600 * 1000;
+async function searchMovies(q) {
+  const key = q.toLowerCase();
+  const hit = searchCache.get(key);
+  if (hit && Date.now() - hit.at < SEARCH_TTL) return hit.results;
+  const d = await tmdb("/search/movie", { query: q, include_adult: "false", region: "IN" });
+  // Popular, well-known matches first; then whatever else matched.
+  const results = (d.results || [])
+    .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+    .slice(0, 7)
+    .map(shapeMovie);
+  if (searchCache.size > 500) searchCache.clear();
+  searchCache.set(key, { at: Date.now(), results });
+  return results;
+}
+let nowCache = null;
+async function nowShowing() {
+  if (nowCache && Date.now() - nowCache.at < SEARCH_TTL) return nowCache;
+  const [now, soon] = await Promise.all([
+    tmdb("/movie/now_playing", { region: "IN", page: 1 }),
+    tmdb("/movie/upcoming", { region: "IN", page: 1 }),
+  ]);
+  const shape = (list) => (list.results || []).filter((m) => m.poster_path).sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 12).map(shapeMovie);
+  nowCache = { at: Date.now(), nowPlaying: shape(now), upcoming: shape(soon) };
+  return nowCache;
+}
+
 function err(res, msg, status = 400) {
   return res.status(status).json({ error: msg });
 }
@@ -142,6 +209,28 @@ export default async function handler(req, res) {
       }
       // Movie poster lookup via TMDB (free API key in TMDB_API_KEY). Without a
       // key the app shows generated poster tiles instead.
+      // Type-ahead for movie titles.
+      if (type === "movie-search") {
+        const q = String(req.query.q || "").trim().slice(0, 80);
+        if (q.length < 2 || !process.env.TMDB_API_KEY) return res.status(200).json({ results: [] });
+        try {
+          return res.status(200).json({ results: await searchMovies(q) });
+        } catch (e) {
+          console.error("[movie-search]", e.message);
+          return res.status(200).json({ results: [] });
+        }
+      }
+      // What's in Indian theatres now, and coming soon.
+      if (type === "now-showing") {
+        if (!process.env.TMDB_API_KEY) return res.status(200).json({ nowPlaying: [], upcoming: [] });
+        try {
+          const d = await nowShowing();
+          return res.status(200).json({ nowPlaying: d.nowPlaying, upcoming: d.upcoming });
+        } catch (e) {
+          console.error("[now-showing]", e.message);
+          return res.status(200).json({ nowPlaying: [], upcoming: [] });
+        }
+      }
       if (type === "poster") {
         const title = String(req.query.title || "").trim().slice(0, 120);
         if (!title || !process.env.TMDB_API_KEY) return res.status(200).json({ url: null });

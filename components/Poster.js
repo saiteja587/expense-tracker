@@ -18,6 +18,12 @@ function remember(key, url) {
   try { localStorage.setItem(CACHE_KEY, JSON.stringify(memory)); } catch { /* full */ }
 }
 
+// The movie search knows the exact poster for the film you picked (not just
+// the best title match), so it's stored here for every screen to use.
+export function rememberPoster(title, url) {
+  if (title && url) remember(title.trim().toLowerCase(), url);
+}
+
 async function lookup(title) {
   const key = title.trim().toLowerCase();
   if (key in memory) return memory[key];
