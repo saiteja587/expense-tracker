@@ -9,6 +9,11 @@ import CountUp from "../components/CountUp";
 import { fmt, todayISO } from "../lib/format";
 import { isRated, movieStatus } from "../lib/ledger";
 import RateMovieSheet, { TAKE_CHOICES } from "../components/RateMovieSheet";
+import MovieSearchInput from "../components/MovieSearchInput";
+import NowShowing from "../components/NowShowing";
+import MovieDetailSheet from "../components/MovieDetailSheet";
+import { useLedger } from "../lib/useLedger";
+import { userOttApps, onYourApps, movieStats, avgNightOut, LANGUAGE_CODES, SERVICE_NAMES, ottKey } from "../lib/movieStats";
 
 const TAKES = [
   { value: "loved", label: "Loved it", score: 3, color: "var(--success)" },
@@ -36,15 +41,10 @@ function getEmptyForm() {
   return {
     title: "", date: todayISO(), time: nowTimeHHMM(), ticketPrice: "", canteenPrice: "", companions: "",
     myTake: "", publicTake: "", note: "", affectsBalance: true, quantity: 1, booked: false,
-    venueType: "Theatre", venueName: "", venueNameOther: "", genre: "", rating: 0, review: "",
+    venueType: "Theatre", venueName: "", venueNameOther: "", genre: "", rating: 0, review: "", tmdbId: null,
   };
 }
 
-// A generic "find where to watch" link — JustWatch covers Indian availability
-// across theatres/OTT without needing per-platform API keys.
-function whereToWatchUrl(title) {
-  return `https://www.justwatch.com/in/search?q=${encodeURIComponent(title)}`;
-}
 
 function QuantityStepper({ value, onChange }) {
   return (
@@ -96,6 +96,15 @@ export default function MoviesPage() {
   const [showWrapUp, setShowWrapUp] = useState(false);
   const [pendingWatchlistId, setPendingWatchlistId] = useState(null);
   const [rateTarget, setRateTarget] = useState(null);
+  // The TMDB match picked from the title dropdown (for the little hint).
+  const [picked, setPicked] = useState(null);
+  // TMDB extras: detail sheet, per-movie runtime/cast/etc., watchlist
+  // availability, and recommendations.
+  const [detail, setDetail] = useState(null);
+  const [meta, setMeta] = useState(null);
+  const [wlInfo, setWlInfo] = useState({});
+  const [recs, setRecs] = useState([]);
+  const { data: ledger } = useLedger();
 
   async function loadWatchlist() {
     try {
@@ -140,6 +149,7 @@ export default function MoviesPage() {
         venueType: m.venue_type || "Theatre",
         venueName: m.venue_name || "",
         genre: m.genre || "",
+        tmdbId: m.tmdb_id > 0 ? m.tmdb_id : null,
       }));
       setMovies(mapped);
       localStorage.setItem("cache_movies", JSON.stringify(mapped));
@@ -178,6 +188,73 @@ export default function MoviesPage() {
     if (m) setRateTarget(m);
   }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // TMDB: runtimes/cast/franchises for stats (asks again while some of
+  // your older movies are still being matched), then recommendations.
+  useEffect(() => {
+    if (!loaded) return;
+    let live = true;
+    (async () => {
+      for (let k = 0; k < 4 && live; k++) {
+        const d = await fetch("/api/data?type=movie-meta").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        if (!d || !live) return;
+        setMeta(d);
+        if (!d.pending) break;
+      }
+      const r = await fetch("/api/data?type=recommendations").then((x) => (x.ok ? x.json() : null)).catch(() => null);
+      if (live && r) setRecs(r.results || []);
+    })();
+    return () => { live = false; };
+  }, [loaded]);
+
+  const watchKey = watchlist.map((w) => w.id).join(",");
+  useEffect(() => {
+    if (!watchKey) { setWlInfo({}); return; }
+    fetch("/api/data?type=watchlist-info").then((r) => (r.ok ? r.json() : null)).then((d) => d && setWlInfo(d.items || {})).catch(() => {});
+  }, [watchKey]);
+
+  // Links from notifications: ?details=<tmdbId> opens the details sheet,
+  // ?book=<tmdbId> starts a booking for that film.
+  useEffect(() => {
+    if (!loaded || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const det = parseInt(params.get("details"), 10);
+    const book = parseInt(params.get("book"), 10);
+    if (det) setDetail({ tmdbId: det });
+    if (book) {
+      fetch(`/api/data?type=movie-details&id=${book}`).then((r) => r.json()).then(({ details }) => {
+        if (!details) return;
+        applyPicked({ ...details, releaseDate: details.indiaRelease || details.releaseDate }, { forceBooked: true });
+        setTimeout(() => titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+      }).catch(() => {});
+    }
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const today = todayISO();
+  const expenses = useMemo(() => ledger?.expenses || [], [ledger]);
+  const moviesWithIds = useMemo(() => movies.map((m) => ({ ...m, tmdbId: m.tmdbId || meta?.ids?.[m.id] || null })), [movies, meta]);
+  const userApps = useMemo(() => userOttApps({ movies, expenses, todayIso: today }), [movies, expenses, today]);
+  const nightOut = useMemo(() => avgNightOut(movies), [movies]);
+  const lovedGenres = useMemo(() => new Set(movies.filter((m) => m.myTake === "loved" && m.genre).map((m) => m.genre)), [movies]);
+  const seenIds = useMemo(() => new Set(moviesWithIds.map((m) => m.tmdbId).filter(Boolean)), [moviesWithIds]);
+  const savedIds = useMemo(() => new Set(Object.values(wlInfo).map((i) => i.tmdbId)), [wlInfo]);
+  const tmdbStats = useMemo(() => (meta ? movieStats({ movies: moviesWithIds, meta: meta.meta, collections: meta.collections, expenses, todayIso: today }) : null), [meta, moviesWithIds, expenses, today]);
+  const browseLangs = useMemo(() => (tmdbStats?.languages || []).filter((l) => LANGUAGE_CODES[l.name] && l.name !== "English").slice(0, 2).map((l) => ({ code: LANGUAGE_CODES[l.name], name: l.name })), [tmdbStats]);
+  // Watchlist films you can stream tonight on an app you already have.
+  const streamable = useMemo(() => {
+    const byApp = {};
+    for (const w of watchlist) {
+      for (const p of onYourApps({ stream: wlInfo[w.id]?.stream || [] }, userApps)) {
+        const k = ottKey(p.name);
+        (byApp[k] = byApp[k] || []).push(w.title);
+      }
+    }
+    return Object.entries(byApp).sort((a, b) => b[1].length - a[1].length);
+  }, [watchlist, wlInfo, userApps]);
+
+  function openDetail(m) {
+    setDetail({ tmdbId: m.tmdbId || null, title: m.title, year: m.year || (m.date ? m.date.slice(0, 4) : "") });
+  }
+
   const titleInputRef = useRef(null);
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -215,12 +292,36 @@ export default function MoviesPage() {
       venueName: knownOption,
       venueNameOther: knownOption === "Other" ? m.venueName : "",
       genre: m.genre || "",
+      tmdbId: m.tmdbId || null,
     });
     setMoreDetailsOpen(true);
     setFormError("");
   }
 
+  // A movie picked from the TMDB dropdown (or Now showing): fill in what we
+  // know — title, genre, and the crowd's verdict from TMDB's audience score.
+  // An unreleased film switches the form to "Booked" on its release date.
+  function applyPicked(m, { forceBooked } = {}) {
+    const today = todayISO();
+    const future = forceBooked || (m.releaseDate && m.releaseDate > today);
+    setPicked(m);
+    setForm((f) => {
+      const booked = future ? true : f.booked;
+      const date = booked && m.releaseDate > today && !forceBooked ? m.releaseDate : booked && f.date < today ? today : f.date;
+      return {
+        ...f,
+        title: m.title,
+        tmdbId: m.tmdbId || null,
+        genre: f.genre || m.genre || "",
+        publicTake: booked ? "" : f.publicTake || m.crowdTake || "",
+        booked,
+        date,
+      };
+    });
+  }
+
   function cancelEdit() {
+    setPicked(null);
     setEditingId(null);
     setForm(getEmptyForm());
     setMoreDetailsOpen(false);
@@ -278,6 +379,7 @@ export default function MoviesPage() {
       venueType: form.venueType,
       venueName: resolvedVenueName,
       genre: form.genre,
+      tmdbId: form.tmdbId || undefined,
       rating: booked ? null : form.rating || null,
       review: booked ? "" : (form.review || "").trim(),
       ...(isEdit ? {} : { clientRequestId: newRequestId() }),
@@ -334,9 +436,10 @@ export default function MoviesPage() {
     }
   }
 
-  async function addToWatchlist(e) {
-    e.preventDefault();
-    if (!watchlistForm.title.trim()) {
+  async function addToWatchlist(e, direct) {
+    e?.preventDefault?.();
+    const entry = direct || { title: watchlistForm.title.trim(), note: watchlistForm.note.trim(), tmdbId: watchlistForm.tmdbId, releaseDate: watchlistForm.releaseDate };
+    if (!entry.title) {
       setWatchlistError("Enter a movie title");
       return;
     }
@@ -344,14 +447,14 @@ export default function MoviesPage() {
     const res = await fetch("/api/data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "watchlist", title: watchlistForm.title.trim(), note: watchlistForm.note.trim() }),
+      body: JSON.stringify({ type: "watchlist", title: entry.title, note: entry.note || "", tmdbId: entry.tmdbId, releaseDate: entry.releaseDate }),
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
       setWatchlistError(d.error || "Couldn't save. Try again.");
       return;
     }
-    setWatchlistForm({ title: "", note: "" });
+    if (!direct) setWatchlistForm({ title: "", note: "" });
     await loadWatchlist();
     showToast("Added to watchlist", "🔖");
   }
@@ -509,6 +612,7 @@ export default function MoviesPage() {
           <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
             Tickets, snacks, who you went with, and whether the crowd agreed with you.
           </div>
+          <Link href="/shows" className="chip" style={{ textDecoration: "none", marginTop: 8, display: "inline-flex" }}>📺 Your TV shows →</Link>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button onClick={() => setViewDate(new Date(year, month - 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }} aria-label="Previous month">
@@ -625,6 +729,47 @@ export default function MoviesPage() {
         </div>
       )}
 
+      {tmdbStats && tmdbStats.matched > 0 && (
+        <section aria-label="Your movies in numbers" className="card" style={{ padding: "16px 18px", borderRadius: 18, marginBottom: 28 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>🎞️ Your movies in numbers</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 14 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>Hours watched</div>
+              <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700 }}><CountUp value={tmdbStats.hours} />h</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{tmdbStats.theatreHours}h theatre · {tmdbStats.ottHours}h OTT</div>
+            </div>
+            {tmdbStats.costPerHourTheatre != null && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Cost per hour</div>
+                <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700 }}>{fmt(tmdbStats.costPerHourTheatre)}</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)" }}>in theatres{tmdbStats.costPerHourOtt != null ? ` · ${fmt(tmdbStats.costPerHourOtt)}/h streaming` : ""}</div>
+              </div>
+            )}
+            {tmdbStats.topActors[0] && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Favourite actor</div>
+                <div className="lora" style={{ fontSize: 16, fontWeight: 700 }}>{tmdbStats.topActors[0].name}</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{tmdbStats.topActors[0].count} movies{tmdbStats.topDirectors[0] ? ` · director: ${tmdbStats.topDirectors[0].name}` : ""}</div>
+              </div>
+            )}
+          </div>
+          {tmdbStats.languages.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ display: "flex", height: 10, borderRadius: 6, overflow: "hidden", background: "var(--line)" }}>
+                {tmdbStats.languages.map((l, k) => <span key={l.name} title={`${l.name} ${l.pct}%`} style={{ width: `${l.pct}%`, background: ["#B0567F", "#3F6E5B", "#C98A00", "#4F6FB0"][k] }} />)}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 5 }}>{tmdbStats.languages.map((l) => `${l.name} ${l.pct}%`).join(" · ")}</div>
+            </div>
+          )}
+          {tmdbStats.franchises.slice(0, 2).map((f) => (
+            <div key={f.name} style={{ marginTop: 12, fontSize: 13 }}>
+              <b>{f.name}</b>: seen {f.seen} of {f.total}{f.next ? <> — next up: <button type="button" onClick={() => setDetail({ tmdbId: f.next.tmdbId, title: f.next.title })} style={{ background: "none", border: "none", padding: 0, color: "var(--accent-solid)", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>{f.next.title}</button></> : " 🎉"}
+            </div>
+          ))}
+          {tmdbStats.matched < tmdbStats.total && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10 }}>Based on {tmdbStats.matched} of {tmdbStats.total} movies matched on TMDB.</div>}
+        </section>
+      )}
+
       {yearWrapUp && (
         <div style={{ marginBottom: 32 }}>
           <button
@@ -714,6 +859,42 @@ export default function MoviesPage() {
         </section>
       )}
 
+      <NowShowing
+        savedTitles={watchlist.map((w) => w.title)}
+        langs={browseLangs}
+        nightOut={nightOut}
+        onOpen={(m) => setDetail({ tmdbId: m.tmdbId, title: m.title })}
+        onSave={(m) => addToWatchlist(null, { title: m.title, tmdbId: m.tmdbId, releaseDate: m.releaseDate, note: [m.language, m.releaseDate > todayISO() ? `releases ${new Date(m.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""].filter(Boolean).join(" · ") })}
+        onBook={(m) => {
+          cancelEdit();
+          applyPicked(m, { forceBooked: true });
+          setTimeout(() => {
+            titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }, 50);
+        }}
+      />
+
+      {recs.length > 0 && (
+        <section aria-label="Recommended for you" style={{ marginBottom: 28 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>✨ Because you loved {recs[0].because}{new Set(recs.map((r) => r.because)).size > 1 ? " & more" : ""}</div>
+          <div className="h-scroll" data-no-tab-swipe="1" style={{ gap: 12, paddingBottom: 6 }}>
+            {recs.map((r) => {
+              const mine = onYourApps({ stream: r.stream }, userApps)[0];
+              return (
+                <button key={r.tmdbId} type="button" onClick={() => setDetail({ tmdbId: r.tmdbId, title: r.title })}
+                  style={{ flex: "0 0 104px", width: 104, background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer", color: "inherit" }}>
+                  <img src={r.poster} alt="" width={104} height={156} loading="lazy" style={{ width: 104, height: 156, objectFit: "cover", borderRadius: 12, background: "var(--line)", display: "block" }} />
+                  <div style={{ fontSize: 12, fontWeight: 600, marginTop: 5, lineHeight: 1.2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.title}</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, marginTop: 2, color: mine || r.inTheatres ? "var(--success)" : "var(--muted)" }}>
+                    {mine ? `📺 On ${mine.name}` : r.inTheatres ? "🍿 In theatres" : r.rating != null ? `★ ${r.rating.toFixed(1)}` : r.year}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <PosterWall movies={movies} />
 
       {/* Watchlist: movies you want to watch, kept separate from what you've logged */}
@@ -721,9 +902,20 @@ export default function MoviesPage() {
         <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
           <Bookmark size={15} color="#7A3E56" /> Watchlist
         </div>
-        <PickForMe watchlist={watchlist} movies={movies} />
+        {streamable.length > 0 && (
+          <div className="card" style={{ padding: "10px 12px", borderRadius: 14, marginBottom: 12, borderLeft: "4px solid var(--success)" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+              📺 {streamable[0][1].length} on your watchlist {streamable[0][1].length === 1 ? "is" : "are"} on {SERVICE_NAMES[streamable[0][0]] || streamable[0][0]} — an app you already use
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>{streamable[0][1].slice(0, 3).join(", ")}{streamable[0][1].length > 3 ? "…" : ""} — no ticket needed.</div>
+          </div>
+        )}
+        <PickForMe watchlist={watchlist} movies={movies} info={wlInfo} recs={recs} userApps={userApps} />
         <form onSubmit={addToWatchlist} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <input type="text" placeholder="Movie to watch" value={watchlistForm.title} onChange={(e) => setWatchlistForm({ ...watchlistForm, title: e.target.value })} maxLength={100} style={{ flex: "1 1 160px" }} />
+          <MovieSearchInput id="watch-title" placeholder="Movie to watch — type to search" value={watchlistForm.title}
+            onChange={(v) => setWatchlistForm((w) => ({ ...w, title: v, tmdbId: null, releaseDate: null }))}
+            onPick={(m) => setWatchlistForm((w) => ({ title: m.title, tmdbId: m.tmdbId, releaseDate: m.releaseDate, note: w.note || [m.language, m.releaseDate > todayISO() ? `releases ${new Date(m.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : m.year].filter(Boolean).join(" · ") }))}
+            style={{ flex: "1 1 160px" }} />
           <input type="text" placeholder="Note (optional)" value={watchlistForm.note} onChange={(e) => setWatchlistForm({ ...watchlistForm, note: e.target.value })} maxLength={100} style={{ flex: "1 1 140px" }} />
           <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
             <Plus size={13} /> Add
@@ -736,10 +928,27 @@ export default function MoviesPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {watchlist.map((w) => (
               <div key={w.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
-                <Poster title={w.title} width={40} radius={7} />
+                <button type="button" onClick={() => openDetail({ ...w, tmdbId: wlInfo[w.id]?.tmdbId })} aria-label={`${w.title} details`} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+                  <Poster title={w.title} width={40} radius={7} />
+                </button>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 14 }}>{w.title}</div>
-                  {w.note && <div style={{ fontSize: 12, color: "var(--muted)" }}>{w.note}</div>}
+                  <div style={{ fontSize: 14 }}>{w.title}{wlInfo[w.id]?.rating != null && <span style={{ fontSize: 12, color: "#C98A00", fontWeight: 600 }}> ★{wlInfo[w.id].rating.toFixed(1)}</span>}</div>
+                  {(() => {
+                    const i = wlInfo[w.id];
+                    if (!i) return w.note ? <div style={{ fontSize: 12, color: "var(--muted)" }}>{w.note}</div> : null;
+                    const mine = onYourApps({ stream: i.stream }, userApps)[0];
+                    const badge = mine ? { t: `📺 On ${mine.name} — you have it`, c: "var(--success)" }
+                      : i.inTheatres ? { t: "🍿 In theatres now", c: "var(--success)" }
+                      : i.releaseDate && i.releaseDate > today ? { t: `🗓️ Releases ${new Date(i.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })} — we'll remind you`, c: "var(--text-2)" }
+                      : i.stream?.length ? { t: `On ${i.stream.slice(0, 2).map((p) => p.name).join(", ")}`, c: "var(--text-2)" }
+                      : null;
+                    return (
+                      <>
+                        {badge && <div style={{ fontSize: 12, color: badge.c, fontWeight: 600 }}>{badge.t}</div>}
+                        {w.note && <div style={{ fontSize: 12, color: "var(--muted)" }}>{w.note}</div>}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                   <button type="button" onClick={() => moveToWatched(w)} style={{ background: "var(--surface-2)", border: "none", borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 500, color: "var(--text-2)", cursor: "pointer" }}>
@@ -769,7 +978,17 @@ export default function MoviesPage() {
               ))}
             </div>
             {form.booked && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4 }}>Just the booking for now — after the show we&apos;ll ask how it was and what you spent on snacks.</div>}
-            <input ref={titleInputRef} type="text" placeholder="Movie title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} maxLength={100} />
+            <MovieSearchInput ref={titleInputRef} id="log-title" placeholder="Movie title — start typing to search" value={form.title}
+              onChange={(v) => { setForm((f) => ({ ...f, title: v, tmdbId: picked && v !== picked.title ? null : f.tmdbId })); if (picked && v !== picked.title) setPicked(null); }}
+              onPick={(m) => applyPicked(m)} />
+            {picked && (
+              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: -4 }}>
+                ✓ {[picked.year, picked.language, picked.genre].filter(Boolean).join(" · ")}
+                {picked.rating != null && <> · TMDB ★ {picked.rating.toFixed(1)}</>}
+                {!form.booked && picked.crowdTake && form.publicTake === picked.crowdTake && <> — crowd take set to “{TAKES.find((t) => t.value === picked.crowdTake)?.label}”</>}
+                {picked.overview && <div style={{ color: "var(--muted)", marginTop: 2, lineHeight: 1.4 }}>{picked.overview}{picked.overview.length >= 220 ? "…" : ""}</div>}
+              </div>
+            )}
             <div>
               <label style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>{form.booked ? "Watching at" : "Watched via"}</label>
               <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
@@ -927,7 +1146,9 @@ export default function MoviesPage() {
                 const mismatch = diverges(m);
                 return (
                   <div key={m.id} className="card" style={{ border: "1px solid var(--line)", borderRadius: 4, padding: "14px 16px", display: "flex", gap: 14 }}>
-                    <Poster title={m.title} width={64} />
+                    <button type="button" onClick={() => openDetail(m)} aria-label={`${m.title} details`} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", alignSelf: "flex-start" }}>
+                      <Poster title={m.title} width={64} />
+                    </button>
                     <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                       <div style={{ minWidth: 0 }}>
@@ -948,7 +1169,7 @@ export default function MoviesPage() {
                           {m.affectsBalance === false && <> · not deducted from balance</>}
                           {m.pending && <> · pending sync</>}
                           {!m.pending && (
-                            <> · <a href={whereToWatchUrl(m.title)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--danger)", textDecoration: "none" }}>where to watch →</a></>
+                            <> · <button type="button" onClick={() => openDetail(m)} style={{ background: "none", border: "none", padding: 0, color: "var(--danger)", cursor: "pointer", fontSize: 12 }}>details →</button></>
                           )}
                         </div>
                       </div>
@@ -1010,6 +1231,23 @@ export default function MoviesPage() {
         </div>
       </div>
       {rateTarget && <RateMovieSheet movie={rateTarget} onClose={() => setRateTarget(null)} onSaved={() => load()} />}
+      {detail && (
+        <MovieDetailSheet
+          target={detail}
+          onClose={() => setDetail(null)}
+          userApps={userApps} nightOut={nightOut} lovedGenres={lovedGenres} seenIds={seenIds} savedIds={savedIds}
+          onSave={(d) => { addToWatchlist(null, { title: d.title, tmdbId: d.tmdbId, releaseDate: d.indiaRelease || d.releaseDate, note: d.language || "" }); }}
+          onLog={(d) => {
+            setDetail(null);
+            cancelEdit();
+            applyPicked({ ...d, releaseDate: d.indiaRelease || d.releaseDate });
+            setTimeout(() => titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 250);
+          }}
+        />
+      )}
+      <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", marginTop: 32 }}>
+        Movie data from TMDB. This app uses the TMDB API but is not endorsed or certified by TMDB.
+      </div>
     </div>
   );
 }

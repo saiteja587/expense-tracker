@@ -1,4 +1,7 @@
-import { listUsers, listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup, getBillsPaid } from "../../lib/db";
+import { listUsers, listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup, getBillsPaid, listWatchlist, updateWatchlistMeta } from "../../lib/db";
+import { hasTmdb, movieDetails } from "../../lib/tmdb";
+import { ottKey, userOttApps, SERVICE_NAMES } from "../../lib/movieStats";
+import { mapExpense, mapMovie } from "../../lib/ledger";
 import { buildExport } from "./data";
 import { sendToUser } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
@@ -51,6 +54,15 @@ async function runForUser(uid, local) {
         // Late shows (and anything the evening check missed).
         await sendToAllDevices({ title: `🍿 How was ${m.title}?`, body: "Rate it while it's fresh — and add what you spent on snacks.", url: `/movies?rate=${m.id}` });
         sentItems.push(`rate:${m.title}`);
+      }
+    }
+
+    // Watchlist: release-day reminders and "now streaming on your app" alerts.
+    if (hasTmdb()) {
+      try {
+        sentItems.push(...(await watchlistAlerts(uid, today, movies, sendToAllDevices)));
+      } catch (e) {
+        console.error(`[cron-daily] watchlist alerts for user ${uid} failed:`, e);
       }
     }
 
@@ -138,4 +150,41 @@ async function runForUser(uid, local) {
     }
 
     return sentItems;
+}
+
+async function watchlistAlerts(uid, today, movieRows, send) {
+  const sent = [];
+  const items = (await listWatchlist(uid)).filter((w) => w.tmdb_id).slice(0, 30);
+  if (!items.length) return sent;
+  const tomorrow = addDaysISO(today, 1);
+  const apps = userOttApps({ movies: movieRows.map(mapMovie), expenses: (await listExpenses(uid)).map(mapExpense), todayIso: today });
+  for (const w of items) {
+    let d;
+    try { d = await movieDetails(w.tmdb_id); } catch { continue; }
+    const notified = new Set(String(w.notified || "").split(",").filter(Boolean));
+    const rel = d.indiaRelease || d.releaseDate || "";
+    if (rel === tomorrow && !notified.has(`rel1:${rel}`)) {
+      await send({ title: `🎟️ ${w.title} releases tomorrow`, body: "Book tickets? Tap to log the booking.", url: `/movies?book=${w.tmdb_id}` });
+      notified.add(`rel1:${rel}`);
+      sent.push(`release-tomorrow:${w.title}`);
+    } else if (rel === today && !notified.has(`rel0:${rel}`)) {
+      await send({ title: `🍿 ${w.title} is out today`, body: "In theatres now — tap to book or see where it's playing.", url: `/movies?book=${w.tmdb_id}` });
+      notified.add(`rel0:${rel}`);
+      sent.push(`release-today:${w.title}`);
+    }
+    // Streaming: alert when it lands on an app you use (any app if we
+    // don't know yours yet). The first check only records what's there.
+    const now = [...new Set(d.providers.stream.map((p) => ottKey(p.name)).filter(Boolean))];
+    const before = new Set(String(w.last_providers || "").split(",").filter(Boolean));
+    const firstCheck = !notified.has("checked");
+    const fresh = now.filter((k) => !before.has(k) && (apps.size === 0 || apps.has(k)));
+    if (!firstCheck && fresh.length) {
+      const names = fresh.map((k) => SERVICE_NAMES[k] || d.providers.stream.find((p) => ottKey(p.name) === k)?.name || k).join(" & ");
+      await send({ title: `📺 ${w.title} is now on ${names}`, body: "Streaming now on an app you use — no ticket needed.", url: `/movies?details=${w.tmdb_id}` });
+      sent.push(`now-streaming:${w.title}`);
+    }
+    notified.add("checked");
+    await updateWatchlistMeta(uid, w.id, { releaseDate: rel || null, lastProviders: now.join(","), notified: [...notified].join(",") });
+  }
+  return sent;
 }

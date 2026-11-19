@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import Poster from "./Poster";
 import { vibrate } from "../lib/haptics";
 import { movieStatus } from "../lib/ledger";
+import { ottKey } from "../lib/movieStats";
 
 export function PosterWall({ movies }) {
   const [year, setYear] = useState(() => String(new Date().getFullYear()));
@@ -43,16 +44,23 @@ export function PosterWall({ movies }) {
   );
 }
 
-// Spins through your watchlist and lands on one. With an empty watchlist it
-// suggests rewatching your highest-rated movie.
-export function PickForMe({ watchlist, movies }) {
+// Spins through your watchlist and lands on one — favouring ones already on
+// a streaming app you use. With an empty watchlist it picks from TMDB
+// recommendations, or suggests rewatching your highest-rated movie.
+export function PickForMe({ watchlist, movies, info = {}, recs = [], userApps }) {
   const [shown, setShown] = useState(null);
   const [spinning, setSpinning] = useState(false);
   const timer = useRef(null);
 
   function spin() {
     if (spinning) return;
-    const pool = watchlist.map((w) => ({ title: w.title, why: w.note || "From your watchlist" }));
+    let pool = watchlist.map((w) => {
+      const mine = (info[w.id]?.stream || []).find((p) => userApps?.has(ottKey(p.name)));
+      return { title: w.title, why: mine ? `On ${mine.name} — an app you have 📺` : info[w.id]?.inTheatres ? "In theatres now 🍿" : w.note || "From your watchlist", weight: mine ? 3 : 1 };
+    });
+    if (!pool.length && recs.length) pool = recs.map((r) => ({ title: r.title, why: `Because you loved ${r.because}`, weight: 1 }));
+    // Streamable-tonight picks count three times.
+    pool = pool.flatMap((p) => Array(p.weight).fill(p));
     if (!pool.length) {
       const fav = [...movies].filter((m) => m.rating >= 4).sort((a, b) => b.rating - a.rating)[0];
       setShown(fav ? { title: fav.title, why: `A rewatch? You gave it ${"★".repeat(fav.rating)}` } : { title: "Add some to your watchlist first", why: "" });
