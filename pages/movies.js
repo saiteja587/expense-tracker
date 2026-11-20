@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import Poster from "../components/Poster";
 import { PosterWall, PickForMe } from "../components/MovieExtras";
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3, Bookmark, Sparkles } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3, Bookmark, Sparkles, Share2, GripVertical } from "lucide-react";
 import { queueRequest, newRequestId } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
 import CountUp from "../components/CountUp";
@@ -12,6 +12,9 @@ import RateMovieSheet, { TAKE_CHOICES } from "../components/RateMovieSheet";
 import MovieSearchInput from "../components/MovieSearchInput";
 import NowShowing from "../components/NowShowing";
 import MovieDetailSheet from "../components/MovieDetailSheet";
+import WatchTogether from "../components/WatchTogether";
+import SwipeRow from "../components/SwipeRow";
+import { shareMovieCard } from "../lib/shareCard";
 import { useLedger } from "../lib/useLedger";
 import { userOttApps, onYourApps, movieStats, avgNightOut, LANGUAGE_CODES, SERVICE_NAMES, ottKey } from "../lib/movieStats";
 
@@ -101,6 +104,14 @@ export default function MoviesPage() {
   const [tab, setTab] = useState("diary");
   const [wlFilter, setWlFilter] = useState("all");
   const [wlShowAll, setWlShowAll] = useState(false);
+  // Monthly movie budget (a "Movies" category limit) and movie-night splits.
+  const [movieBudget, setMovieBudget] = useState(null);
+  const [budgetDraft, setBudgetDraft] = useState(null); // null = not editing
+  const [split, setSplit] = useState({ on: false, names: "", snacks: true });
+  // Drag-to-reorder the watchlist.
+  const [dragOrder, setDragOrder] = useState(null);
+  const dragRef = useRef(null);
+  const rowRefs = useRef({});
   // The TMDB match picked from the title dropdown (for the little hint).
   const [picked, setPicked] = useState(null);
   // TMDB extras: detail sheet, per-movie runtime/cast/etc., watchlist
@@ -133,6 +144,8 @@ export default function MoviesPage() {
         const ruleData = await ruleRes.json();
         const rule = ruleData.rules.find((r) => r.rule_type === "movie_count");
         setMovieCountGuideline(rule ? parseFloat(rule.amount) : null);
+        const mb = ruleData.rules.find((r) => r.rule_type === "category" && r.category === "Movies");
+        setMovieBudget(mb ? parseFloat(mb.amount) : null);
       }
       if (theatreRes.ok) setTheatreOptions([...(await theatreRes.json()).theatres, "Other"]);
       if (ottRes.ok) setOttOptions([...(await ottRes.json()).ottPlatforms, "Other"]);
@@ -180,11 +193,16 @@ export default function MoviesPage() {
     load();
   }, []);
 
+  // Default the theatre to your first saved one. The list starts as just
+  // ["Other"] until it loads, so an untouched "Other" is replaced too —
+  // otherwise every new log demanded a theatre name.
   useEffect(() => {
-    if (editingId === null && !form.venueName && theatreOptions.length > 0) {
+    if (editingId !== null || form.venueType !== "Theatre") return;
+    const untouched = !form.venueName || (form.venueName === "Other" && !form.venueNameOther);
+    if (untouched && theatreOptions.length > 0 && theatreOptions[0] !== form.venueName) {
       setForm((f) => ({ ...f, venueName: theatreOptions[0] }));
     }
-  }, [theatreOptions, editingId]);
+  }, [theatreOptions, editingId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!loaded || typeof window === "undefined") return;
@@ -398,6 +416,19 @@ export default function MoviesPage() {
       setFormError("That's in the future — switch to “Booked”");
       return;
     }
+    // Over the monthly movie budget? Ask before logging, not after.
+    const qty = form.quantity || 1;
+    const thisCost = (tp + (form.booked ? 0 : cp)) * qty;
+    if (movieBudget && form.affectsBalance !== false) {
+      const ym = form.date.slice(0, 7);
+      const spentThatMonth = movies.filter((m) => m.date.slice(0, 7) === ym && m.id !== editingId).reduce((s2, m) => s2 + (m.ticketPrice + m.canteenPrice) * (m.quantity || 1), 0);
+      const over = spentThatMonth + thisCost - movieBudget;
+      if (over > 0 && thisCost > 0) {
+        const monthLabel = new Date(form.date + "T00:00:00").toLocaleDateString("en-IN", { month: "long" });
+        if (!window.confirm(`This takes you ${fmt(over)} over your ${fmt(movieBudget)} movie budget for ${monthLabel}. Log it anyway?`)) return;
+      }
+    }
+    const splitNames = split.on && editingId === null ? [...new Set(split.names.split(",").map((n) => n.trim()).filter(Boolean))].slice(0, 12) : [];
     setFormError("");
     setSubmitting(true);
     const isEdit = editingId !== null;
@@ -410,7 +441,7 @@ export default function MoviesPage() {
       time: form.time,
       ticketPrice: tp,
       canteenPrice: booked ? 0 : cp,
-      companions: form.companions.trim(),
+      companions: form.companions.trim() || splitNames.join(", "),
       myTake: booked ? "" : form.myTake,
       publicTake: booked ? "" : form.publicTake,
       note: form.note.trim(),
@@ -452,10 +483,24 @@ export default function MoviesPage() {
       }
       const wasEdit = isEdit;
       const watchlistIdToClear = pendingWatchlistId;
+      // Movie night split: you paid for everyone — each friend owes a share.
+      let splitMsg = "";
+      if (splitNames.length) {
+        const pool = (tp + (split.snacks && !booked ? cp : 0)) * qty;
+        const share = Math.round((pool / (splitNames.length + 1)) * 100) / 100;
+        if (share > 0) {
+          await Promise.all(splitNames.map((name) => fetch("/api/data", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "ious", personName: name, amount: share, direction: "owed_to_me", note: `${form.title.trim()} — movie night` }),
+          }).catch(() => null)));
+          splitMsg = ` · ${splitNames.length} owe you ${fmt(share)} each`;
+        }
+      }
       cancelEdit();
+      setSplit({ on: false, names: "", snacks: true });
       await load();
       if (watchlistIdToClear) await removeFromWatchlist(watchlistIdToClear, { quiet: true });
-      showToast(wasEdit ? "Movie updated" : booked ? "Booked — we'll ask how it was after the show" : "Movie logged", booked ? "🎟️" : "🎬");
+      showToast((wasEdit ? "Movie updated" : booked ? "Booked — we'll ask how it was after the show" : "Movie logged") + splitMsg, booked ? "🎟️" : "🎬");
     } catch (err) {
       setFormError(err.message || "Couldn't save that. Try again.");
     } finally {
@@ -497,6 +542,67 @@ export default function MoviesPage() {
     if (!direct) setWatchlistForm({ title: "", note: "" });
     await loadWatchlist();
     showToast("Added to watchlist", "🔖");
+  }
+
+  async function saveMovieBudget(e) {
+    e.preventDefault();
+    const amount = parseFloat(budgetDraft);
+    try {
+      if (!amount || amount <= 0) {
+        // Empty / 0 removes the budget.
+        const res = await fetch("/api/data?type=budget");
+        const rule = res.ok ? (await res.json()).rules.find((r) => r.rule_type === "category" && r.category === "Movies") : null;
+        if (rule) await fetch(`/api/data?type=budget&id=${rule.id}`, { method: "DELETE" });
+        setMovieBudget(null);
+        showToast("Movie budget removed", "🎬");
+      } else {
+        const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "budget", ruleType: "category", category: "Movies", amount }) });
+        if (!res.ok) throw new Error();
+        setMovieBudget(amount);
+        showToast(`Movie budget: ${fmt(amount)} a month`, "🎯");
+      }
+      setBudgetDraft(null);
+    } catch {
+      showToast("Couldn't save the budget — try again", "⚠️");
+    }
+  }
+
+  // ---- Drag to reorder the watchlist (by the ⋮⋮ handle) ----
+  function startDrag(e, id) {
+    e.preventDefault();
+    e.stopPropagation();
+    const ids = wlVisible.map((w) => w.id);
+    dragRef.current = { id, ids };
+    setDragOrder(ids);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  }
+  function moveDrag(e) {
+    const d = dragRef.current;
+    if (!d) return;
+    const others = d.ids.filter((x) => x !== d.id);
+    let idx = 0;
+    for (const x of others) {
+      const r = rowRefs.current[x]?.getBoundingClientRect();
+      if (r && e.clientY > r.top + r.height / 2) idx++;
+    }
+    const next = [...others.slice(0, idx), d.id, ...others.slice(idx)];
+    if (next.join() !== d.ids.join()) {
+      d.ids = next;
+      setDragOrder(next);
+    }
+  }
+  async function endDrag() {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDragOrder(null);
+    if (!d) return;
+    const visibleIds = new Set(d.ids);
+    const full = [...d.ids, ...watchlist.map((w) => w.id).filter((x) => !visibleIds.has(x))];
+    if (full.join() === watchlist.map((w) => w.id).join()) return;
+    const byId = Object.fromEntries(watchlist.map((w) => [w.id, w]));
+    setWatchlist(full.map((x) => byId[x]).filter(Boolean));
+    const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "watchlist-order", ids: full }) }).catch(() => null);
+    if (!res?.ok) showToast("Couldn't save the new order", "⚠️");
   }
 
   // quiet: used when a watchlist movie is logged as watched (no toast).
@@ -709,6 +815,24 @@ export default function MoviesPage() {
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
             {fmt(ticketSpend)} tickets · {fmt(canteenSpend)} canteen
           </div>
+          {budgetDraft !== null ? (
+            <form onSubmit={saveMovieBudget} style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+              <input type="number" inputMode="numeric" min="0" autoFocus aria-label="Monthly movie budget" value={budgetDraft} onChange={(e) => setBudgetDraft(e.target.value)} placeholder="₹ per month" style={{ width: 120, padding: "6px 10px" }} />
+              <button type="submit" className="chip active" style={{ minHeight: 32 }}>Save</button>
+              <button type="button" className="chip" style={{ minHeight: 32 }} onClick={() => setBudgetDraft(null)}>✕</button>
+            </form>
+          ) : movieBudget ? (
+            <button type="button" onClick={() => setBudgetDraft(String(movieBudget))} style={{ display: "block", width: 190, background: "none", border: "none", padding: 0, marginTop: 8, cursor: "pointer", textAlign: "left" }} aria-label="Change movie budget">
+              <div style={{ height: 6, borderRadius: 4, background: "var(--line)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min(100, (totalSpend / movieBudget) * 100)}%`, background: totalSpend > movieBudget ? "var(--danger)" : "var(--success)" }} />
+              </div>
+              <div style={{ fontSize: 11.5, marginTop: 3, color: totalSpend > movieBudget ? "var(--danger)" : "var(--muted)" }}>
+                {totalSpend > movieBudget ? `${fmt(totalSpend - movieBudget)} over` : `${fmt(movieBudget - totalSpend)} left`} of {fmt(movieBudget)} budget ✎
+              </div>
+            </button>
+          ) : (
+            <button type="button" className="chip" style={{ marginTop: 8, minHeight: 30, fontSize: 12 }} onClick={() => setBudgetDraft("")}>🎯 Set a movie budget</button>
+          )}
         </div>
         <div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Movies watched</div>
@@ -842,6 +966,40 @@ export default function MoviesPage() {
               {!form.booked && <input type="number" inputMode="decimal" placeholder="Canteen (₹)" value={form.canteenPrice} onChange={(e) => setForm({ ...form, canteenPrice: e.target.value })} step="0.01" min="0" />}
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4 }}>Per-viewing price — total below accounts for rewatches</div>
+            {movieBudget && form.affectsBalance !== false && (() => {
+              const ym = (form.date || todayISO()).slice(0, 7);
+              const spent = movies.filter((m) => m.date.slice(0, 7) === ym && m.id !== editingId).reduce((t, m) => t + (m.ticketPrice + m.canteenPrice) * (m.quantity || 1), 0);
+              const cost = ((parseFloat(form.ticketPrice) || 0) + (form.booked ? 0 : parseFloat(form.canteenPrice) || 0)) * (form.quantity || 1);
+              const left = movieBudget - spent - cost;
+              return (
+                <div style={{ fontSize: 12, fontWeight: 600, color: left < 0 ? "var(--danger)" : "var(--success)" }}>
+                  {left < 0 ? `⚠️ ${fmt(-left)} over your ${fmt(movieBudget)} movie budget` : `${fmt(left)} left of your ${fmt(movieBudget)} movie budget${cost ? " after this" : ""}`}
+                </div>
+              );
+            })()}
+            {editingId === null && (parseFloat(form.ticketPrice) || 0) > 0 && (
+              split.on ? (
+                <div className="card" style={{ padding: 12, borderRadius: 14, display: "grid", gap: 8 }}>
+                  <label className="field-label" htmlFor="split-names" style={{ margin: 0 }}>👥 You paid for — friends' names, comma-separated</label>
+                  <input id="split-names" value={split.names} onChange={(e) => setSplit({ ...split, names: e.target.value })} placeholder="Ravi, Priya" autoCapitalize="words" />
+                  {!form.booked && (parseFloat(form.canteenPrice) || 0) > 0 && (
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-2)" }}>
+                      <input type="checkbox" checked={split.snacks} onChange={(e) => setSplit({ ...split, snacks: e.target.checked })} style={{ width: 18, height: 18, margin: 0 }} />
+                      Split the snacks too
+                    </label>
+                  )}
+                  {(() => {
+                    const n = split.names.split(",").map((x) => x.trim()).filter(Boolean).length;
+                    const pool = ((parseFloat(form.ticketPrice) || 0) + (split.snacks && !form.booked ? parseFloat(form.canteenPrice) || 0 : 0)) * (form.quantity || 1);
+                    return n ? <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Each of {n} friend{n > 1 ? "s" : ""} owes you <b>{fmt(pool / (n + 1))}</b> — added to Who owes what when you save.</div>
+                      : <div style={{ fontSize: 12, color: "var(--muted)" }}>Enter the total you paid as the ticket price; it&apos;s split evenly between you and them.</div>;
+                  })()}
+                  <button type="button" onClick={() => setSplit({ on: false, names: "", snacks: true })} style={{ justifySelf: "start", background: "none", border: "none", padding: 0, color: "var(--muted)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Don&apos;t split</button>
+                </div>
+              ) : (
+                <button type="button" className="chip" style={{ alignSelf: "flex-start" }} onClick={() => setSplit({ on: true, names: form.companions || "", snacks: true })}>👥 Paid for friends? Split it</button>
+              )
+            )}
             <QuantityStepper value={form.quantity} onChange={(v) => setForm({ ...form, quantity: v })} />
             {form.quantity > 1 && (
               <div style={{ fontSize: 12, color: "var(--text-2)" }}>
@@ -983,6 +1141,17 @@ export default function MoviesPage() {
                         <span className="tabnum" style={{ fontSize: 15, fontWeight: 500 }}>{fmt(total)}</span>
                         {!m.pending && (
                           <>
+                            {isRated(m) && (
+                              <button type="button" className="icon-btn" aria-label={`Share ${m.title} card`} title="Share a card"
+                                onClick={async () => {
+                                  showToast("Making your card…", "🎨");
+                                  const r = await shareMovieCard(m).catch(() => "error");
+                                  if (r === "downloaded") showToast("Card saved — post it anywhere", "📤");
+                                  else if (r === "error") showToast("Couldn't make the card", "⚠️");
+                                }}>
+                                <Share2 size={17} />
+                              </button>
+                            )}
                             <button onClick={() => startEdit(m)} aria-label="Edit" className="icon-btn">
                               <Pencil size={17} />
                             </button>
@@ -1078,8 +1247,19 @@ export default function MoviesPage() {
                   ))}
               </div>
             )}
-            {wlVisible.map((w) => (
-              <div key={w.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--line)", gap: 10 }}>
+            {(dragOrder ? dragOrder.map((id) => wlVisible.find((w) => w.id === id)).filter(Boolean) : wlVisible).map((w) => (
+              <SwipeRow key={w.id} onDelete={() => removeFromWatchlist(w.id)} disabled={!!dragOrder}>
+              <div ref={(el) => { rowRefs.current[w.id] = el; }}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--line)", gap: 8, background: "var(--bg)",
+                  ...(dragOrder && dragRef.current?.id === w.id ? { boxShadow: "var(--shadow-md)", borderRadius: 12, position: "relative", zIndex: 2, transform: "scale(1.02)" } : {}) }}>
+                {wlFilter === "all" && watchlist.length > 1 && (
+                  <span role="button" tabIndex={0} aria-label={`Drag to reorder ${w.title}`} title="Drag to reorder"
+                    onPointerDown={(e) => startDrag(e, w.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    style={{ touchAction: "none", cursor: "grab", color: "var(--faint, var(--muted))", display: "flex", alignItems: "center", padding: "8px 0", marginRight: -4 }}>
+                    <GripVertical size={18} />
+                  </span>
+                )}
                 <button type="button" onClick={() => openDetail({ ...w, tmdbId: wlInfo[w.id]?.tmdbId })} aria-label={`${w.title} details`} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
                   <Poster title={w.title} width={34} radius={6} />
                 </button>
@@ -1109,7 +1289,9 @@ export default function MoviesPage() {
                   <button type="button" className="icon-btn danger" onClick={() => removeFromWatchlist(w.id)} aria-label={`Remove ${w.title} from watchlist`} title="Remove"><Trash2 size={18} /></button>
                 </div>
               </div>
+              </SwipeRow>
             ))}
+            {watchlist.length > 1 && wlFilter === "all" && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Drag ⋮⋮ to put your “watch next” on top · swipe a row left to delete</div>}
             {wlFiltered.length > wlVisible.length && (
               <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: 8, minHeight: 40 }} onClick={() => setWlShowAll(true)}>
                 Show all {wlFiltered.length}
@@ -1118,6 +1300,7 @@ export default function MoviesPage() {
             {wlFiltered.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "10px 0" }}>Nothing in this filter.</div>}
           </div>
         )}
+        <WatchTogether onOpen={(m) => setDetail(m)} />
       </div>
         </>
       )}

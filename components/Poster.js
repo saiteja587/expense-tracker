@@ -24,6 +24,15 @@ export function rememberPoster(title, url) {
   if (title && url) remember(title.trim().toLowerCase(), url);
 }
 
+// The poster URL for a title (cached or looked up), or null. Also gives the
+// colour used for the generated tile, for share cards.
+export async function posterUrlFor(title) {
+  return lookup(title);
+}
+export function posterHue(title) {
+  return hue(title.trim().toLowerCase());
+}
+
 async function lookup(title) {
   const key = title.trim().toLowerCase();
   if (key in memory) return memory[key];

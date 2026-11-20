@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { issueSession, clearSessionCookie, resolveUser, hashPin, verifyPin } from "../../lib/auth";
 import { localDateParts } from "../../lib/dates";
 import * as tmdbApi from "../../lib/tmdb";
+import { sendToUser } from "../../lib/push";
 
 // Calls the lock screen needs before the user has unlocked. Everything else
 // requires a valid session cookie whenever a PIN is set.
@@ -268,6 +269,9 @@ export default async function handler(req, res) {
         });
         return res.status(200).json({ results: withWhere });
       }
+      if (type === "watch-lists") {
+        return res.status(200).json({ lists: await db.listWatchLists(uid), me: uid });
+      }
       if (type === "tv-details") {
         const id = parseInt(req.query.id, 10);
         if (!id || !tmdbApi.hasTmdb()) return res.status(200).json({ details: null });
@@ -455,6 +459,43 @@ export default async function handler(req, res) {
         if (!targetAmount || targetAmount <= 0) return err(res, "Enter a target amount greater than 0");
         const goal = await db.setSavingsGoal(uid, { targetAmount, targetDate: body.targetDate || null, label: (body.label || "").trim() });
         return res.status(201).json({ goal });
+      }
+
+      if (type === "watchlist-order") {
+        if (!Array.isArray(body.ids)) return err(res, "ids must be a list");
+        await db.reorderWatchlist(uid, body.ids);
+        return res.status(200).json({ ok: true });
+      }
+
+      // Watch together: a list shared with other people in the app, added
+      // by their sign-in names.
+      if (type === "watch-list") {
+        const name = String(body.name || "").trim().slice(0, 60);
+        const names = (Array.isArray(body.members) ? body.members : []).map((n) => String(n).trim()).filter(Boolean).slice(0, 10);
+        if (!name) return err(res, "Give the list a name");
+        if (!names.length) return err(res, "Add at least one friend by their name in the app");
+        const found = [];
+        const missing = [];
+        for (const n of names) {
+          const u = await db.getUserByName(n);
+          if (u && u.id !== uid) found.push(u.id);
+          else if (!u) missing.push(n);
+        }
+        if (missing.length) return err(res, `No one called ${missing.join(", ")} uses the app — check the name they sign in with`);
+        if (!found.length) return err(res, "Add at least one friend (not yourself)");
+        const list = await db.createWatchList(uid, name, found);
+        await Promise.all(found.map((f) => sendToUser(f, { title: "🍿 New watch-together list", body: `${user.name} shared "${name}" with you.`, url: "/movies?tab=watchlist" }).catch(() => {})));
+        return res.status(201).json({ list });
+      }
+      if (type === "watch-list-item") {
+        const listId = parseInt(body.listId, 10);
+        const title = String(body.title || "").trim().slice(0, 120);
+        if (!listId || !title) return err(res, "Pick a movie");
+        const item = await db.addWatchListItem(uid, listId, { title, tmdbId: body.tmdbId, note: String(body.note || "").slice(0, 100) });
+        if (!item) return err(res, "You're not in that list", 403);
+        const others = await db.watchListOthers(uid, listId);
+        await Promise.all(others.map((o) => sendToUser(o, { title: `🎬 ${user.name} added ${title}`, body: "To your watch-together list.", url: "/movies?tab=watchlist" }).catch(() => {})));
+        return res.status(201).json({ item });
       }
 
       if (type === "tv-show") {
@@ -747,6 +788,12 @@ export default async function handler(req, res) {
         return res.status(200).json({ recurringIncome });
       }
 
+      if (type === "watch-list-item") {
+        const item = await db.updateWatchListItem(uid, numId, { watched: body.watched });
+        if (!item) return err(res, "Not found", 404);
+        return res.status(200).json({ item });
+      }
+
       if (type === "tv-show") {
         const show = await db.updateTvShow(uid, numId, { ...body, platform: String(body.platform || "").slice(0, 40), note: String(body.note || "").slice(0, 140) });
         if (!show) return err(res, "Show not found", 404);
@@ -786,6 +833,8 @@ export default async function handler(req, res) {
       else if (type === "watchlist") await db.deleteWatchlistItem(uid, numId);
       else if (type === "shared-group") await db.deleteSharedGroup(uid, numId);
       else if (type === "tv-show") await db.deleteTvShow(uid, numId);
+      else if (type === "watch-list") await db.leaveOrDeleteWatchList(uid, numId);
+      else if (type === "watch-list-item") await db.deleteWatchListItem(uid, numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }
