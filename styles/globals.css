@@ -287,16 +287,20 @@ html[data-theme="dark"] .panel-soft::before { opacity: 0.25 !important; }
 
 /* ---------- Toasts ---------- */
 @keyframes toastIn {
-  from { opacity: 0; transform: translate(-50%, 14px) scale(0.94); }
-  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  from { opacity: 0; transform: translateY(14px) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 @keyframes toastOut {
-  from { opacity: 1; transform: translate(-50%, 0) scale(1); }
-  to { opacity: 0; transform: translate(-50%, 8px) scale(0.96); }
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(8px) scale(0.96); }
 }
+/* Full-width strip, bubbles centred inside it: long toasts (or ones with
+   an Undo button) stay on screen on narrow phones. */
 .toast-host {
   position: fixed;
-  left: 50%;
+  left: 0;
+  right: 0;
+  padding: 0 16px;
   bottom: 106px;
   z-index: 100;
   display: flex;
@@ -306,9 +310,8 @@ html[data-theme="dark"] .panel-soft::before { opacity: 0.25 !important; }
   pointer-events: none;
 }
 .toast-bubble {
-  transform: translate(-50%, 0);
-  left: 50%;
   position: relative;
+  max-width: 100%;
   background: #241F1A;
   color: #FBF8F2;
   padding: 11px 20px;
@@ -320,10 +323,24 @@ html[data-theme="dark"] .panel-soft::before { opacity: 0.25 !important; }
   align-items: center;
   gap: 8px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   animation: toastIn 0.32s var(--ease-spring);
 }
 .toast-bubble.leaving {
   animation: toastOut 0.2s ease forwards;
+}
+.toast-action {
+  pointer-events: auto;
+  background: none;
+  border: none;
+  color: #FFB4A2;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 6px 4px 6px 10px;
+  margin: -6px -8px -6px 4px;
+  cursor: pointer;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 /* ---------- Small motion accents used across pages ---------- */
