@@ -37,6 +37,13 @@ function ListCard({ list, me, onChanged, onOpen }) {
     await api("PUT", { type: "watch-list-item", id: i.id, watched: !i.watched }).catch((e) => showToast(e.message, "⚠️"));
     onChanged();
   }
+  async function vote(i) {
+    try {
+      await api("POST", { type: "watch-list-vote", id: i.id, on: !i.my_vote });
+      if (!i.my_vote) showToast(`Voted for ${i.title}`, "👍");
+    } catch (e) { showToast(e.message, "⚠️"); }
+    onChanged();
+  }
   async function remove(i) {
     await api("DELETE", null, `?type=watch-list-item&id=${i.id}`).catch(() => {});
     onChanged();
@@ -61,6 +68,9 @@ function ListCard({ list, me, onChanged, onOpen }) {
         <MovieSearchInput id={`wt-${list.id}`} placeholder="Add a movie for everyone" value={q} onChange={setQ} onPick={add} />
       </form>
       {open.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 10 }}>Nothing yet — add the first one.</div>}
+      {open.length > 1 && open[0].votes > 0 && (
+        <div style={{ fontSize: 12.5, marginTop: 10, color: "var(--success)", fontWeight: 600 }}>👑 Leading the vote: {open[0].title} ({open[0].votes})</div>
+      )}
       {open.map((i) => (
         <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--line)" }}>
           <button type="button" onClick={() => onOpen?.({ tmdbId: i.tmdb_id, title: i.title })} aria-label={`${i.title} details`} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
@@ -69,7 +79,11 @@ function ListCard({ list, me, onChanged, onOpen }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 500 }}>{i.title}</div>
             <div style={{ fontSize: 11.5, color: "var(--muted)" }}>added by {i.added_by === me ? "you" : i.added_by_name}{i.note ? ` · ${i.note}` : ""}</div>
+            {i.votes > 0 && <div style={{ fontSize: 11.5, color: "var(--text-2)" }}>👍 {i.voters}</div>}
           </div>
+          <button type="button" className={`chip${i.my_vote ? " active" : ""}`} aria-pressed={!!i.my_vote} aria-label={`${i.my_vote ? "Remove vote for" : "Vote for"} ${i.title}`} onClick={() => vote(i)} style={{ minHeight: 32, fontSize: 12, padding: "0 10px" }}>
+            👍 {i.votes || ""}
+          </button>
           <button type="button" className="chip" onClick={() => toggle(i)} style={{ minHeight: 32, fontSize: 12, whiteSpace: "nowrap" }}>✓ Watched</button>
           <button type="button" className="icon-btn danger" aria-label={`Remove ${i.title}`} onClick={() => remove(i)}><Trash2 size={17} /></button>
         </div>
@@ -138,7 +152,7 @@ export default function WatchTogether({ onOpen }) {
       )}
       {data.lists.length === 0 && !creating && (
         <div style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>
-          Plan movies with a friend who uses this app: you both add to one list, and each of you gets a ping when the other adds something.
+          Plan movies with a friend who uses this app: you both add to one list, vote on what to watch next, and each of you gets a ping when the other adds or votes.
         </div>
       )}
       {data.lists.map((l) => <ListCard key={l.id} list={l} me={data.me} onChanged={load} onOpen={onOpen} />)}

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { onYourApps, theatreVerdict } from "../lib/movieStats";
 import { rememberPoster } from "./Poster";
 import { todayISO } from "../lib/format";
+import { showToast } from "../lib/toast";
 
 const cache = new Map();
 
@@ -14,6 +15,44 @@ export default function MovieDetailSheet({ target, onClose, onLog, onSave, userA
   const key = cur.tmdbId ? `id:${cur.tmdbId}` : `t:${cur.title}|${cur.year || ""}`;
   const [d, setD] = useState(cache.get(key) || null);
   const [failed, setFailed] = useState(false);
+  const [follows, setFollows] = useState(null); // Set of person ids
+  const [friends, setFriends] = useState(null);
+
+  useEffect(() => {
+    fetch("/api/data?type=movie-prefs").then((r) => (r.ok ? r.json() : null)).then((p) => p && setFollows(new Set(p.followIds || []))).catch(() => {});
+  }, []);
+  useEffect(() => {
+    setFriends(null);
+    if (!d?.tmdbId) return;
+    let live = true;
+    fetch(`/api/data?type=friend-ratings&tmdbId=${d.tmdbId}`).then((r) => (r.ok ? r.json() : null)).then((x) => live && x && setFriends(x)).catch(() => {});
+    return () => { live = false; };
+  }, [d?.tmdbId]);
+
+  async function toggleFollow(p, role) {
+    if (!follows) return;
+    const on = !follows.has(p.id);
+    const next = new Set(follows);
+    if (on) next.add(p.id); else next.delete(p.id);
+    setFollows(next);
+    try {
+      const r = on
+        ? await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "follow", personId: p.id, name: p.name, role }) })
+        : await fetch(`/api/data?type=follow&id=${p.id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error();
+      showToast(on ? `Following ${p.name}` : `Unfollowed ${p.name}`, on ? "⭐" : "👋");
+      window.dispatchEvent(new Event("follows-changed"));
+    } catch {
+      setFollows(follows);
+      showToast("Couldn't save — try again", "⚠️");
+    }
+  }
+  const followBtn = (p, role) => (p?.id && follows ? (
+    <button type="button" onClick={() => toggleFollow(p, role)} aria-pressed={follows.has(p.id)} aria-label={`${follows.has(p.id) ? "Unfollow" : "Follow"} ${p.name}`}
+      style={{ border: "1px solid var(--line-strong)", background: follows.has(p.id) ? "var(--surface-2)" : "transparent", color: follows.has(p.id) ? "var(--text-2)" : "var(--accent-solid)", borderRadius: 12, padding: "2px 6px", fontSize: 10, fontWeight: 700, cursor: "pointer", marginTop: 4, minHeight: 24, whiteSpace: "nowrap" }}>
+      {follows.has(p.id) ? "✓ Following" : "＋ Follow"}
+    </button>
+  ) : null);
 
   useEffect(() => {
     let live = true;
@@ -127,7 +166,27 @@ export default function MovieDetailSheet({ target, onClose, onLog, onSave, userA
                   </div>
                 )}
 
-                {d.directors.length > 0 && <div style={{ marginTop: 12, fontSize: 13.5 }}><span style={{ color: "var(--muted)" }}>Directed by</span> <b>{d.directors.join(", ")}</b></div>}
+                {friends?.ratings?.length > 0 && (
+                  <div className="card" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 14 }}>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>👥 Friends who watched it</div>
+                    {friends.ratings.map((f) => (
+                      <div key={f.name} style={{ fontSize: 13.5, padding: "3px 0" }}>
+                        <b>{f.name}</b>{" "}
+                        {f.rating > 0 ? <span style={{ color: "#F5A524" }}>{"★".repeat(f.rating)}{"☆".repeat(5 - f.rating)}</span> : <span style={{ color: "var(--text-2)" }}>{{ loved: "loved it", liked: "liked it", okay: "found it okay", disliked: "didn't like it" }[f.my_take] || ""}</span>}
+                        {f.review && <div style={{ fontSize: 12.5, color: "var(--text-2)", fontStyle: "italic" }}>“{f.review}”</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {d.directors.length > 0 && (
+                  <div style={{ marginTop: 12, fontSize: 13.5, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+                    <span style={{ color: "var(--muted)" }}>Directed by</span>
+                    {(d.directorPeople || d.directors.map((name) => ({ name }))).map((p) => (
+                      <span key={p.name} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><b>{p.name}</b><span style={{ marginTop: -4 }}>{followBtn(p, "director")}</span></span>
+                    ))}
+                  </div>
+                )}
 
                 {d.cast.length > 0 && (
                   <div style={{ marginTop: 14 }}>
@@ -140,6 +199,7 @@ export default function MovieDetailSheet({ target, onClose, onLog, onSave, userA
                             : <div style={{ width: 56, height: 56, borderRadius: "50%", background: "var(--surface-2)", margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "center" }}>👤</div>}
                           <div style={{ fontSize: 11.5, fontWeight: 600, marginTop: 4, lineHeight: 1.2 }}>{c.name}</div>
                           {c.character && <div style={{ fontSize: 10.5, color: "var(--muted)", lineHeight: 1.2 }}>{c.character.slice(0, 24)}</div>}
+                          {followBtn(c, "actor")}
                         </div>
                       ))}
                     </div>

@@ -14,7 +14,10 @@ import NowShowing from "../components/NowShowing";
 import MovieDetailSheet from "../components/MovieDetailSheet";
 import WatchTogether from "../components/WatchTogether";
 import SwipeRow from "../components/SwipeRow";
-import { shareMovieCard } from "../lib/shareCard";
+import { shareMovieCard, shareYearCard } from "../lib/shareCard";
+import { parseBooking, matchTheatre } from "../lib/bookingParse";
+import { yearRecap } from "../lib/movieInsights";
+import { MovieGoalCard, MovieMoneyCard, TasteCard, FollowingCard, useMoviePrefs } from "../components/MovieInsights";
 import { useLedger } from "../lib/useLedger";
 import { userOttApps, onYourApps, movieStats, avgNightOut, LANGUAGE_CODES, SERVICE_NAMES, ottKey } from "../lib/movieStats";
 
@@ -108,6 +111,8 @@ export default function MoviesPage() {
   const [movieBudget, setMovieBudget] = useState(null);
   const [budgetDraft, setBudgetDraft] = useState(null); // null = not editing
   const [split, setSplit] = useState({ on: false, names: "", snacks: true });
+  const [paste, setPaste] = useState(null); // null = closed, else the pasted text
+  const [prefs, savePrefs] = useMoviePrefs();
   // Drag-to-reorder the watchlist.
   const [dragOrder, setDragOrder] = useState(null);
   const dragRef = useRef(null);
@@ -376,6 +381,43 @@ export default function MoviesPage() {
         date,
       };
     });
+  }
+
+  // "Paste booking SMS": fill the form from a BookMyShow/District message.
+  async function fillFromBooking() {
+    const b = parseBooking(paste, todayISO());
+    if (!b || b.found < 2) {
+      showToast("Couldn't read that — paste the whole booking message", "⚠️");
+      return;
+    }
+    const today = todayISO();
+    const booked = !!b.date && (b.date > today || (b.date === today && !!b.time && b.time > nowTimeHHMM()));
+    const theatre = matchTheatre(b.theatre, theatreOptions);
+    setPicked(null);
+    setForm((f) => ({
+      ...f,
+      title: b.title || f.title,
+      tmdbId: null,
+      date: b.date || f.date,
+      time: b.time || f.time,
+      booked,
+      venueType: "Theatre",
+      venueName: theatre || (b.theatre ? "Other" : f.venueName),
+      venueNameOther: theatre ? "" : b.theatre,
+      ticketPrice: b.total ? String(b.total) : f.ticketPrice,
+    }));
+    if (b.seats > 1) setSplit({ on: true, names: form.companions || "", snacks: false });
+    setPaste(null);
+    showToast(b.seats > 1 ? `Filled in · ${b.seats} seats, split is on` : "Filled in — check and save", "📋");
+    if (b.title) {
+      const d = await fetch(`/api/data?type=movie-search&q=${encodeURIComponent(b.title)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const norm = (t) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const hit = (d?.results || []).find((m) => norm(m.title) === norm(b.title)) || (d?.results || [])[0];
+      if (hit && (norm(hit.title).includes(norm(b.title)) || norm(b.title).includes(norm(hit.title)))) {
+        setPicked(hit);
+        setForm((f) => ({ ...f, title: hit.title, tmdbId: hit.tmdbId, genre: f.genre || hit.genre || "" }));
+      }
+    }
   }
 
   function cancelEdit() {
@@ -894,9 +936,21 @@ export default function MoviesPage() {
       )}
       <div className="responsive-grid">
         <div>
-          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-            {editingId ? "Edit movie" : "Log a movie"}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>{editingId ? "Edit movie" : "Log a movie"}</div>
+            {!editingId && paste === null && <button type="button" className="chip" onClick={() => setPaste("")} style={{ minHeight: 30, fontSize: 12 }}>📋 Paste booking SMS</button>}
           </div>
+          {paste !== null && (
+            <div className="card" style={{ padding: 12, borderRadius: 14, marginBottom: 12, display: "grid", gap: 8 }}>
+              <label className="field-label" htmlFor="booking-paste" style={{ margin: 0 }}>Paste your BookMyShow / District confirmation (SMS or email)</label>
+              <textarea id="booking-paste" rows={4} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder="Your booking for … is confirmed. 2 Ticket(s) … at PVR … Amount: Rs. 560" style={{ resize: "vertical", fontSize: 13 }} autoFocus />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" className="btn btn-secondary" style={{ flex: 1, minHeight: 40 }} onClick={() => setPaste(null)}>Cancel</button>
+                <button type="button" className="btn btn-primary" style={{ flex: 2, minHeight: 40 }} disabled={!paste.trim()} onClick={fillFromBooking}>Fill the form</button>
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>Read on your phone only — the message isn&apos;t sent anywhere.</div>
+            </div>
+          )}
           <form onSubmit={submitMovie} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div role="radiogroup" aria-label="Watched or booked" style={{ display: "flex", gap: 6 }}>
               {[[false, "✅ Watched it"], [true, "🎟️ Booked — watching later"]].map(([b, label]) => (
@@ -1406,6 +1460,7 @@ export default function MoviesPage() {
           )}
         </div>
       )}
+      <MovieGoalCard movies={moviesWithIds} meta={meta?.meta} today={today} prefs={prefs} savePrefs={savePrefs} />
       {tmdbStats && tmdbStats.matched > 0 && (
         <section aria-label="Your movies in numbers" className="card" style={{ padding: "16px 18px", borderRadius: 18, marginBottom: 28 }}>
           <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>🎞️ Your movies in numbers</div>
@@ -1446,6 +1501,9 @@ export default function MoviesPage() {
           {tmdbStats.matched < tmdbStats.total && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10 }}>Based on {tmdbStats.matched} of {tmdbStats.total} movies matched on TMDB.</div>}
         </section>
       )}
+      <MovieMoneyCard movies={moviesWithIds} meta={meta?.meta} expenses={expenses} recurring={ledger?.recurring || []} nightOut={nightOut} today={today} />
+      <TasteCard movies={moviesWithIds} meta={meta?.meta} />
+      <FollowingCard onOpen={(m) => setDetail(m)} prefs={prefs} savePrefs={savePrefs} />
       {yearWrapUp && (
         <div style={{ marginBottom: 32 }}>
           <button
@@ -1456,7 +1514,19 @@ export default function MoviesPage() {
           </button>
           {showWrapUp && (
             <div className="panel-soft" style={{ marginTop: 14, padding: "20px 22px", borderRadius: 6, background: "linear-gradient(135deg, var(--danger) 0%, #8C4470 50%, var(--success) 100%)", color: "var(--bg)" }}>
-              <div className="lora" style={{ fontSize: 18, fontWeight: 600, marginBottom: 14 }}>Your {currentYear} in movies</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>Your {currentYear} in movies</div>
+                <button type="button" className="chip" style={{ background: "rgba(255,255,255,.18)", color: "#fff", border: "1px solid rgba(255,255,255,.4)" }}
+                  onClick={async () => {
+                    const r = yearRecap({ movies: moviesWithIds, meta: meta?.meta || {}, year: currentYear, todayIso: today });
+                    if (!r) return;
+                    const how = await shareYearCard(r).catch(() => null);
+                    if (how === "downloaded") showToast("Saved the image — post it anywhere", "📥");
+                    else if (!how) showToast("Couldn't make the image", "⚠️");
+                  }}>
+                  <Share2 size={14} /> Share
+                </button>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Titles watched</div>

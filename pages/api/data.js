@@ -4,6 +4,7 @@ import { issueSession, clearSessionCookie, resolveUser, hashPin, verifyPin } fro
 import { localDateParts } from "../../lib/dates";
 import * as tmdbApi from "../../lib/tmdb";
 import { sendToUser } from "../../lib/push";
+import * as food from "../../lib/food";
 
 // Calls the lock screen needs before the user has unlocked. Everything else
 // requires a valid session cookie whenever a PIN is set.
@@ -58,6 +59,7 @@ export async function buildExport(uid) {
     savingsGoal: await setting("savings_goal"),
     milestoneRewards: (await setting("milestone_rewards")) || {},
     miniChallenges: (await setting("mini_challenges")) || [],
+    sugarFoodLog: await db.listSugarLog(uid, "1900-01-01"),
   };
 }
 
@@ -212,7 +214,7 @@ export default async function handler(req, res) {
         const collIds = new Set();
         details.forEach((d) => {
           if (!d) return;
-          meta[d.tmdbId] = { runtime: d.runtime, cast: d.cast.map((c) => c.name), directors: d.directors, language: d.language, collection: d.collection };
+          meta[d.tmdbId] = { runtime: d.runtime, cast: d.cast.map((c) => c.name), directors: d.directors, language: d.language, collection: d.collection, releaseDate: d.indiaRelease || d.releaseDate || "", rating: d.rating, genres: d.genres };
           if (d.collection) collIds.add(d.collection.id);
         });
         const colls = await inBatches([...collIds], 6, (id) => safe(tmdbApi.collection(id)));
@@ -238,7 +240,7 @@ export default async function handler(req, res) {
           if (!d) return;
           const rel = d.indiaRelease || d.releaseDate;
           if (rel && String(w.release_date || "").slice(0, 10) !== rel) await db.updateWatchlistMeta(uid, w.id, { releaseDate: rel });
-          out[w.id] = { tmdbId: id, poster: d.poster, rating: d.rating, releaseDate: rel, genre: d.genre, stream: d.providers.stream, inTheatres: inTheatres.has(id), runtime: d.runtime };
+          out[w.id] = { tmdbId: id, poster: d.poster, rating: d.rating, releaseDate: rel, genre: d.genre, stream: d.providers.stream, inTheatres: inTheatres.has(id), runtime: d.runtime, language: d.language };
         });
         return res.status(200).json({ items: out });
       }
@@ -272,6 +274,44 @@ export default async function handler(req, res) {
       if (type === "watch-lists") {
         return res.status(200).json({ lists: await db.listWatchLists(uid), me: uid });
       }
+      // Your movie settings: yearly goal, sharing ratings with friends.
+      if (type === "movie-prefs") {
+        const [share, goal, follows] = await Promise.all([db.getUserSetting(uid, "share_ratings"), db.getUserSetting(uid, "movie_goal"), db.listFollows(uid)]);
+        return res.status(200).json({ shareRatings: share === "1", goal: parseInt(goal, 10) || null, followIds: follows.map((f) => f.person_id) });
+      }
+      if (type === "friend-ratings") {
+        const id = parseInt(req.query.tmdbId, 10);
+        if (!id) return res.status(200).json({ sharing: false, ratings: [] });
+        return res.status(200).json(await db.friendRatings(uid, id));
+      }
+      // Actors/directors you follow, with their next (or latest) film.
+      if (type === "following") {
+        const follows = await db.listFollows(uid);
+        const today = localDateParts().iso;
+        const out = await inBatches(follows, 4, async (f) => {
+          const films = tmdbApi.hasTmdb() ? (await safe(tmdbApi.personMovies(f.person_id))) || [] : [];
+          const next = [...films].filter((m) => m.releaseDate >= today).sort((a, b) => a.releaseDate.localeCompare(b.releaseDate))[0] || null;
+          const latest = films.find((m) => m.releaseDate && m.releaseDate < today) || null;
+          return { personId: f.person_id, name: f.name, role: f.role, next, latest };
+        });
+        return res.status(200).json({ following: out });
+      }
+      // Sugar in a food: common Indian foods + Open Food Facts products.
+      if (type === "food-search") {
+        const q = String(req.query.q || "").trim().slice(0, 60);
+        if (q.length < 2) return res.status(200).json({ common: [], products: [] });
+        const products = await food.searchFoods(q).catch((e) => { console.error("[food]", e.message); return null; });
+        return res.status(200).json({ common: food.searchCommonFoods(q), products: products || [], offline: products === null });
+      }
+      if (type === "food-barcode") {
+        const product = await food.productByBarcode(req.query.code).catch((e) => { console.error("[food]", e.message); return undefined; });
+        if (product === undefined) return err(res, "Couldn't reach Open Food Facts — try again", 502);
+        return res.status(200).json({ product });
+      }
+      if (type === "sugar-log") {
+        const since = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+        return res.status(200).json({ log: await db.listSugarLog(uid, since) });
+      }
       if (type === "tv-details") {
         const id = parseInt(req.query.id, 10);
         if (!id || !tmdbApi.hasTmdb()) return res.status(200).json({ details: null });
@@ -281,7 +321,7 @@ export default async function handler(req, res) {
         const shows = await db.listTvShows(uid);
         // Season/episode counts and the next episode date, from TMDB.
         const info = {};
-        if (tmdbApi.hasTmdb()) {
+        if (tmdbApi.hasTmdb() && !req.query.lite) {
           await inBatches(shows.filter((t) => t.tmdb_id), 6, async (t) => {
             const d = await safe(tmdbApi.tvDetails(t.tmdb_id));
             if (d) info[t.id] = { seasons: d.seasons, nextEpisode: d.nextEpisode, status: d.status, stream: d.providers.stream, poster: d.poster, episodeRuntime: d.episodeRuntime };
@@ -459,6 +499,41 @@ export default async function handler(req, res) {
         if (!targetAmount || targetAmount <= 0) return err(res, "Enter a target amount greater than 0");
         const goal = await db.setSavingsGoal(uid, { targetAmount, targetDate: body.targetDate || null, label: (body.label || "").trim() });
         return res.status(201).json({ goal });
+      }
+
+      if (type === "movie-prefs") {
+        if (body.shareRatings !== undefined) await db.setUserSetting(uid, "share_ratings", body.shareRatings ? "1" : "0");
+        if (body.goal !== undefined) {
+          const g = parseInt(body.goal, 10);
+          await db.setUserSetting(uid, "movie_goal", g > 0 && g <= 1000 ? String(g) : "");
+        }
+        return res.status(200).json({ ok: true });
+      }
+      if (type === "follow") {
+        const personId = parseInt(body.personId, 10);
+        const name = String(body.name || "").trim().slice(0, 80);
+        if (!personId || !name) return err(res, "Pick someone to follow");
+        await db.followPerson(uid, { personId, name, role: String(body.role || "").slice(0, 20) });
+        return res.status(201).json({ ok: true });
+      }
+      if (type === "watch-list-vote") {
+        const id = parseInt(body.id, 10);
+        const item = id ? await db.voteWatchListItem(uid, id, !!body.on) : null;
+        if (!item) return err(res, "Not found", 404);
+        if (body.on) {
+          const others = await db.watchListOthers(uid, item.list_id);
+          await Promise.all(others.map((o) => sendToUser(o, { title: `👍 ${user.name} voted for ${item.title}`, body: "Pick what you'd watch next in your shared list.", url: "/movies?tab=watchlist" }).catch(() => {})));
+        }
+        return res.status(200).json({ ok: true });
+      }
+      if (type === "sugar-log") {
+        const name = String(body.name || "").trim().slice(0, 100);
+        const grams = Math.round((parseFloat(body.grams) || 0) * 10) / 10;
+        const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || "") ? body.date : localDateParts().iso;
+        if (!name) return err(res, "What did you have?");
+        if (grams < 0 || grams > 1000) return err(res, "Sugar must be between 0 and 1000 g");
+        const entry = await db.addSugarLog(uid, { date, name, grams, added: body.added !== false, code: String(body.code || "").slice(0, 20) });
+        return res.status(201).json({ entry });
       }
 
       if (type === "watchlist-order") {
@@ -835,6 +910,8 @@ export default async function handler(req, res) {
       else if (type === "tv-show") await db.deleteTvShow(uid, numId);
       else if (type === "watch-list") await db.leaveOrDeleteWatchList(uid, numId);
       else if (type === "watch-list-item") await db.deleteWatchListItem(uid, numId);
+      else if (type === "follow") await db.unfollowPerson(uid, numId);
+      else if (type === "sugar-log") await db.deleteSugarLog(uid, numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }

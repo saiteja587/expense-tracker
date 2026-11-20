@@ -1,5 +1,5 @@
-import { listUsers, listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup, getBillsPaid, listWatchlist, updateWatchlistMeta } from "../../lib/db";
-import { hasTmdb, movieDetails } from "../../lib/tmdb";
+import { listUsers, listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup, getBillsPaid, listWatchlist, updateWatchlistMeta, listFollows, setFollowNotified } from "../../lib/db";
+import { hasTmdb, movieDetails, personMovies, freshReleases } from "../../lib/tmdb";
 import { ottKey, userOttApps, SERVICE_NAMES } from "../../lib/movieStats";
 import { mapExpense, mapMovie } from "../../lib/ledger";
 import { buildExport } from "./data";
@@ -63,6 +63,11 @@ async function runForUser(uid, local) {
         sentItems.push(...(await watchlistAlerts(uid, today, movies, sendToAllDevices)));
       } catch (e) {
         console.error(`[cron-daily] watchlist alerts for user ${uid} failed:`, e);
+      }
+      try {
+        sentItems.push(...(await followAlerts(uid, today, sendToAllDevices)));
+      } catch (e) {
+        console.error(`[cron-daily] follow alerts for user ${uid} failed:`, e);
       }
     }
 
@@ -187,4 +192,21 @@ async function watchlistAlerts(uid, today, movieRows, send) {
     await updateWatchlistMeta(uid, w.id, { releaseDate: rel || null, lastProviders: now.join(","), notified: [...notified].join(",") });
   }
   return sent;
+}
+
+// "New film by someone you follow": one alert per film (remembered in
+// followed_people.notified), at most one per person per day.
+export async function followAlerts(uid, today, send) {
+  const out = [];
+  for (const f of await listFollows(uid)) {
+    const films = await personMovies(f.person_id).catch(() => []);
+    const notified = String(f.notified || "").split(",").filter(Boolean);
+    const fresh = freshReleases(films, today, notified)[0];
+    if (!fresh) continue;
+    const when = fresh.releaseDate <= today ? "Out now" : `Releases ${new Date(fresh.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
+    await send({ title: `🎬 New ${f.name} movie: ${fresh.title}`, body: `${when} — tap for details and where to watch.`, url: `/movies?details=${fresh.tmdbId}` });
+    await setFollowNotified(uid, f.person_id, [...notified, String(fresh.tmdbId)].slice(-60).join(","));
+    out.push(`follow:${f.name}:${fresh.title}`);
+  }
+  return out;
 }

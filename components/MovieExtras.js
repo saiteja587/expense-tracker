@@ -5,6 +5,7 @@ import Poster from "./Poster";
 import { vibrate } from "../lib/haptics";
 import { movieStatus } from "../lib/ledger";
 import { ottKey } from "../lib/movieStats";
+import { pickPool } from "../lib/movieInsights";
 
 export function PosterWall({ movies }) {
   const [year, setYear] = useState(() => String(new Date().getFullYear()));
@@ -51,14 +52,26 @@ export function PickForMe({ watchlist, movies, info = {}, recs = [], userApps })
   const [shown, setShown] = useState(null);
   const [spinning, setSpinning] = useState(false);
   const timer = useRef(null);
+  const [onMyApps, setOnMyApps] = useState(false);
+  const [short, setShort] = useState(false);
+  const [lang, setLang] = useState("");
+  const filtering = onMyApps || short || !!lang;
+  const langs = useMemo(() => [...new Set(watchlist.map((w) => info[w.id]?.language).filter(Boolean))].sort(), [watchlist, info]);
 
   function spin() {
     if (spinning) return;
-    let pool = watchlist.map((w) => {
+    const candidates = pickPool({ watchlist, info, userApps: userApps || new Set(), onMyApps, maxMinutes: short ? 120 : 0, language: lang });
+    if (filtering && !candidates.length) {
+      setShown({ title: "Nothing matches", why: "Nothing on your watchlist fits those filters — try fewer.", empty: true });
+      return;
+    }
+    let pool = candidates.map((w) => {
       const mine = (info[w.id]?.stream || []).find((p) => userApps?.has(ottKey(p.name)));
-      return { title: w.title, why: mine ? `On ${mine.name} — an app you have 📺` : info[w.id]?.inTheatres ? "In theatres now 🍿" : w.note || "From your watchlist", weight: mine ? 3 : 1 };
+      const mins = info[w.id]?.runtime;
+      const length = mins ? ` · ${Math.floor(mins / 60)}h ${mins % 60}m` : "";
+      return { title: w.title, why: (mine ? `On ${mine.name} — an app you have 📺` : info[w.id]?.inTheatres ? "In theatres now 🍿" : w.note || "From your watchlist") + length, weight: mine ? 3 : 1 };
     });
-    if (!pool.length && recs.length) pool = recs.map((r) => ({ title: r.title, why: `Because you loved ${r.because}`, weight: 1 }));
+    if (!pool.length && recs.length && !filtering) pool = recs.map((r) => ({ title: r.title, why: `Because you loved ${r.because}`, weight: 1 }));
     // Streamable-tonight picks count three times.
     pool = pool.flatMap((p) => Array(p.weight).fill(p));
     if (!pool.length) {
@@ -81,12 +94,26 @@ export function PickForMe({ watchlist, movies, info = {}, recs = [], userApps })
 
   return (
     <div style={{ marginBottom: 14 }}>
-      <button type="button" className="chip" onClick={spin} disabled={spinning}>🎲 {spinning ? "Picking…" : "Pick for me"}</button>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="button" className="chip" onClick={spin} disabled={spinning} style={{ fontWeight: 700 }}>🎲 {spinning ? "Picking…" : "What tonight?"}</button>
+        {watchlist.length > 1 && (
+          <>
+            <button type="button" className={`chip${onMyApps ? " active" : ""}`} aria-pressed={onMyApps} onClick={() => setOnMyApps(!onMyApps)} style={{ minHeight: 30, fontSize: 12 }}>📺 On my apps</button>
+            <button type="button" className={`chip${short ? " active" : ""}`} aria-pressed={short} onClick={() => setShort(!short)} style={{ minHeight: 30, fontSize: 12 }}>⏱️ Under 2h</button>
+            {langs.length > 1 && (
+              <select value={lang} onChange={(e) => setLang(e.target.value)} aria-label="Language" style={{ width: "auto", minHeight: 30, padding: "4px 10px", fontSize: 12, borderRadius: 16 }}>
+                <option value="">Any language</option>
+                {langs.map((l) => <option key={l} value={l}>{l}</option>)}
+              </select>
+            )}
+          </>
+        )}
+      </div>
       {shown && (
         <div className="card" style={{ display: "flex", gap: 12, alignItems: "center", padding: 12, borderRadius: 16, marginTop: 10, transition: "transform 0.2s", transform: spinning ? "scale(0.98)" : "scale(1)" }}>
-          <Poster title={shown.title} width={48} radius={8} />
+          {!shown.empty && <Poster title={shown.title} width={48} radius={8} />}
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>{spinning ? shown.title : `🍿 Tonight: ${shown.title}`}</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{spinning || shown.empty ? shown.title : `🍿 Tonight: ${shown.title}`}</div>
             {shown.why && !spinning && <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{shown.why}</div>}
           </div>
         </div>

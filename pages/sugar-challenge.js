@@ -5,6 +5,7 @@ import { queueRequest } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
 import { celebrateMilestone, popHeart } from "../lib/celebrate";
 import CountUp from "../components/CountUp";
+import FoodSugar from "../components/FoodSugar";
 import { todayISO } from "../lib/format";
 
 import { TRIGGERS, analyseSlips } from "../lib/slipTriggers";
@@ -638,6 +639,8 @@ export default function SugarChallengePage() {
           )}
         </>
       )}
+
+      <FoodSugar />
 
       {history.length > 0 && (
         <div style={{ marginTop: 40, borderTop: "1px solid var(--line-strong)", paddingTop: 24 }}>
