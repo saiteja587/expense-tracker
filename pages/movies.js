@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import Poster from "../components/Poster";
 import { PosterWall, PickForMe } from "../components/MovieExtras";
-import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3, Bookmark, Sparkles } from "lucide-react";
+import { Plus, Trash2, Pencil, ChevronLeft, ChevronRight, Clapperboard, ArrowLeft, Minus, BarChart3, Bookmark, Sparkles, Share2, GripVertical } from "lucide-react";
 import { queueRequest, newRequestId } from "../lib/offlineQueue";
 import { showToast } from "../lib/toast";
 import CountUp from "../components/CountUp";
@@ -12,6 +12,12 @@ import RateMovieSheet, { TAKE_CHOICES } from "../components/RateMovieSheet";
 import MovieSearchInput from "../components/MovieSearchInput";
 import NowShowing from "../components/NowShowing";
 import MovieDetailSheet from "../components/MovieDetailSheet";
+import WatchTogether from "../components/WatchTogether";
+import SwipeRow from "../components/SwipeRow";
+import { shareMovieCard, shareYearCard } from "../lib/shareCard";
+import { parseBooking, matchTheatre } from "../lib/bookingParse";
+import { yearRecap } from "../lib/movieInsights";
+import { MovieGoalCard, MovieMoneyCard, TasteCard, FollowingCard, useMoviePrefs } from "../components/MovieInsights";
 import { useLedger } from "../lib/useLedger";
 import { userOttApps, onYourApps, movieStats, avgNightOut, LANGUAGE_CODES, SERVICE_NAMES, ottKey } from "../lib/movieStats";
 
@@ -96,6 +102,21 @@ export default function MoviesPage() {
   const [showWrapUp, setShowWrapUp] = useState(false);
   const [pendingWatchlistId, setPendingWatchlistId] = useState(null);
   const [rateTarget, setRateTarget] = useState(null);
+  // One section at a time instead of one very long page. Kept in the URL
+  // (?tab=watchlist) so back/refresh and links land in the right place.
+  const [tab, setTab] = useState("diary");
+  const [wlFilter, setWlFilter] = useState("all");
+  const [wlShowAll, setWlShowAll] = useState(false);
+  // Monthly movie budget (a "Movies" category limit) and movie-night splits.
+  const [movieBudget, setMovieBudget] = useState(null);
+  const [budgetDraft, setBudgetDraft] = useState(null); // null = not editing
+  const [split, setSplit] = useState({ on: false, names: "", snacks: true });
+  const [paste, setPaste] = useState(null); // null = closed, else the pasted text
+  const [prefs, savePrefs] = useMoviePrefs();
+  // Drag-to-reorder the watchlist.
+  const [dragOrder, setDragOrder] = useState(null);
+  const dragRef = useRef(null);
+  const rowRefs = useRef({});
   // The TMDB match picked from the title dropdown (for the little hint).
   const [picked, setPicked] = useState(null);
   // TMDB extras: detail sheet, per-movie runtime/cast/etc., watchlist
@@ -128,6 +149,8 @@ export default function MoviesPage() {
         const ruleData = await ruleRes.json();
         const rule = ruleData.rules.find((r) => r.rule_type === "movie_count");
         setMovieCountGuideline(rule ? parseFloat(rule.amount) : null);
+        const mb = ruleData.rules.find((r) => r.rule_type === "category" && r.category === "Movies");
+        setMovieBudget(mb ? parseFloat(mb.amount) : null);
       }
       if (theatreRes.ok) setTheatreOptions([...(await theatreRes.json()).theatres, "Other"]);
       if (ottRes.ok) setOttOptions([...(await ottRes.json()).ottPlatforms, "Other"]);
@@ -175,11 +198,16 @@ export default function MoviesPage() {
     load();
   }, []);
 
+  // Default the theatre to your first saved one. The list starts as just
+  // ["Other"] until it loads, so an untouched "Other" is replaced too —
+  // otherwise every new log demanded a theatre name.
   useEffect(() => {
-    if (editingId === null && !form.venueName && theatreOptions.length > 0) {
+    if (editingId !== null || form.venueType !== "Theatre") return;
+    const untouched = !form.venueName || (form.venueName === "Other" && !form.venueNameOther);
+    if (untouched && theatreOptions.length > 0 && theatreOptions[0] !== form.venueName) {
       setForm((f) => ({ ...f, venueName: theatreOptions[0] }));
     }
-  }, [theatreOptions, editingId]);
+  }, [theatreOptions, editingId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!loaded || typeof window === "undefined") return;
@@ -219,12 +247,14 @@ export default function MoviesPage() {
     const params = new URLSearchParams(window.location.search);
     const det = parseInt(params.get("details"), 10);
     const book = parseInt(params.get("book"), 10);
+    const t = params.get("tab");
+    if (["watchlist", "discover", "stats"].includes(t)) setTab(t);
     if (det) setDetail({ tmdbId: det });
     if (book) {
       fetch(`/api/data?type=movie-details&id=${book}`).then((r) => r.json()).then(({ details }) => {
         if (!details) return;
         applyPicked({ ...details, releaseDate: details.indiaRelease || details.releaseDate }, { forceBooked: true });
-        setTimeout(() => titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+        goToForm();
       }).catch(() => {});
     }
   }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -250,6 +280,39 @@ export default function MoviesPage() {
     }
     return Object.entries(byApp).sort((a, b) => b[1].length - a[1].length);
   }, [watchlist, wlInfo, userApps]);
+
+  // Watchlist filters (on your apps / in theatres / coming soon) and a cap
+  // so a long list doesn't turn into endless scrolling.
+  const wlKind = (w) => {
+    const i = wlInfo[w.id];
+    if (!i) return "";
+    if (onYourApps({ stream: i.stream || [] }, userApps).length) return "stream";
+    if (i.inTheatres) return "theatres";
+    if (i.releaseDate && i.releaseDate > today) return "soon";
+    return "";
+  };
+  const wlCounts = { stream: 0, theatres: 0, soon: 0 };
+  for (const w of watchlist) { const k = wlKind(w); if (k) wlCounts[k]++; }
+  const wlFiltered = wlFilter === "all" ? watchlist : watchlist.filter((w) => wlKind(w) === wlFilter);
+  const wlVisible = wlShowAll ? wlFiltered : wlFiltered.slice(0, 8);
+
+  function switchTab(k) {
+    setTab(k);
+    try {
+      const url = new URL(window.location.href);
+      if (k === "diary") url.searchParams.delete("tab");
+      else url.searchParams.set("tab", k);
+      window.history.replaceState(window.history.state, "", url.pathname + url.search);
+    } catch { /* ignore */ }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  // Jump to the log form (it lives on the Diary tab).
+  function goToForm() {
+    setTab("diary");
+    setTimeout(() => {
+      titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+  }
 
   function openDetail(m) {
     setDetail({ tmdbId: m.tmdbId || null, title: m.title, year: m.year || (m.date ? m.date.slice(0, 4) : "") });
@@ -320,6 +383,43 @@ export default function MoviesPage() {
     });
   }
 
+  // "Paste booking SMS": fill the form from a BookMyShow/District message.
+  async function fillFromBooking() {
+    const b = parseBooking(paste, todayISO());
+    if (!b || b.found < 2) {
+      showToast("Couldn't read that — paste the whole booking message", "⚠️");
+      return;
+    }
+    const today = todayISO();
+    const booked = !!b.date && (b.date > today || (b.date === today && !!b.time && b.time > nowTimeHHMM()));
+    const theatre = matchTheatre(b.theatre, theatreOptions);
+    setPicked(null);
+    setForm((f) => ({
+      ...f,
+      title: b.title || f.title,
+      tmdbId: null,
+      date: b.date || f.date,
+      time: b.time || f.time,
+      booked,
+      venueType: "Theatre",
+      venueName: theatre || (b.theatre ? "Other" : f.venueName),
+      venueNameOther: theatre ? "" : b.theatre,
+      ticketPrice: b.total ? String(b.total) : f.ticketPrice,
+    }));
+    if (b.seats > 1) setSplit({ on: true, names: form.companions || "", snacks: false });
+    setPaste(null);
+    showToast(b.seats > 1 ? `Filled in · ${b.seats} seats, split is on` : "Filled in — check and save", "📋");
+    if (b.title) {
+      const d = await fetch(`/api/data?type=movie-search&q=${encodeURIComponent(b.title)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const norm = (t) => t.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const hit = (d?.results || []).find((m) => norm(m.title) === norm(b.title)) || (d?.results || [])[0];
+      if (hit && (norm(hit.title).includes(norm(b.title)) || norm(b.title).includes(norm(hit.title)))) {
+        setPicked(hit);
+        setForm((f) => ({ ...f, title: hit.title, tmdbId: hit.tmdbId, genre: f.genre || hit.genre || "" }));
+      }
+    }
+  }
+
   function cancelEdit() {
     setPicked(null);
     setEditingId(null);
@@ -358,6 +458,19 @@ export default function MoviesPage() {
       setFormError("That's in the future — switch to “Booked”");
       return;
     }
+    // Over the monthly movie budget? Ask before logging, not after.
+    const qty = form.quantity || 1;
+    const thisCost = (tp + (form.booked ? 0 : cp)) * qty;
+    if (movieBudget && form.affectsBalance !== false) {
+      const ym = form.date.slice(0, 7);
+      const spentThatMonth = movies.filter((m) => m.date.slice(0, 7) === ym && m.id !== editingId).reduce((s2, m) => s2 + (m.ticketPrice + m.canteenPrice) * (m.quantity || 1), 0);
+      const over = spentThatMonth + thisCost - movieBudget;
+      if (over > 0 && thisCost > 0) {
+        const monthLabel = new Date(form.date + "T00:00:00").toLocaleDateString("en-IN", { month: "long" });
+        if (!window.confirm(`This takes you ${fmt(over)} over your ${fmt(movieBudget)} movie budget for ${monthLabel}. Log it anyway?`)) return;
+      }
+    }
+    const splitNames = split.on && editingId === null ? [...new Set(split.names.split(",").map((n) => n.trim()).filter(Boolean))].slice(0, 12) : [];
     setFormError("");
     setSubmitting(true);
     const isEdit = editingId !== null;
@@ -370,7 +483,7 @@ export default function MoviesPage() {
       time: form.time,
       ticketPrice: tp,
       canteenPrice: booked ? 0 : cp,
-      companions: form.companions.trim(),
+      companions: form.companions.trim() || splitNames.join(", "),
       myTake: booked ? "" : form.myTake,
       publicTake: booked ? "" : form.publicTake,
       note: form.note.trim(),
@@ -412,10 +525,24 @@ export default function MoviesPage() {
       }
       const wasEdit = isEdit;
       const watchlistIdToClear = pendingWatchlistId;
+      // Movie night split: you paid for everyone — each friend owes a share.
+      let splitMsg = "";
+      if (splitNames.length) {
+        const pool = (tp + (split.snacks && !booked ? cp : 0)) * qty;
+        const share = Math.round((pool / (splitNames.length + 1)) * 100) / 100;
+        if (share > 0) {
+          await Promise.all(splitNames.map((name) => fetch("/api/data", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "ious", personName: name, amount: share, direction: "owed_to_me", note: `${form.title.trim()} — movie night` }),
+          }).catch(() => null)));
+          splitMsg = ` · ${splitNames.length} owe you ${fmt(share)} each`;
+        }
+      }
       cancelEdit();
+      setSplit({ on: false, names: "", snacks: true });
       await load();
-      if (watchlistIdToClear) await removeFromWatchlist(watchlistIdToClear);
-      showToast(wasEdit ? "Movie updated" : booked ? "Booked — we'll ask how it was after the show" : "Movie logged", booked ? "🎟️" : "🎬");
+      if (watchlistIdToClear) await removeFromWatchlist(watchlistIdToClear, { quiet: true });
+      showToast((wasEdit ? "Movie updated" : booked ? "Booked — we'll ask how it was after the show" : "Movie logged") + splitMsg, booked ? "🎟️" : "🎬");
     } catch (err) {
       setFormError(err.message || "Couldn't save that. Try again.");
     } finally {
@@ -459,21 +586,96 @@ export default function MoviesPage() {
     showToast("Added to watchlist", "🔖");
   }
 
-  async function removeFromWatchlist(id) {
+  async function saveMovieBudget(e) {
+    e.preventDefault();
+    const amount = parseFloat(budgetDraft);
+    try {
+      if (!amount || amount <= 0) {
+        // Empty / 0 removes the budget.
+        const res = await fetch("/api/data?type=budget");
+        const rule = res.ok ? (await res.json()).rules.find((r) => r.rule_type === "category" && r.category === "Movies") : null;
+        if (rule) await fetch(`/api/data?type=budget&id=${rule.id}`, { method: "DELETE" });
+        setMovieBudget(null);
+        showToast("Movie budget removed", "🎬");
+      } else {
+        const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "budget", ruleType: "category", category: "Movies", amount }) });
+        if (!res.ok) throw new Error();
+        setMovieBudget(amount);
+        showToast(`Movie budget: ${fmt(amount)} a month`, "🎯");
+      }
+      setBudgetDraft(null);
+    } catch {
+      showToast("Couldn't save the budget — try again", "⚠️");
+    }
+  }
+
+  // ---- Drag to reorder the watchlist (by the ⋮⋮ handle) ----
+  function startDrag(e, id) {
+    e.preventDefault();
+    e.stopPropagation();
+    const ids = wlVisible.map((w) => w.id);
+    dragRef.current = { id, ids };
+    setDragOrder(ids);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  }
+  function moveDrag(e) {
+    const d = dragRef.current;
+    if (!d) return;
+    const others = d.ids.filter((x) => x !== d.id);
+    let idx = 0;
+    for (const x of others) {
+      const r = rowRefs.current[x]?.getBoundingClientRect();
+      if (r && e.clientY > r.top + r.height / 2) idx++;
+    }
+    const next = [...others.slice(0, idx), d.id, ...others.slice(idx)];
+    if (next.join() !== d.ids.join()) {
+      d.ids = next;
+      setDragOrder(next);
+    }
+  }
+  async function endDrag() {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDragOrder(null);
+    if (!d) return;
+    const visibleIds = new Set(d.ids);
+    const full = [...d.ids, ...watchlist.map((w) => w.id).filter((x) => !visibleIds.has(x))];
+    if (full.join() === watchlist.map((w) => w.id).join()) return;
+    const byId = Object.fromEntries(watchlist.map((w) => [w.id, w]));
+    setWatchlist(full.map((x) => byId[x]).filter(Boolean));
+    const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "watchlist-order", ids: full }) }).catch(() => null);
+    if (!res?.ok) showToast("Couldn't save the new order", "⚠️");
+  }
+
+  // quiet: used when a watchlist movie is logged as watched (no toast).
+  async function removeFromWatchlist(id, { quiet } = {}) {
     const prev = watchlist;
+    const item = watchlist.find((w) => w.id === id);
     setWatchlist(watchlist.filter((w) => w.id !== id));
-    const res = await fetch(`/api/data?type=watchlist&id=${id}`, { method: "DELETE" });
-    if (!res.ok) setWatchlist(prev);
+    let ok = false;
+    try {
+      ok = (await fetch(`/api/data?type=watchlist&id=${id}`, { method: "DELETE" })).ok;
+    } catch { ok = false; }
+    if (!ok) {
+      setWatchlist(prev);
+      showToast("Couldn't remove it — check your connection and try again", "⚠️");
+      return;
+    }
+    if (quiet || !item) return;
+    showToast(`Removed ${item.title}`, "🗑️", {
+      actionLabel: "Undo",
+      onAction: () => addToWatchlist(null, { title: item.title, note: item.note, tmdbId: item.tmdb_id || wlInfo[id]?.tmdbId, releaseDate: item.release_date ? String(item.release_date).slice(0, 10) : undefined }),
+    });
   }
 
   // "Move to watched" doesn't create the movie itself — it hands the title
   // to the log form and removes it from the watchlist once you actually
   // save, so a half-filled form never silently loses the watchlist entry.
   function moveToWatched(w) {
-    setForm((f) => ({ ...f, title: w.title }));
+    setForm((f) => ({ ...f, title: w.title, tmdbId: wlInfo[w.id]?.tmdbId || null }));
     setPendingWatchlistId(w.id);
-    titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    setTimeout(() => titleInputRef.current?.focus(), 300);
+    goToForm();
+    setTimeout(() => titleInputRef.current?.focus(), 400);
   }
 
   const year = viewDate.getFullYear();
@@ -604,7 +806,7 @@ export default function MoviesPage() {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 32, borderBottom: "1px solid var(--line-strong)", paddingBottom: 20, flexWrap: "wrap", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14, paddingBottom: 4, flexWrap: "wrap", gap: 12 }}>
         <div>
           <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-0.01em" }}>
             Movie Nights
@@ -614,7 +816,7 @@ export default function MoviesPage() {
           </div>
           <Link href="/shows" className="chip" style={{ textDecoration: "none", marginTop: 8, display: "inline-flex" }}>📺 Your TV shows →</Link>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        {(tab === "diary" || tab === "stats") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button onClick={() => setViewDate(new Date(year, month - 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }} aria-label="Previous month">
             <ChevronLeft size={18} />
           </button>
@@ -624,15 +826,28 @@ export default function MoviesPage() {
           <button onClick={() => setViewDate(new Date(year, month + 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }} aria-label="Next month">
             <ChevronRight size={18} />
           </button>
-        </div>
+        </div>}
       </div>
 
+      <div role="tablist" aria-label="Movies sections" className="movie-tabs" data-no-tab-swipe="1"
+        style={{ position: "sticky", top: "calc(52px + env(safe-area-inset-top, 0px))", zIndex: 20, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4, padding: 4, borderRadius: 16, background: "var(--surface-2)", marginBottom: 22, boxShadow: "var(--shadow-sm)" }}>
+        {[["diary", "🎬", "Diary", toRate.length], ["watchlist", "🔖", "Watchlist", watchlist.length], ["discover", "🍿", "Discover", 0], ["stats", "📊", "Stats", 0]].map(([k, icon, label, n]) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => switchTab(k)}
+            style={{ border: "none", borderRadius: 12, padding: "8px 2px", cursor: "pointer", fontSize: 12.5, fontWeight: tab === k ? 700 : 500, lineHeight: 1.2,
+              background: tab === k ? "var(--surface)" : "transparent", color: tab === k ? "var(--ink)" : "var(--text-2)", boxShadow: tab === k ? "var(--shadow-sm)" : "none" }}>
+            <span aria-hidden="true" style={{ display: "block", fontSize: 16 }}>{icon}</span>
+            {label}{n ? <span style={{ marginLeft: 3, fontSize: 11, color: "var(--accent-solid)", fontWeight: 700 }}>{n}</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {tab === "diary" && (
+        <>
       {movieCountGuideline && monthMovies.length > movieCountGuideline && (
         <div style={{ fontSize: 13, color: "var(--warn)", marginBottom: 16, background: "var(--warn-bg)", borderRadius: 4, padding: "8px 12px" }}>
           You've watched {monthMovies.length} this month — {monthMovies.length - movieCountGuideline} over your usual {movieCountGuideline}. Just a heads-up, not a stop sign.
         </div>
       )}
-
       <div style={{ display: "flex", gap: 40, marginBottom: 40, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Spent in {MONTH_NAMES[month]}</div>
@@ -642,6 +857,24 @@ export default function MoviesPage() {
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
             {fmt(ticketSpend)} tickets · {fmt(canteenSpend)} canteen
           </div>
+          {budgetDraft !== null ? (
+            <form onSubmit={saveMovieBudget} style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+              <input type="number" inputMode="numeric" min="0" autoFocus aria-label="Monthly movie budget" value={budgetDraft} onChange={(e) => setBudgetDraft(e.target.value)} placeholder="₹ per month" style={{ width: 120, padding: "6px 10px" }} />
+              <button type="submit" className="chip active" style={{ minHeight: 32 }}>Save</button>
+              <button type="button" className="chip" style={{ minHeight: 32 }} onClick={() => setBudgetDraft(null)}>✕</button>
+            </form>
+          ) : movieBudget ? (
+            <button type="button" onClick={() => setBudgetDraft(String(movieBudget))} style={{ display: "block", width: 190, background: "none", border: "none", padding: 0, marginTop: 8, cursor: "pointer", textAlign: "left" }} aria-label="Change movie budget">
+              <div style={{ height: 6, borderRadius: 4, background: "var(--line)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min(100, (totalSpend / movieBudget) * 100)}%`, background: totalSpend > movieBudget ? "var(--danger)" : "var(--success)" }} />
+              </div>
+              <div style={{ fontSize: 11.5, marginTop: 3, color: totalSpend > movieBudget ? "var(--danger)" : "var(--muted)" }}>
+                {totalSpend > movieBudget ? `${fmt(totalSpend - movieBudget)} over` : `${fmt(movieBudget - totalSpend)} left`} of {fmt(movieBudget)} budget ✎
+              </div>
+            </button>
+          ) : (
+            <button type="button" className="chip" style={{ marginTop: 8, minHeight: 30, fontSize: 12 }} onClick={() => setBudgetDraft("")}>🎯 Set a movie budget</button>
+          )}
         </div>
         <div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Movies watched</div>
@@ -663,162 +896,6 @@ export default function MoviesPage() {
           </div>
         )}
       </div>
-
-      {allTimeStats && (
-        <div style={{ marginBottom: 32 }}>
-          <button
-            className="story-chip"
-            onClick={() => setShowAllTime((v) => !v)}
-            style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 20, padding: "7px 14px", fontSize: 12, color: "var(--text-2)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
-          >
-            <BarChart3 size={13} /> {showAllTime ? "Hide" : "Show"} all-time stats
-          </button>
-          {showAllTime && (
-            <div className="panel-soft" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginTop: 14, padding: "16px 18px", background: "var(--surface-2)", borderRadius: 6 }}>
-              <div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Titles logged</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalTitles} /></div>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Total viewings</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalViewings} /></div>
-                {allTimeStats.rewatches > 0 && <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{allTimeStats.rewatches} rewatched</div>}
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Spent all-time</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalSpend} format={fmt} /></div>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Avg. per viewing</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.avgCost} format={fmt} /></div>
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Agree with public</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.agreementRate} />%</div>
-              </div>
-              {allTimeStats.topCompanion && (
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Most watched with</div>
-                  <div className="lora" style={{ fontSize: 16, fontWeight: 600 }}>{allTimeStats.topCompanion[0]}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{allTimeStats.topCompanion[1]} times</div>
-                </div>
-              )}
-              <div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Rewatch rate</div>
-                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.rewatchRate} />%</div>
-              </div>
-              {allTimeStats.topGenres.length > 0 && (
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Top genres</div>
-                  <div style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>
-                    {allTimeStats.topGenres.map(([g, c]) => `${g} (${c})`).join(", ")}
-                  </div>
-                </div>
-              )}
-              {ticketTrend && (
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Ticket price trend</div>
-                  <div className="lora tabnum" style={{ fontSize: 18, fontWeight: 600, color: ticketTrend.pct > 0 ? "var(--danger)" : "var(--success)" }}>
-                    {ticketTrend.pct > 0 ? "↑" : ticketTrend.pct < 0 ? "↓" : "→"} {Math.abs(ticketTrend.pct)}%
-                  </div>
-                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>vs. 3 months ago ({fmt(ticketTrend.past)} → {fmt(ticketTrend.current)})</div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {tmdbStats && tmdbStats.matched > 0 && (
-        <section aria-label="Your movies in numbers" className="card" style={{ padding: "16px 18px", borderRadius: 18, marginBottom: 28 }}>
-          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>🎞️ Your movies in numbers</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 14 }}>
-            <div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>Hours watched</div>
-              <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700 }}><CountUp value={tmdbStats.hours} />h</div>
-              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{tmdbStats.theatreHours}h theatre · {tmdbStats.ottHours}h OTT</div>
-            </div>
-            {tmdbStats.costPerHourTheatre != null && (
-              <div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Cost per hour</div>
-                <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700 }}>{fmt(tmdbStats.costPerHourTheatre)}</div>
-                <div style={{ fontSize: 11.5, color: "var(--muted)" }}>in theatres{tmdbStats.costPerHourOtt != null ? ` · ${fmt(tmdbStats.costPerHourOtt)}/h streaming` : ""}</div>
-              </div>
-            )}
-            {tmdbStats.topActors[0] && (
-              <div>
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>Favourite actor</div>
-                <div className="lora" style={{ fontSize: 16, fontWeight: 700 }}>{tmdbStats.topActors[0].name}</div>
-                <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{tmdbStats.topActors[0].count} movies{tmdbStats.topDirectors[0] ? ` · director: ${tmdbStats.topDirectors[0].name}` : ""}</div>
-              </div>
-            )}
-          </div>
-          {tmdbStats.languages.length > 0 && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: "flex", height: 10, borderRadius: 6, overflow: "hidden", background: "var(--line)" }}>
-                {tmdbStats.languages.map((l, k) => <span key={l.name} title={`${l.name} ${l.pct}%`} style={{ width: `${l.pct}%`, background: ["#B0567F", "#3F6E5B", "#C98A00", "#4F6FB0"][k] }} />)}
-              </div>
-              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 5 }}>{tmdbStats.languages.map((l) => `${l.name} ${l.pct}%`).join(" · ")}</div>
-            </div>
-          )}
-          {tmdbStats.franchises.slice(0, 2).map((f) => (
-            <div key={f.name} style={{ marginTop: 12, fontSize: 13 }}>
-              <b>{f.name}</b>: seen {f.seen} of {f.total}{f.next ? <> — next up: <button type="button" onClick={() => setDetail({ tmdbId: f.next.tmdbId, title: f.next.title })} style={{ background: "none", border: "none", padding: 0, color: "var(--accent-solid)", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>{f.next.title}</button></> : " 🎉"}
-            </div>
-          ))}
-          {tmdbStats.matched < tmdbStats.total && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10 }}>Based on {tmdbStats.matched} of {tmdbStats.total} movies matched on TMDB.</div>}
-        </section>
-      )}
-
-      {yearWrapUp && (
-        <div style={{ marginBottom: 32 }}>
-          <button
-            onClick={() => setShowWrapUp((v) => !v)}
-            style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, padding: "7px 14px", fontSize: 12, color: "var(--text-2)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
-          >
-            <Sparkles size={13} /> {showWrapUp ? "Hide" : "Show"} {currentYear} wrap-up
-          </button>
-          {showWrapUp && (
-            <div className="panel-soft" style={{ marginTop: 14, padding: "20px 22px", borderRadius: 6, background: "linear-gradient(135deg, var(--danger) 0%, #8C4470 50%, var(--success) 100%)", color: "var(--bg)" }}>
-              <div className="lora" style={{ fontSize: 18, fontWeight: 600, marginBottom: 14 }}>Your {currentYear} in movies</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16 }}>
-                <div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Titles watched</div>
-                  <div className="lora tabnum" style={{ fontSize: 26, fontWeight: 600 }}>{yearWrapUp.titles}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Total viewings</div>
-                  <div className="lora tabnum" style={{ fontSize: 26, fontWeight: 600 }}>{yearWrapUp.viewings}</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Spent on movies</div>
-                  <div className="lora tabnum" style={{ fontSize: 26, fontWeight: 600 }}>{fmt(yearWrapUp.totalSpend)}</div>
-                </div>
-                {yearWrapUp.topGenre && (
-                  <div>
-                    <div style={{ fontSize: 12, opacity: 0.8 }}>Top genre</div>
-                    <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>{yearWrapUp.topGenre[0]}</div>
-                    <div style={{ fontSize: 11.5, opacity: 0.8 }}>{yearWrapUp.topGenre[1]} times</div>
-                  </div>
-                )}
-                {yearWrapUp.topCompanion && (
-                  <div>
-                    <div style={{ fontSize: 12, opacity: 0.8 }}>Watched most with</div>
-                    <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>{yearWrapUp.topCompanion[0]}</div>
-                    <div style={{ fontSize: 11.5, opacity: 0.8 }}>{yearWrapUp.topCompanion[1]} times</div>
-                  </div>
-                )}
-                <div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>Biggest movie month</div>
-                  <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>{yearWrapUp.bestMonth}</div>
-                  <div style={{ fontSize: 11.5, opacity: 0.8 }}>{yearWrapUp.bestMonthCount} viewings</div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {toRate.length > 0 && (
         <section aria-label="Rate these" style={{ marginBottom: 24 }}>
           <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>⭐ How were they?</div>
@@ -837,7 +914,6 @@ export default function MoviesPage() {
           </div>
         </section>
       )}
-
       {upcomingMovies.length > 0 && (
         <section aria-label="Coming up" style={{ marginBottom: 24 }}>
           <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>🎟️ Coming up</div>
@@ -852,121 +928,29 @@ export default function MoviesPage() {
                     {movieStatus(m) !== "watching" && m.time ? ` · ${m.time}` : ""}{m.venueName ? ` · ${m.venueName}` : ""}{m.ticketPrice ? ` · ${fmt(m.ticketPrice * m.quantity)}` : ""}
                   </div>
                 </div>
-                <button type="button" className="icon-btn" aria-label={`Edit ${m.title}`} onClick={() => { startEdit(m); titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><Pencil size={16} /></button>
+                <button type="button" className="icon-btn" aria-label={`Edit ${m.title}`} onClick={() => { startEdit(m); goToForm(); }}><Pencil size={16} /></button>
               </div>
             ))}
           </div>
         </section>
       )}
-
-      <NowShowing
-        savedTitles={watchlist.map((w) => w.title)}
-        langs={browseLangs}
-        nightOut={nightOut}
-        onOpen={(m) => setDetail({ tmdbId: m.tmdbId, title: m.title })}
-        onSave={(m) => addToWatchlist(null, { title: m.title, tmdbId: m.tmdbId, releaseDate: m.releaseDate, note: [m.language, m.releaseDate > todayISO() ? `releases ${new Date(m.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""].filter(Boolean).join(" · ") })}
-        onBook={(m) => {
-          cancelEdit();
-          applyPicked(m, { forceBooked: true });
-          setTimeout(() => {
-            titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-          }, 50);
-        }}
-      />
-
-      {recs.length > 0 && (
-        <section aria-label="Recommended for you" style={{ marginBottom: 28 }}>
-          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>✨ Because you loved {recs[0].because}{new Set(recs.map((r) => r.because)).size > 1 ? " & more" : ""}</div>
-          <div className="h-scroll" data-no-tab-swipe="1" style={{ gap: 12, paddingBottom: 6 }}>
-            {recs.map((r) => {
-              const mine = onYourApps({ stream: r.stream }, userApps)[0];
-              return (
-                <button key={r.tmdbId} type="button" onClick={() => setDetail({ tmdbId: r.tmdbId, title: r.title })}
-                  style={{ flex: "0 0 104px", width: 104, background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer", color: "inherit" }}>
-                  <img src={r.poster} alt="" width={104} height={156} loading="lazy" style={{ width: 104, height: 156, objectFit: "cover", borderRadius: 12, background: "var(--line)", display: "block" }} />
-                  <div style={{ fontSize: 12, fontWeight: 600, marginTop: 5, lineHeight: 1.2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.title}</div>
-                  <div style={{ fontSize: 10.5, fontWeight: 600, marginTop: 2, color: mine || r.inTheatres ? "var(--success)" : "var(--muted)" }}>
-                    {mine ? `📺 On ${mine.name}` : r.inTheatres ? "🍿 In theatres" : r.rating != null ? `★ ${r.rating.toFixed(1)}` : r.year}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      <PosterWall movies={movies} />
-
-      {/* Watchlist: movies you want to watch, kept separate from what you've logged */}
-      <div style={{ marginBottom: 32 }}>
-        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-          <Bookmark size={15} color="#7A3E56" /> Watchlist
-        </div>
-        {streamable.length > 0 && (
-          <div className="card" style={{ padding: "10px 12px", borderRadius: 14, marginBottom: 12, borderLeft: "4px solid var(--success)" }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600 }}>
-              📺 {streamable[0][1].length} on your watchlist {streamable[0][1].length === 1 ? "is" : "are"} on {SERVICE_NAMES[streamable[0][0]] || streamable[0][0]} — an app you already use
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>{streamable[0][1].slice(0, 3).join(", ")}{streamable[0][1].length > 3 ? "…" : ""} — no ticket needed.</div>
-          </div>
-        )}
-        <PickForMe watchlist={watchlist} movies={movies} info={wlInfo} recs={recs} userApps={userApps} />
-        <form onSubmit={addToWatchlist} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <MovieSearchInput id="watch-title" placeholder="Movie to watch — type to search" value={watchlistForm.title}
-            onChange={(v) => setWatchlistForm((w) => ({ ...w, title: v, tmdbId: null, releaseDate: null }))}
-            onPick={(m) => setWatchlistForm((w) => ({ title: m.title, tmdbId: m.tmdbId, releaseDate: m.releaseDate, note: w.note || [m.language, m.releaseDate > todayISO() ? `releases ${new Date(m.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : m.year].filter(Boolean).join(" · ") }))}
-            style={{ flex: "1 1 160px" }} />
-          <input type="text" placeholder="Note (optional)" value={watchlistForm.note} onChange={(e) => setWatchlistForm({ ...watchlistForm, note: e.target.value })} maxLength={100} style={{ flex: "1 1 140px" }} />
-          <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-            <Plus size={13} /> Add
-          </button>
-        </form>
-        {watchlistError && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 8 }}>{watchlistError}</div>}
-        {watchlist.length === 0 ? (
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing on your watchlist yet.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {watchlist.map((w) => (
-              <div key={w.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--line)", gap: 12 }}>
-                <button type="button" onClick={() => openDetail({ ...w, tmdbId: wlInfo[w.id]?.tmdbId })} aria-label={`${w.title} details`} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
-                  <Poster title={w.title} width={40} radius={7} />
-                </button>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 14 }}>{w.title}{wlInfo[w.id]?.rating != null && <span style={{ fontSize: 12, color: "#C98A00", fontWeight: 600 }}> ★{wlInfo[w.id].rating.toFixed(1)}</span>}</div>
-                  {(() => {
-                    const i = wlInfo[w.id];
-                    if (!i) return w.note ? <div style={{ fontSize: 12, color: "var(--muted)" }}>{w.note}</div> : null;
-                    const mine = onYourApps({ stream: i.stream }, userApps)[0];
-                    const badge = mine ? { t: `📺 On ${mine.name} — you have it`, c: "var(--success)" }
-                      : i.inTheatres ? { t: "🍿 In theatres now", c: "var(--success)" }
-                      : i.releaseDate && i.releaseDate > today ? { t: `🗓️ Releases ${new Date(i.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })} — we'll remind you`, c: "var(--text-2)" }
-                      : i.stream?.length ? { t: `On ${i.stream.slice(0, 2).map((p) => p.name).join(", ")}`, c: "var(--text-2)" }
-                      : null;
-                    return (
-                      <>
-                        {badge && <div style={{ fontSize: 12, color: badge.c, fontWeight: 600 }}>{badge.t}</div>}
-                        {w.note && <div style={{ fontSize: 12, color: "var(--muted)" }}>{w.note}</div>}
-                      </>
-                    );
-                  })()}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                  <button type="button" onClick={() => moveToWatched(w)} style={{ background: "var(--surface-2)", border: "none", borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 500, color: "var(--text-2)", cursor: "pointer" }}>
-                    Watched it →
-                  </button>
-                  <button onClick={() => removeFromWatchlist(w.id)} aria-label="Remove" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--faint)", display: "flex" }}><Trash2 size={13} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       <div className="responsive-grid">
         <div>
-          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
-            {editingId ? "Edit movie" : "Log a movie"}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>{editingId ? "Edit movie" : "Log a movie"}</div>
+            {!editingId && paste === null && <button type="button" className="chip" onClick={() => setPaste("")} style={{ minHeight: 30, fontSize: 12 }}>📋 Paste booking SMS</button>}
           </div>
+          {paste !== null && (
+            <div className="card" style={{ padding: 12, borderRadius: 14, marginBottom: 12, display: "grid", gap: 8 }}>
+              <label className="field-label" htmlFor="booking-paste" style={{ margin: 0 }}>Paste your BookMyShow / District confirmation (SMS or email)</label>
+              <textarea id="booking-paste" rows={4} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder="Your booking for … is confirmed. 2 Ticket(s) … at PVR … Amount: Rs. 560" style={{ resize: "vertical", fontSize: 13 }} autoFocus />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" className="btn btn-secondary" style={{ flex: 1, minHeight: 40 }} onClick={() => setPaste(null)}>Cancel</button>
+                <button type="button" className="btn btn-primary" style={{ flex: 2, minHeight: 40 }} disabled={!paste.trim()} onClick={fillFromBooking}>Fill the form</button>
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>Read on your phone only — the message isn&apos;t sent anywhere.</div>
+            </div>
+          )}
           <form onSubmit={submitMovie} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div role="radiogroup" aria-label="Watched or booked" style={{ display: "flex", gap: 6 }}>
               {[[false, "✅ Watched it"], [true, "🎟️ Booked — watching later"]].map(([b, label]) => (
@@ -1036,6 +1020,40 @@ export default function MoviesPage() {
               {!form.booked && <input type="number" inputMode="decimal" placeholder="Canteen (₹)" value={form.canteenPrice} onChange={(e) => setForm({ ...form, canteenPrice: e.target.value })} step="0.01" min="0" />}
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: -4 }}>Per-viewing price — total below accounts for rewatches</div>
+            {movieBudget && form.affectsBalance !== false && (() => {
+              const ym = (form.date || todayISO()).slice(0, 7);
+              const spent = movies.filter((m) => m.date.slice(0, 7) === ym && m.id !== editingId).reduce((t, m) => t + (m.ticketPrice + m.canteenPrice) * (m.quantity || 1), 0);
+              const cost = ((parseFloat(form.ticketPrice) || 0) + (form.booked ? 0 : parseFloat(form.canteenPrice) || 0)) * (form.quantity || 1);
+              const left = movieBudget - spent - cost;
+              return (
+                <div style={{ fontSize: 12, fontWeight: 600, color: left < 0 ? "var(--danger)" : "var(--success)" }}>
+                  {left < 0 ? `⚠️ ${fmt(-left)} over your ${fmt(movieBudget)} movie budget` : `${fmt(left)} left of your ${fmt(movieBudget)} movie budget${cost ? " after this" : ""}`}
+                </div>
+              );
+            })()}
+            {editingId === null && (parseFloat(form.ticketPrice) || 0) > 0 && (
+              split.on ? (
+                <div className="card" style={{ padding: 12, borderRadius: 14, display: "grid", gap: 8 }}>
+                  <label className="field-label" htmlFor="split-names" style={{ margin: 0 }}>👥 You paid for — friends' names, comma-separated</label>
+                  <input id="split-names" value={split.names} onChange={(e) => setSplit({ ...split, names: e.target.value })} placeholder="Ravi, Priya" autoCapitalize="words" />
+                  {!form.booked && (parseFloat(form.canteenPrice) || 0) > 0 && (
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-2)" }}>
+                      <input type="checkbox" checked={split.snacks} onChange={(e) => setSplit({ ...split, snacks: e.target.checked })} style={{ width: 18, height: 18, margin: 0 }} />
+                      Split the snacks too
+                    </label>
+                  )}
+                  {(() => {
+                    const n = split.names.split(",").map((x) => x.trim()).filter(Boolean).length;
+                    const pool = ((parseFloat(form.ticketPrice) || 0) + (split.snacks && !form.booked ? parseFloat(form.canteenPrice) || 0 : 0)) * (form.quantity || 1);
+                    return n ? <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Each of {n} friend{n > 1 ? "s" : ""} owes you <b>{fmt(pool / (n + 1))}</b> — added to Who owes what when you save.</div>
+                      : <div style={{ fontSize: 12, color: "var(--muted)" }}>Enter the total you paid as the ticket price; it&apos;s split evenly between you and them.</div>;
+                  })()}
+                  <button type="button" onClick={() => setSplit({ on: false, names: "", snacks: true })} style={{ justifySelf: "start", background: "none", border: "none", padding: 0, color: "var(--muted)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>Don&apos;t split</button>
+                </div>
+              ) : (
+                <button type="button" className="chip" style={{ alignSelf: "flex-start" }} onClick={() => setSplit({ on: true, names: form.companions || "", snacks: true })}>👥 Paid for friends? Split it</button>
+              )
+            )}
             <QuantityStepper value={form.quantity} onChange={(v) => setForm({ ...form, quantity: v })} />
             {form.quantity > 1 && (
               <div style={{ fontSize: 12, color: "var(--text-2)" }}>
@@ -1177,6 +1195,17 @@ export default function MoviesPage() {
                         <span className="tabnum" style={{ fontSize: 15, fontWeight: 500 }}>{fmt(total)}</span>
                         {!m.pending && (
                           <>
+                            {isRated(m) && (
+                              <button type="button" className="icon-btn" aria-label={`Share ${m.title} card`} title="Share a card"
+                                onClick={async () => {
+                                  showToast("Making your card…", "🎨");
+                                  const r = await shareMovieCard(m).catch(() => "error");
+                                  if (r === "downloaded") showToast("Card saved — post it anywhere", "📤");
+                                  else if (r === "error") showToast("Couldn't make the card", "⚠️");
+                                }}>
+                                <Share2 size={17} />
+                              </button>
+                            )}
                             <button onClick={() => startEdit(m)} aria-label="Edit" className="icon-btn">
                               <Pencil size={17} />
                             </button>
@@ -1230,6 +1259,314 @@ export default function MoviesPage() {
           )}
         </div>
       </div>
+        </>
+      )}
+      {tab === "watchlist" && (
+        <>
+      {/* Watchlist: movies you want to watch, kept separate from what you've logged */}
+      <div style={{ marginBottom: 32 }}>
+        <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+          <Bookmark size={15} color="#7A3E56" /> Watchlist
+        </div>
+        {streamable.length > 0 && (
+          <div className="card" style={{ padding: "10px 12px", borderRadius: 14, marginBottom: 12, borderLeft: "4px solid var(--success)" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600 }}>
+              📺 {streamable[0][1].length} on your watchlist {streamable[0][1].length === 1 ? "is" : "are"} on {SERVICE_NAMES[streamable[0][0]] || streamable[0][0]} — an app you already use
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 2 }}>{streamable[0][1].slice(0, 3).join(", ")}{streamable[0][1].length > 3 ? "…" : ""} — no ticket needed.</div>
+          </div>
+        )}
+        <PickForMe watchlist={watchlist} movies={movies} info={wlInfo} recs={recs} userApps={userApps} />
+        <form onSubmit={addToWatchlist} style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <MovieSearchInput id="watch-title" placeholder="Movie to watch — type to search" value={watchlistForm.title}
+            onChange={(v) => setWatchlistForm((w) => ({ ...w, title: v, tmdbId: null, releaseDate: null }))}
+            onPick={(m) => setWatchlistForm((w) => ({ title: m.title, tmdbId: m.tmdbId, releaseDate: m.releaseDate, note: w.note || [m.language, m.releaseDate > todayISO() ? `releases ${new Date(m.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : m.year].filter(Boolean).join(" · ") }))}
+            style={{ flex: "1 1 160px" }} />
+          <input type="text" placeholder="Note (optional)" value={watchlistForm.note} onChange={(e) => setWatchlistForm({ ...watchlistForm, note: e.target.value })} maxLength={100} style={{ flex: "1 1 140px" }} />
+          <button type="submit" className="pill" style={{ background: "var(--ink)", color: "var(--bg)", border: "none", borderRadius: 8, padding: "9px 14px", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <Plus size={13} /> Add
+          </button>
+        </form>
+        {watchlistError && <div style={{ fontSize: 12, color: "var(--danger)", marginBottom: 8 }}>{watchlistError}</div>}
+        {watchlist.length === 0 ? (
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing on your watchlist yet.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {watchlist.length > 4 && (
+              <div className="h-scroll" data-no-tab-swipe="1" style={{ gap: 6, marginBottom: 6 }}>
+                {[["all", `All · ${watchlist.length}`], ["stream", `📺 On your apps · ${wlCounts.stream}`], ["theatres", `🍿 In theatres · ${wlCounts.theatres}`], ["soon", `🗓️ Coming soon · ${wlCounts.soon}`]]
+                  .filter(([k]) => k === "all" || wlCounts[k] > 0)
+                  .map(([k, label]) => (
+                    <button key={k} type="button" className={`chip${wlFilter === k ? " active" : ""}`} onClick={() => { setWlFilter(k); setWlShowAll(false); }} style={{ minHeight: 30, fontSize: 12.5 }}>{label}</button>
+                  ))}
+              </div>
+            )}
+            {(dragOrder ? dragOrder.map((id) => wlVisible.find((w) => w.id === id)).filter(Boolean) : wlVisible).map((w) => (
+              <SwipeRow key={w.id} onDelete={() => removeFromWatchlist(w.id)} disabled={!!dragOrder}>
+              <div ref={(el) => { rowRefs.current[w.id] = el; }}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--line)", gap: 8, background: "var(--bg)",
+                  ...(dragOrder && dragRef.current?.id === w.id ? { boxShadow: "var(--shadow-md)", borderRadius: 12, position: "relative", zIndex: 2, transform: "scale(1.02)" } : {}) }}>
+                {wlFilter === "all" && watchlist.length > 1 && (
+                  <span role="button" tabIndex={0} aria-label={`Drag to reorder ${w.title}`} title="Drag to reorder"
+                    onPointerDown={(e) => startDrag(e, w.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    style={{ touchAction: "none", cursor: "grab", color: "var(--faint, var(--muted))", display: "flex", alignItems: "center", padding: "8px 0", marginRight: -4 }}>
+                    <GripVertical size={18} />
+                  </span>
+                )}
+                <button type="button" onClick={() => openDetail({ ...w, tmdbId: wlInfo[w.id]?.tmdbId })} aria-label={`${w.title} details`} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+                  <Poster title={w.title} width={34} radius={6} />
+                </button>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 14 }}>{w.title}{wlInfo[w.id]?.rating != null && <span style={{ fontSize: 12, color: "#C98A00", fontWeight: 600 }}> ★{wlInfo[w.id].rating.toFixed(1)}</span>}</div>
+                  {(() => {
+                    const i = wlInfo[w.id];
+                    if (!i) return w.note ? <div style={{ fontSize: 12, color: "var(--muted)" }}>{w.note}</div> : null;
+                    const mine = onYourApps({ stream: i.stream }, userApps)[0];
+                    const badge = mine ? { t: `📺 On ${mine.name} — you have it`, c: "var(--success)" }
+                      : i.inTheatres ? { t: "🍿 In theatres now", c: "var(--success)" }
+                      : i.releaseDate && i.releaseDate > today ? { t: `🗓️ Releases ${new Date(i.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })} — we'll remind you`, c: "var(--text-2)" }
+                      : i.stream?.length ? { t: `On ${i.stream.slice(0, 2).map((p) => p.name).join(", ")}`, c: "var(--text-2)" }
+                      : null;
+                    return (
+                      <>
+                        {badge && <div style={{ fontSize: 12, color: badge.c, fontWeight: 600 }}>{badge.t}</div>}
+                        {w.note && <div style={{ fontSize: 12, color: "var(--muted)" }}>{w.note}</div>}
+                      </>
+                    );
+                  })()}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 2, flexShrink: 0 }}>
+                  <button type="button" onClick={() => moveToWatched(w)} style={{ background: "var(--surface-2)", border: "none", borderRadius: 20, padding: "6px 11px", fontSize: 12, fontWeight: 600, color: "var(--text-2)", cursor: "pointer", whiteSpace: "nowrap" }}>
+                    ✓ Watched
+                  </button>
+                  <button type="button" className="icon-btn danger" onClick={() => removeFromWatchlist(w.id)} aria-label={`Remove ${w.title} from watchlist`} title="Remove"><Trash2 size={18} /></button>
+                </div>
+              </div>
+              </SwipeRow>
+            ))}
+            {watchlist.length > 1 && wlFilter === "all" && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Drag ⋮⋮ to put your “watch next” on top · swipe a row left to delete</div>}
+            {wlFiltered.length > wlVisible.length && (
+              <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: 8, minHeight: 40 }} onClick={() => setWlShowAll(true)}>
+                Show all {wlFiltered.length}
+              </button>
+            )}
+            {wlFiltered.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)", padding: "10px 0" }}>Nothing in this filter.</div>}
+          </div>
+        )}
+        <WatchTogether onOpen={(m) => setDetail(m)} />
+      </div>
+        </>
+      )}
+      {tab === "discover" && (
+        <>
+      <NowShowing
+        savedTitles={watchlist.map((w) => w.title)}
+        langs={browseLangs}
+        nightOut={nightOut}
+        onOpen={(m) => setDetail({ tmdbId: m.tmdbId, title: m.title })}
+        onSave={(m) => addToWatchlist(null, { title: m.title, tmdbId: m.tmdbId, releaseDate: m.releaseDate, note: [m.language, m.releaseDate > todayISO() ? `releases ${new Date(m.releaseDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : ""].filter(Boolean).join(" · ") })}
+        onBook={(m) => {
+          cancelEdit();
+          applyPicked(m, { forceBooked: true });
+          goToForm();
+        }}
+      />
+      {recs.length > 0 && (
+        <section aria-label="Recommended for you" style={{ marginBottom: 28 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>✨ Because you loved {recs[0].because}{new Set(recs.map((r) => r.because)).size > 1 ? " & more" : ""}</div>
+          <div className="h-scroll" data-no-tab-swipe="1" style={{ gap: 12, paddingBottom: 6 }}>
+            {recs.map((r) => {
+              const mine = onYourApps({ stream: r.stream }, userApps)[0];
+              return (
+                <button key={r.tmdbId} type="button" onClick={() => setDetail({ tmdbId: r.tmdbId, title: r.title })}
+                  style={{ flex: "0 0 104px", width: 104, background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer", color: "inherit" }}>
+                  <img src={r.poster} alt="" width={104} height={156} loading="lazy" style={{ width: 104, height: 156, objectFit: "cover", borderRadius: 12, background: "var(--line)", display: "block" }} />
+                  <div style={{ fontSize: 12, fontWeight: 600, marginTop: 5, lineHeight: 1.2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.title}</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, marginTop: 2, color: mine || r.inTheatres ? "var(--success)" : "var(--muted)" }}>
+                    {mine ? `📺 On ${mine.name}` : r.inTheatres ? "🍿 In theatres" : r.rating != null ? `★ ${r.rating.toFixed(1)}` : r.year}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+        </>
+      )}
+      {tab === "stats" && (
+        <>
+      {allTimeStats && (
+        <div style={{ marginBottom: 32 }}>
+          <button
+            className="story-chip"
+            onClick={() => setShowAllTime((v) => !v)}
+            style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 20, padding: "7px 14px", fontSize: 12, color: "var(--text-2)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <BarChart3 size={13} /> {showAllTime ? "Hide" : "Show"} all-time stats
+          </button>
+          {showAllTime && (
+            <div className="panel-soft" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginTop: 14, padding: "16px 18px", background: "var(--surface-2)", borderRadius: 6 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Titles logged</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalTitles} /></div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Total viewings</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalViewings} /></div>
+                {allTimeStats.rewatches > 0 && <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{allTimeStats.rewatches} rewatched</div>}
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Spent all-time</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.totalSpend} format={fmt} /></div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Avg. per viewing</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.avgCost} format={fmt} /></div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Agree with public</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.agreementRate} />%</div>
+              </div>
+              {allTimeStats.topCompanion && (
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Most watched with</div>
+                  <div className="lora" style={{ fontSize: 16, fontWeight: 600 }}>{allTimeStats.topCompanion[0]}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{allTimeStats.topCompanion[1]} times</div>
+                </div>
+              )}
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Rewatch rate</div>
+                <div className="lora tabnum" style={{ fontSize: 22, fontWeight: 600 }}><CountUp value={allTimeStats.rewatchRate} />%</div>
+              </div>
+              {allTimeStats.topGenres.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Top genres</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, marginTop: 2 }}>
+                    {allTimeStats.topGenres.map(([g, c]) => `${g} (${c})`).join(", ")}
+                  </div>
+                </div>
+              )}
+              {ticketTrend && (
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Ticket price trend</div>
+                  <div className="lora tabnum" style={{ fontSize: 18, fontWeight: 600, color: ticketTrend.pct > 0 ? "var(--danger)" : "var(--success)" }}>
+                    {ticketTrend.pct > 0 ? "↑" : ticketTrend.pct < 0 ? "↓" : "→"} {Math.abs(ticketTrend.pct)}%
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>vs. 3 months ago ({fmt(ticketTrend.past)} → {fmt(ticketTrend.current)})</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      <MovieGoalCard movies={moviesWithIds} meta={meta?.meta} today={today} prefs={prefs} savePrefs={savePrefs} />
+      {tmdbStats && tmdbStats.matched > 0 && (
+        <section aria-label="Your movies in numbers" className="card" style={{ padding: "16px 18px", borderRadius: 18, marginBottom: 28 }}>
+          <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>🎞️ Your movies in numbers</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 14 }}>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>Hours watched</div>
+              <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700 }}><CountUp value={tmdbStats.hours} />h</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{tmdbStats.theatreHours}h theatre · {tmdbStats.ottHours}h OTT</div>
+            </div>
+            {tmdbStats.costPerHourTheatre != null && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Cost per hour</div>
+                <div className="lora tabnum" style={{ fontSize: 24, fontWeight: 700 }}>{fmt(tmdbStats.costPerHourTheatre)}</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)" }}>in theatres{tmdbStats.costPerHourOtt != null ? ` · ${fmt(tmdbStats.costPerHourOtt)}/h streaming` : ""}</div>
+              </div>
+            )}
+            {tmdbStats.topActors[0] && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>Favourite actor</div>
+                <div className="lora" style={{ fontSize: 16, fontWeight: 700 }}>{tmdbStats.topActors[0].name}</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{tmdbStats.topActors[0].count} movies{tmdbStats.topDirectors[0] ? ` · director: ${tmdbStats.topDirectors[0].name}` : ""}</div>
+              </div>
+            )}
+          </div>
+          {tmdbStats.languages.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ display: "flex", height: 10, borderRadius: 6, overflow: "hidden", background: "var(--line)" }}>
+                {tmdbStats.languages.map((l, k) => <span key={l.name} title={`${l.name} ${l.pct}%`} style={{ width: `${l.pct}%`, background: ["#B0567F", "#3F6E5B", "#C98A00", "#4F6FB0"][k] }} />)}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 5 }}>{tmdbStats.languages.map((l) => `${l.name} ${l.pct}%`).join(" · ")}</div>
+            </div>
+          )}
+          {tmdbStats.franchises.slice(0, 2).map((f) => (
+            <div key={f.name} style={{ marginTop: 12, fontSize: 13 }}>
+              <b>{f.name}</b>: seen {f.seen} of {f.total}{f.next ? <> — next up: <button type="button" onClick={() => setDetail({ tmdbId: f.next.tmdbId, title: f.next.title })} style={{ background: "none", border: "none", padding: 0, color: "var(--accent-solid)", fontWeight: 600, cursor: "pointer", fontSize: 13 }}>{f.next.title}</button></> : " 🎉"}
+            </div>
+          ))}
+          {tmdbStats.matched < tmdbStats.total && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10 }}>Based on {tmdbStats.matched} of {tmdbStats.total} movies matched on TMDB.</div>}
+        </section>
+      )}
+      <MovieMoneyCard movies={moviesWithIds} meta={meta?.meta} expenses={expenses} recurring={ledger?.recurring || []} nightOut={nightOut} today={today} />
+      <TasteCard movies={moviesWithIds} meta={meta?.meta} />
+      <FollowingCard onOpen={(m) => setDetail(m)} prefs={prefs} savePrefs={savePrefs} />
+      {yearWrapUp && (
+        <div style={{ marginBottom: 32 }}>
+          <button
+            onClick={() => setShowWrapUp((v) => !v)}
+            style={{ background: "none", border: "1px solid var(--line-strong)", borderRadius: 8, padding: "7px 14px", fontSize: 12, color: "var(--text-2)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <Sparkles size={13} /> {showWrapUp ? "Hide" : "Show"} {currentYear} wrap-up
+          </button>
+          {showWrapUp && (
+            <div className="panel-soft" style={{ marginTop: 14, padding: "20px 22px", borderRadius: 6, background: "linear-gradient(135deg, var(--danger) 0%, #8C4470 50%, var(--success) 100%)", color: "var(--bg)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>Your {currentYear} in movies</div>
+                <button type="button" className="chip" style={{ background: "rgba(255,255,255,.18)", color: "#fff", border: "1px solid rgba(255,255,255,.4)" }}
+                  onClick={async () => {
+                    const r = yearRecap({ movies: moviesWithIds, meta: meta?.meta || {}, year: currentYear, todayIso: today });
+                    if (!r) return;
+                    const how = await shareYearCard(r).catch(() => null);
+                    if (how === "downloaded") showToast("Saved the image — post it anywhere", "📥");
+                    else if (!how) showToast("Couldn't make the image", "⚠️");
+                  }}>
+                  <Share2 size={14} /> Share
+                </button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Titles watched</div>
+                  <div className="lora tabnum" style={{ fontSize: 26, fontWeight: 600 }}>{yearWrapUp.titles}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Total viewings</div>
+                  <div className="lora tabnum" style={{ fontSize: 26, fontWeight: 600 }}>{yearWrapUp.viewings}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Spent on movies</div>
+                  <div className="lora tabnum" style={{ fontSize: 26, fontWeight: 600 }}>{fmt(yearWrapUp.totalSpend)}</div>
+                </div>
+                {yearWrapUp.topGenre && (
+                  <div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Top genre</div>
+                    <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>{yearWrapUp.topGenre[0]}</div>
+                    <div style={{ fontSize: 11.5, opacity: 0.8 }}>{yearWrapUp.topGenre[1]} times</div>
+                  </div>
+                )}
+                {yearWrapUp.topCompanion && (
+                  <div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Watched most with</div>
+                    <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>{yearWrapUp.topCompanion[0]}</div>
+                    <div style={{ fontSize: 11.5, opacity: 0.8 }}>{yearWrapUp.topCompanion[1]} times</div>
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>Biggest movie month</div>
+                  <div className="lora" style={{ fontSize: 18, fontWeight: 600 }}>{yearWrapUp.bestMonth}</div>
+                  <div style={{ fontSize: 11.5, opacity: 0.8 }}>{yearWrapUp.bestMonthCount} viewings</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      <PosterWall movies={movies} />
+        </>
+      )}
       {rateTarget && <RateMovieSheet movie={rateTarget} onClose={() => setRateTarget(null)} onSaved={() => load()} />}
       {detail && (
         <MovieDetailSheet
@@ -1241,7 +1578,7 @@ export default function MoviesPage() {
             setDetail(null);
             cancelEdit();
             applyPicked({ ...d, releaseDate: d.indiaRelease || d.releaseDate });
-            setTimeout(() => titleInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 250);
+            goToForm();
           }}
         />
       )}

@@ -142,12 +142,13 @@ function ToastHost() {
         setBursts((prev) => [...prev, burst]);
         setTimeout(() => setBursts((prev) => prev.filter((b) => b.id !== burst.id)), 1100);
       }
+      const stay = toast.actionLabel ? 4500 : 1800;
       setTimeout(() => {
         setToasts((prev) => prev.map((t) => (t.id === toast.id ? { ...t, leaving: true } : t)));
-      }, 1800);
+      }, stay);
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== toast.id));
-      }, 2100);
+      }, stay + 300);
     }
     window.addEventListener("app:toast", handleToast);
     return () => window.removeEventListener("app:toast", handleToast);
@@ -168,6 +169,12 @@ function ToastHost() {
             <div key={t.id} className={`toast-bubble${t.leaving ? " leaving" : ""}`}>
               {t.emoji && <span>{t.emoji}</span>}
               {t.message}
+              {t.actionLabel && (
+                <button type="button" className="toast-action"
+                  onClick={() => { t.onAction?.(); setToasts((prev) => prev.filter((x) => x.id !== t.id)); }}>
+                  {t.actionLabel}
+                </button>
+              )}
             </div>
           ))}
         </div>
