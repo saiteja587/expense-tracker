@@ -1,7 +1,7 @@
 // "Me": your level and badges, plus every page that isn't a main tab.
 import { useMemo } from "react";
 import Link from "next/link";
-import { Flame, PiggyBank, HandCoins, Search, Settings, Trophy, Wind, ChevronRight, Award, Wallet, Users, Tv, Landmark, TrendingUp, Building2, Plane, Receipt } from "lucide-react";
+import { Flame, PiggyBank, HandCoins, Search, Settings, Trophy, Wind, ChevronRight, Award, Wallet, Users, Tv, Landmark, TrendingUp, Building2, Plane, Receipt, ListChecks, HeartPulse, Salad, CalendarClock, Bike, Gift } from "lucide-react";
 import { useLedger } from "../lib/useLedger";
 import { computeBadges, levelFor } from "../lib/achievements";
 import { sugarStreak, loggingStreak } from "../lib/ledger";
@@ -90,6 +90,9 @@ export default function MePage() {
 
       <div className="card" style={{ borderRadius: 20, padding: "0 14px" }}>
         <div style={{ marginTop: -1 }}>
+          <Row href="/habits" Icon={ListChecks} color="#2F6F5E" title="Habits" sub="Walk, gym, read, sleep on time: streaks" />
+          <Row href="/health" Icon={HeartPulse} color="#B5533C" title="Health" sub="Weight, sleep, mood, steps, water" />
+          <Row href="/diet" Icon={Salad} color="#6B7A3E" title="Diet" sub="Indian food log, 7-day plan, shopping list" />
           <Row href="/sugar-challenge" Icon={Flame} color="#E8731F" title="No-sugar challenge" sub={data.challengeMeta ? `${view.sugar}-day streak` : "Start a challenge"} />
           <Row href="/challenges" Icon={Trophy} color="#2F6F5E" title="Mini challenges" sub="No-delivery week, daily cap, no-spend weekend" />
           <Row href="/budget" Icon={PiggyBank} color="#7C3AED" title="Budget & goals" sub="Limits, savings goal, alerts" />
@@ -103,6 +106,9 @@ export default function MePage() {
           <Row href="/loans" Icon={Building2} color="#5B3A5C" title="Loans & EMIs" sub="Payoff dates and prepayment savings" />
           <Row href="/trips" Icon={Plane} color="#C98A2C" title="Trips & events" sub="What a trip really cost, per person" />
           <Row href="/tax" Icon={Receipt} color="#6B7A3E" title="Tax deductions" sub="80C, 80D, rent… for the financial year" />
+          <Row href="/renewals" Icon={CalendarClock} color="#8A4B6B" title="Renewals & documents" sub="Insurance, PUC, licence, warranties, IDs" />
+          <Row href="/vehicles" Icon={Bike} color="#3F6E5B" title="Vehicles" sub="Mileage, fuel cost, service due" />
+          <Row href="/people" Icon={Gift} color="#C98A2C" title="People" sub="Birthdays, gifts, things you lent" />
           <Row href="/ious" Icon={HandCoins} color="#B5533C" title="Who owes what" sub={view.owedToMe || view.iOwe ? `${fmt(view.owedToMe)} owed to you · you owe ${fmt(view.iOwe)}` : "Track money between friends"} />
           <Row href="/shows" Icon={Tv} color="#4F6FB0" title="Shows" sub="Series you're watching — next episode, where it streams" />
           <Row href="/shared" Icon={Users} color="#0D9488" title="Shared spaces" sub="Split rent, groceries or a trip with someone" />
@@ -111,7 +117,7 @@ export default function MePage() {
           <Row href="/settings" Icon={Settings} color="#6B6558" title="Settings" sub="PIN, backup, theme, notifications" />
         </div>
         <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", marginTop: 20, lineHeight: 1.5 }}>
-          Movie and TV data from TMDB; streaming info via JustWatch.<br />This app uses the TMDB API but is not endorsed or certified by TMDB.
+          Movie and TV data from TMDB; streaming info via JustWatch.<br />This app uses the TMDB API but is not endorsed or certified by TMDB.<br />Extra movie info (when switched on) from OMDb, Wikipedia/Wikidata (CC BY-SA), TVmaze (CC BY-SA), fanart.tv, OpenSubtitles and YouTube.
         </div>
       </div>
     </div>

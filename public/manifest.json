@@ -84,6 +84,45 @@
       ]
     },
     {
+      "name": "Habits for today",
+      "short_name": "Habits",
+      "description": "Check off today's habits",
+      "url": "/habits",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Pay card bill",
+      "short_name": "Cards",
+      "description": "See what's due on your cards",
+      "url": "/accounts",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Log health",
+      "short_name": "Health",
+      "description": "Weight, sleep and mood",
+      "url": "/health",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
       "name": "Insights",
       "short_name": "Insights",
       "description": "Where your money went this month",

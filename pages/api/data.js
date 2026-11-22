@@ -5,6 +5,8 @@ import { localDateParts } from "../../lib/dates";
 import * as tmdbApi from "../../lib/tmdb";
 import { sendToUser } from "../../lib/push";
 import * as food from "../../lib/food";
+import { LIFE_KINDS } from "../../lib/life";
+import * as movieApis from "../../lib/movieApis";
 
 // Calls the lock screen needs before the user has unlocked. Everything else
 // requires a valid session cookie whenever a PIN is set.
@@ -58,6 +60,7 @@ export async function buildExport(uid) {
     formatVersion: 2,
     expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious, watchlist, tvShows,
     accounts, transfers, loans, assets, trips, netWorth,
+    life: await db.exportLife(uid),
     sugarChallenge: { meta: challengeMeta, days: challengeDays, history: challengeHistory },
     customCategories: (await setting("custom_categories")) || [],
     theatres: await setting("custom_theatres"),
@@ -163,6 +166,15 @@ export default async function handler(req, res) {
       if (type === "assets") return res.status(200).json({ assets: await db.listAssets(uid) });
       if (type === "trips") return res.status(200).json({ trips: await db.listTrips(uid) });
       if (type === "networth") return res.status(200).json({ history: await db.listNetWorth(uid) });
+      // ?kinds=habit,habit_log — life trackers (see lib/life.js)
+      if (type === "life") {
+        const kinds = String(req.query.kinds || "").split(",").filter((k) => LIFE_KINDS[k]);
+        if (!kinds.length) return err(res, "Say which kinds");
+        return res.status(200).json({ items: await db.listLife(uid, kinds) });
+      }
+      if (type === "life-photo") return res.status(200).json({ photo: await db.getLifePhoto(uid, parseInt(req.query.id, 10)) });
+      // A sealed "ok" that proves which passphrase this person's vault uses.
+      if (type === "vault-check") return res.status(200).json({ check: (await db.getUserSetting(uid, "vault_check")) || "" });
       if (type === "balance") return res.status(200).json({ topups: await db.listTopups(uid) });
       if (type === "budget") return res.status(200).json({ rules: await db.listBudgetRules(uid) });
       if (type === "challenge") {
@@ -204,6 +216,25 @@ export default async function handler(req, res) {
       }
       // Everything about one film: by TMDB id, or by title (+ year) for
       // movies logged before ids were stored.
+      // Extra sources for one film (each skipped if not set up): ratings from
+      // OMDb, budget/box office/summary from Wikidata + Wikipedia, art from
+      // fanart.tv, subtitle languages from OpenSubtitles, YouTube reviews.
+      if (type === "movie-extras") {
+        const tmdbId = parseInt(req.query.tmdbId, 10) || null;
+        const imdbId = /^tt\d+$/.test(String(req.query.imdbId || "")) ? req.query.imdbId : await safe(movieApis.imdbIdFor(tmdbId));
+        const title = String(req.query.title || "").slice(0, 100);
+        const [ratings, wiki, art, subtitles, videos] = await Promise.all([
+          safe(movieApis.omdbRatings(imdbId)), safe(movieApis.wikiFacts(imdbId)), safe(movieApis.fanartArt(tmdbId)),
+          safe(movieApis.subtitleLanguages(imdbId)), safe(movieApis.reviewVideos(title, String(req.query.year || "").slice(0, 4), String(req.query.language || ""))),
+        ]);
+        return res.status(200).json({ imdbId: imdbId || null, ratings, wiki, art, subtitles, videos });
+      }
+      if (type === "tv-extras") {
+        const tmdbId = parseInt(req.query.tmdbId, 10) || null;
+        const imdbId = await safe(movieApis.imdbIdFor(tmdbId, "tv"));
+        return res.status(200).json({ tvmaze: await safe(movieApis.tvmazeInfo(imdbId)) });
+      }
+      if (type === "movie-sources") return res.status(200).json({ sources: { tmdb: tmdbApi.hasTmdb(), ...movieApis.sources() } });
       if (type === "movie-details") {
         if (!tmdbApi.hasTmdb()) return res.status(200).json({ details: null });
         let id = parseInt(req.query.id, 10);
@@ -454,6 +485,32 @@ export default async function handler(req, res) {
         return res.status(200).json({ tagged: await db.tagTripByDates(uid, parseInt(body.id, 10)) });
       }
 
+      if (type === "life") {
+        const id = body.id ? parseInt(body.id, 10) : null;
+        const item = await db.saveLife(uid, id, { kind: body.kind, refId: body.refId, date: body.date, data: body.data || {}, photo: body.photo, vault: body.vault });
+        if (!item) return err(res, "Not found", 404);
+        return res.status(id ? 200 : 201).json({ item });
+      }
+
+      if (type === "habit-toggle") {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(body.date || ""))) return err(res, "Pick a date");
+        await db.toggleHabitDay(uid, body.habitId, body.date, !!body.on);
+        return res.status(200).json({ ok: true });
+      }
+
+      if (type === "vault-check") {
+        // Set once; changing it would lock out secrets sealed with the old one.
+        if (await db.getUserSetting(uid, "vault_check")) return res.status(200).json({ ok: true, existed: true });
+        await db.setUserSetting(uid, "vault_check", db.cleanVault(body.check));
+        return res.status(201).json({ ok: true });
+      }
+
+      if (type === "trakt-import") {
+        const profile = await movieApis.traktProfile(String(body.username || "").slice(0, 60));
+        if (profile.error) return err(res, profile.error);
+        return res.status(200).json(await db.importTrakt(uid, profile));
+      }
+
       if (type === "networth-snapshot") {
         const net = parseFloat(body.net);
         if (!isFinite(net)) return err(res, "Invalid value");
@@ -547,7 +604,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurring = await db.createRecurring(uid, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable });
+        const recurring = await db.createRecurring(uid, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable, accountId: body.accountId });
         return res.status(201).json({ recurring });
       }
 
@@ -964,7 +1021,7 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!dayOfMonth || dayOfMonth < 1 || dayOfMonth > 31) return err(res, "Day of month must be between 1 and 31");
-        const recurring = await db.updateRecurring(uid, numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable });
+        const recurring = await db.updateRecurring(uid, numId, { amount, category: body.category, note: body.note, dayOfMonth, affectsBalance: body.affectsBalance, upiId: body.upiId, variable: !!body.variable, accountId: body.accountId });
         return res.status(200).json({ recurring });
       }
 
@@ -1031,6 +1088,7 @@ export default async function handler(req, res) {
       else if (type === "loan") await db.deleteLoan(uid, numId);
       else if (type === "asset") await db.deleteAsset(uid, numId);
       else if (type === "trip") await db.deleteTrip(uid, numId);
+      else if (type === "life") await db.deleteLife(uid, numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }

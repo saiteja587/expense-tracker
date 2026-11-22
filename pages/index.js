@@ -19,6 +19,7 @@ import { fmt, greeting, dayLabel } from "../lib/format";
 import { openQuickAdd } from "../components/QuickAddSheet";
 import NeedsYou from "../components/NeedsYou";
 import MoneyAlerts from "../components/MoneyAlerts";
+import LifeAlerts from "../components/LifeAlerts";
 import CategoryIcon from "../components/CategoryIcon";
 import CountUp from "../components/CountUp";
 import PullToRefresh from "../components/PullToRefresh";
@@ -86,7 +87,7 @@ export default function Home() {
 
   const view = useMemo(() => {
     if (!data || !derived) return null;
-    const budget = todayBudget({ items: derived.items, balance: derived.balance, todayIso: today, hasMoney: derived.hasMoney });
+    const budget = todayBudget({ items: derived.items, balance: derived.spendable ?? derived.balance, todayIso: today, hasMoney: derived.hasMoney });
     const ym = ymOf(today);
     const monthItems = itemsInMonth(derived.items, ym);
     const todayItems = derived.items.filter((x) => x.date === today).sort((a, b) => (b.time || "").localeCompare(a.time || ""));
@@ -215,6 +216,7 @@ export default function Home() {
         <NeedsYou data={data} derived={derived} today={today} focusBill={router.query.bill} />
 
         <MoneyAlerts data={data} derived={derived} budget={view.budget} today={today} />
+        <LifeAlerts today={today} />
 
         {/* Insight of the day */}
         {view.insight && (
