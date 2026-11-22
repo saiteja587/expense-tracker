@@ -18,6 +18,7 @@ import { categoryColor } from "../lib/categories";
 import { fmt, greeting, dayLabel } from "../lib/format";
 import { openQuickAdd } from "../components/QuickAddSheet";
 import NeedsYou from "../components/NeedsYou";
+import MoneyAlerts from "../components/MoneyAlerts";
 import CategoryIcon from "../components/CategoryIcon";
 import CountUp from "../components/CountUp";
 import PullToRefresh from "../components/PullToRefresh";
@@ -212,6 +213,8 @@ export default function Home() {
         </section>
 
         <NeedsYou data={data} derived={derived} today={today} focusBill={router.query.bill} />
+
+        <MoneyAlerts data={data} derived={derived} budget={view.budget} today={today} />
 
         {/* Insight of the day */}
         {view.insight && (

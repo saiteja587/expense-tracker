@@ -41,6 +41,11 @@ export async function buildExport(uid) {
     db.listExpenses(uid), db.listMovies(uid), db.listTopups(uid), db.listBudgetRules(uid), db.listRecurring(uid),
     db.listRecurringIncome(uid), db.listIous(uid), db.listWatchlist(uid), db.listTvShows(uid),
   ]);
+  // Card secrets travel only in their encrypted form (useless without the
+  // passphrase), so a restore brings them back too.
+  const [accounts, transfers, loans, assets, trips, netWorth] = await Promise.all([
+    db.listAccounts(uid), db.listTransfers(uid), db.listLoans(uid), db.listAssets(uid), db.listTrips(uid), db.listNetWorth(uid),
+  ]);
   const challengeMeta = await db.getChallengeMeta(uid);
   const challengeDays = await db.listChallengeDays(uid);
   const challengeHistory = await db.listChallengeHistory(uid);
@@ -52,6 +57,7 @@ export async function buildExport(uid) {
     exportedAt: new Date().toISOString(),
     formatVersion: 2,
     expenses, movies, topups, budgetRules: rules, recurring, recurringIncome, ious, watchlist, tvShows,
+    accounts, transfers, loans, assets, trips, netWorth,
     sugarChallenge: { meta: challengeMeta, days: challengeDays, history: challengeHistory },
     customCategories: (await setting("custom_categories")) || [],
     theatres: await setting("custom_theatres"),
@@ -151,6 +157,12 @@ export default async function handler(req, res) {
       }
       if (type === "expenses") return res.status(200).json({ expenses: await db.listExpenses(uid) });
       if (type === "movies") return res.status(200).json({ movies: await db.listMovies(uid) });
+      if (type === "accounts") return res.status(200).json({ accounts: await db.listAccounts(uid) });
+      if (type === "transfers") return res.status(200).json({ transfers: await db.listTransfers(uid) });
+      if (type === "loans") return res.status(200).json({ loans: await db.listLoans(uid) });
+      if (type === "assets") return res.status(200).json({ assets: await db.listAssets(uid) });
+      if (type === "trips") return res.status(200).json({ trips: await db.listTrips(uid) });
+      if (type === "networth") return res.status(200).json({ history: await db.listNetWorth(uid) });
       if (type === "balance") return res.status(200).json({ topups: await db.listTopups(uid) });
       if (type === "budget") return res.status(200).json({ rules: await db.listBudgetRules(uid) });
       if (type === "challenge") {
@@ -390,8 +402,84 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!body.date) return err(res, "Date is required");
-        const expense = await db.createExpense(uid, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, clientRequestId: body.clientRequestId, isEstimate: !!body.isEstimate });
+        const expense = await db.createExpense(uid, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, clientRequestId: body.clientRequestId, isEstimate: !!body.isEstimate, accountId: body.accountId, tripId: body.tripId, taxTag: body.taxTag });
         return res.status(201).json({ expense });
+      }
+
+      if (type === "refund") {
+        const amount = parseFloat(body.amount);
+        if (!amount || amount <= 0) return err(res, "Enter the amount you got back");
+        if (!body.date) return err(res, "Date is required");
+        const r = await db.createRefund(uid, parseInt(body.expenseId, 10), { amount, date: body.date, note: String(body.note || "").slice(0, 120), accountId: body.accountId, kind: body.kind });
+        if (r.error) return err(res, r.error);
+        return res.status(201).json(r);
+      }
+
+      if (type === "accounts") {
+        if (!String(body.name || "").trim()) return err(res, "Give the account a name");
+        return res.status(201).json({ account: await db.createAccount(uid, body) });
+      }
+
+      if (type === "transfer") {
+        const amount = parseFloat(body.amount);
+        if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
+        if (!body.date) return err(res, "Date is required");
+        const r = await db.createTransfer(uid, { ...body, amount });
+        if (r.error) return err(res, r.error);
+        return res.status(201).json(r);
+      }
+
+      if (type === "loan") {
+        if (!(parseFloat(body.principal) > 0)) return err(res, "Enter the loan amount");
+        if (!(parseInt(body.tenureMonths, 10) > 0)) return err(res, "Enter the tenure in months");
+        if (!body.startDate) return err(res, "Enter when the loan started");
+        return res.status(201).json({ loan: await db.createLoan(uid, body) });
+      }
+
+      if (type === "asset") {
+        if (!String(body.name || "").trim()) return err(res, "Give it a name");
+        return res.status(201).json({ asset: await db.saveAsset(uid, null, body) });
+      }
+
+      if (type === "trip") {
+        if (!String(body.name || "").trim()) return err(res, "Give the trip a name");
+        if (!body.startDate) return err(res, "When does it start?");
+        if (body.endDate && body.endDate < body.startDate) return err(res, "The end date is before the start");
+        const trip = await db.saveTrip(uid, null, body);
+        const tagged = body.tagExisting ? await db.tagTripByDates(uid, trip.id) : 0;
+        return res.status(201).json({ trip, tagged });
+      }
+
+      if (type === "trip-tag") {
+        return res.status(200).json({ tagged: await db.tagTripByDates(uid, parseInt(body.id, 10)) });
+      }
+
+      if (type === "networth-snapshot") {
+        const net = parseFloat(body.net);
+        if (!isFinite(net)) return err(res, "Invalid value");
+        await db.saveNetWorth(uid, String(body.ym || ""), { net, have: parseFloat(body.have) || 0, owe: parseFloat(body.owe) || 0 });
+        return res.status(200).json({ ok: true });
+      }
+
+      // Bank/card statement rows the person ticked. Debits become expenses,
+      // credits become money in. Ids come from the statement line itself,
+      // so re-importing the same file adds nothing twice.
+      if (type === "statement-import") {
+        const rows = Array.isArray(body.rows) ? body.rows.slice(0, 2000) : [];
+        const accountId = body.accountId == null || body.accountId === "" ? null : parseInt(body.accountId, 10);
+        const debits = [], credits = [];
+        for (const r of rows) {
+          const amount = Math.round((parseFloat(r.amount) || 0) * 100) / 100;
+          if (!(amount > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String(r.date || ""))) continue;
+          const key = String(r.key || "").slice(0, 120);
+          if (!key) continue;
+          const crid = `stmt:${uid}:${accountId ?? "main"}:${key}`;
+          if (r.type === "credit") credits.push({ toAccount: accountId, amount, date: r.date, note: String(r.description || "").slice(0, 120), clientRequestId: crid });
+          else debits.push({ accountId, amount, date: r.date, category: String(r.category || "Other").slice(0, 40), note: String(r.description || "").slice(0, 120), clientRequestId: crid });
+        }
+        const added = await db.createExpensesBulk(uid, debits);
+        const credited = await db.createTransfersBulk(uid, credits);
+        return res.status(200).json({ added, credited, skipped: debits.length + credits.length - added - credited });
       }
 
       if (type === "movies") {
@@ -816,8 +904,34 @@ export default async function handler(req, res) {
         if (!amount || amount <= 0) return err(res, "Amount must be greater than 0");
         if (!body.category) return err(res, "Category is required");
         if (!body.date) return err(res, "Date is required");
-        const expense = await db.updateExpense(uid, numId, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, isEstimate: body.isEstimate });
+        const expense = await db.updateExpense(uid, numId, { amount, category: body.category, note: body.note, date: body.date, time: body.time, affectsBalance: body.affectsBalance, receiptPhoto: body.receiptPhoto, isEstimate: body.isEstimate, accountId: body.accountId, tripId: body.tripId, taxTag: body.taxTag });
         return res.status(200).json({ expense });
+      }
+
+      if (type === "accounts") {
+        if (!String(body.name || "").trim()) return err(res, "Give the account a name");
+        const account = await db.updateAccount(uid, numId, body);
+        if (!account) return err(res, "Account not found", 404);
+        return res.status(200).json({ account });
+      }
+
+      if (type === "loan") {
+        const loan = await db.updateLoan(uid, numId, body);
+        if (!loan) return err(res, "Loan not found", 404);
+        return res.status(200).json({ loan });
+      }
+
+      if (type === "asset") {
+        const asset = await db.saveAsset(uid, numId, body);
+        if (!asset) return err(res, "Not found", 404);
+        return res.status(200).json({ asset });
+      }
+
+      if (type === "trip") {
+        if (body.endDate && body.startDate && body.endDate < body.startDate) return err(res, "The end date is before the start");
+        const trip = await db.saveTrip(uid, numId, body);
+        if (!trip) return err(res, "Trip not found", 404);
+        return res.status(200).json({ trip });
       }
 
       if (type === "movies") {
@@ -912,6 +1026,11 @@ export default async function handler(req, res) {
       else if (type === "watch-list-item") await db.deleteWatchListItem(uid, numId);
       else if (type === "follow") await db.unfollowPerson(uid, numId);
       else if (type === "sugar-log") await db.deleteSugarLog(uid, numId);
+      else if (type === "accounts") await db.deleteAccount(uid, numId);
+      else if (type === "transfer") await db.deleteTransfer(uid, numId);
+      else if (type === "loan") await db.deleteLoan(uid, numId);
+      else if (type === "asset") await db.deleteAsset(uid, numId);
+      else if (type === "trip") await db.deleteTrip(uid, numId);
       else return err(res, "Unknown type");
       return res.status(200).json({ ok: true });
     }
@@ -919,6 +1038,7 @@ export default async function handler(req, res) {
     return err(res, "Method not allowed", 405);
   } catch (e) {
     const where = `${req.method} ${req.query?.type || req.body?.type || "?"}`;
+    if (e && e.status === 400) return err(res, e.message, 400);
     console.error(`[api/data] ${where} failed:`, e);
     // Postgres class 22 = bad input data (invalid date, number too large, …):
     // that's the request's fault, so say what was wrong instead of a bare 500.

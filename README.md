@@ -15,6 +15,23 @@ Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free ti
   jars from category limits, categories learned from your own history.
 - **Reminders:** 9 PM nudge if nothing's logged (or you went over), bills due tomorrow with a
   one-tap UPI pay page, weekly server backups (last 4 kept, restorable from Settings).
+- **Accounts & cards:** bank, UPI, cash, wallets and credit cards, each with its own balance;
+  pick which one paid in quick-add; transfers and "pay card bill" never count as spending.
+  Cards show the billing cycle: bill due, due date, unbilled, limit used, with reminders
+  3 days and 1 day before the due date. Card logins (link + username) and an **encrypted vault**
+  for card number, CVV, PINs and passwords: sealed on the phone with a passphrase
+  (PBKDF2 + AES-GCM, `lib/vault.js`), so the server and backups only hold ciphertext. A
+  forgotten passphrase can't be recovered.
+- **Loans & EMIs:** outstanding, EMIs left, payoff date, and "what if I prepay ₹X".
+- **Net worth:** cash + accounts + investments + money owed to you, minus cards, loans and
+  IOUs, with a monthly trend.
+- **Refunds & cashback** linked to the original expense (category totals stay right).
+- **Trips & events:** tag expenses (automatic while a trip is on); total, per person, per day.
+- **Tax deductions:** tag expenses 80C / 80D / HRA…; per financial-year summary with limits and
+  a CSV for your CA.
+- **Smart checks:** unusual-spend alerts, a duplicate warning in quick-add, a month-end
+  forecast vs your budget, bank/card **statement CSV import** (safe to re-run), and
+  plain-English search ("food last month over 500").
 - **Shared spaces:** split costs with a flatmate or partner through a private link — they
   only see that space, no PIN or account needed.
 - **Ledger:** log expenses by typing, voice, quick-add, or with a receipt photo. Wallet balance
