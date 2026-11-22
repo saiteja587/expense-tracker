@@ -48,11 +48,20 @@ Ordered by priority. Tick items off as they're fixed.
       snapshots), refunds/cashback, trips, tax tags & FY summary, unusual-spend alerts, duplicate check, month-end
       forecast, statement CSV import, plain-English search. Schema v10. Tests: `tests/money*.test.js`.
 
+## Life features (Nov 2026) — done
+- [x] Habits, health log, free diet (Indian food table, plan, shopping list, Ask Claude), renewals / warranties /
+      documents, vehicles & fuel, birthdays & gifts, lent items, OTT optimizer, Sunday summary, Home "coming up",
+      CSV export, shortcuts. One `life_items` table (schema v11); kinds and fields in `lib/life.js`.
+- [x] Recurring bills can be paid from an account or card; one vault passphrase is enforced (`vault_check`).
+- [x] Card spends no longer count twice in "left to spend today" (card dues are set aside from the pool).
+
 ## Open follow-ups
 - [ ] Movie cards feel cramped next to the poster on narrow phones; consider moving edit/delete into a ⋯ menu.
-- [ ] Card spending counts toward "left to spend today" when it happens, and the bill payment later moves money out
-      of the main wallet: the daily ring can look tight twice for the same spend. Consider excluding card spends
-      from the ring once card bills are paid from main.
 - [ ] Statement import reads CSV only; PDF statements need converting first.
 - [ ] `schema.sql` is out of date (stops before v4); regenerate it from `ensureTables()`.
+- [ ] Telugu / Hindi: needs the app's text moved into translation files first (all strings are inline today).
+- [ ] Live Google Sheets sync needs a Google sign-in for the app; CSV export from Search covers it for now.
+- [ ] Health/diet preferences (goal, veg/non-veg) are kept per device (localStorage).
+- [ ] Photos on warranties/documents aren't in backups (same as receipts in the weekly backups).
+- [ ] Wikidata often lacks budget / box office for Indian films, so "hit or flop" shows only for some.
 - [ ] Remaining lint warnings (9): React hook dependency warnings and `<img>` for receipt previews. Harmless, but worth a look during the #14 split.

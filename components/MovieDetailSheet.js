@@ -2,6 +2,7 @@
 // it in India (highlighting apps you already have), "theatre or wait?",
 // franchise progress and "More like this". Data from TMDB.
 import { useEffect, useState } from "react";
+import MovieMoreInfo from "./MovieMoreInfo";
 import { onYourApps, theatreVerdict } from "../lib/movieStats";
 import { rememberPoster } from "./Poster";
 import { todayISO } from "../lib/format";
@@ -165,6 +166,8 @@ export default function MovieDetailSheet({ target, onClose, onLog, onSave, userA
                     {d.overview}
                   </div>
                 )}
+
+                {d && <MovieMoreInfo d={d} />}
 
                 {friends?.ratings?.length > 0 && (
                   <div className="card" style={{ marginTop: 12, padding: "10px 12px", borderRadius: 14 }}>

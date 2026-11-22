@@ -2,6 +2,29 @@
 // for the next episode, when the next one airs, and where it streams.
 // Show data from TMDB.
 import { useEffect, useMemo, useState } from "react";
+import OttOptimizer from "../components/OttOptimizer";
+
+// Next episode: the date from TMDB, plus the exact time in IST and the
+// channel from TVmaze (free, no key) when it knows the show.
+const airCache = new Map();
+function AirTime({ show, nx }) {
+  const [tv, setTv] = useState(airCache.get(show.tmdb_id) || null);
+  useEffect(() => {
+    if (!show.tmdb_id || airCache.has(show.tmdb_id)) return;
+    let live = true;
+    fetch(`/api/data?type=tv-extras&tmdbId=${show.tmdb_id}`).then((r) => (r.ok ? r.json() : null)).then((j) => { airCache.set(show.tmdb_id, j?.tvmaze || null); if (live) setTv(j?.tvmaze || null); }).catch(() => {});
+    return () => { live = false; };
+  }, [show.tmdb_id]);
+  const exact = tv?.next && tv.next.season === nx.season && tv.next.episode === nx.episode ? new Date(tv.next.airstamp) : null;
+  const when = exact
+    ? exact.toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
+    : new Date(nx.airDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
+  return (
+    <div style={{ fontSize: 12, color: "var(--success)", marginTop: 5, fontWeight: 600 }}>
+      🆕 S{nx.season} E{nx.episode} airs {when}{tv?.network ? ` on ${tv.network}` : ""}
+    </div>
+  );
+}
 import Link from "next/link";
 import { ArrowLeft, Trash2, Plus } from "lucide-react";
 import MovieSearchInput from "../components/MovieSearchInput";
@@ -101,6 +124,7 @@ export default function Shows() {
       <div style={{ fontSize: 14, color: "var(--text-2)", marginBottom: 16 }}>
         Series you&apos;re watching — where you left off, and when the next episode drops.{hours > 0 ? ` About ${hours} hours watched so far.` : ""}
       </div>
+      <OttOptimizer shows={shows || []} />
 
       <MovieSearchInput kind="tv" id="tv-search" placeholder="Add a show — type to search" value={q} onChange={setQ} onPick={add} />
       {busy && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Adding…</div>}
@@ -147,11 +171,7 @@ export default function Shows() {
                   <div style={{ height: "100%", width: `${pct}%`, background: "var(--accent-gradient)", borderRadius: 4 }} />
                 </div>
               )}
-              {nx && nx.airDate >= today && (
-                <div style={{ fontSize: 12, color: "var(--success)", marginTop: 5, fontWeight: 600 }}>
-                  🆕 S{nx.season} E{nx.episode} airs {new Date(nx.airDate + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
-                </div>
-              )}
+              {nx && nx.airDate >= today && <AirTime show={s} nx={nx} />}
               <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                 {seasonDone && hasNextSeason ? (
                   <button type="button" className="btn btn-primary" style={{ minHeight: 36, fontSize: 13 }} onClick={() => save(s, { season: s.season + 1, episode: 0, status: "watching" }, `Starting season ${s.season + 1}`)}>Start season {s.season + 1}</button>

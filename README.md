@@ -32,6 +32,23 @@ Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free ti
 - **Smart checks:** unusual-spend alerts, a duplicate warning in quick-add, a month-end
   forecast vs your budget, bank/card **statement CSV import** (safe to re-run), and
   plain-English search ("food last month over 500").
+- **Habits:** daily check-ins, streaks, a goal of N days a week.
+- **Health:** weight, sleep (from bed/wake times), mood, steps, water; weight trend, and how mood
+  and sleep line up with spending.
+- **Diet (free, offline):** ~75 common Indian foods, daily calorie/protein/sugar targets by goal,
+  a rule-based 7-day plan (veg / egg / non-veg) with a priced shopping list, and an "Ask Claude"
+  button that copies your week into a prompt for the free Claude app.
+- **Renewals & documents:** insurance, PUC, licence, passport, rent… with reminders 30/7/1/0 days
+  before; warranties with a bill photo; ID documents with numbers sealed in the vault.
+- **Vehicles:** fuel log, real mileage (full-tank method), fuel cost per km, service due by km.
+- **People:** birthdays and anniversaries (reminder a week before and on the day, WhatsApp
+  wishes), gift history and budget, and things you've lent out.
+- **More movie info (free sources, each optional):** IMDb / Rotten Tomatoes / Metacritic (OMDb),
+  budget vs box office and a summary (Wikidata + Wikipedia, no key), exact episode air times
+  (TVmaze, no key), logos (fanart.tv), subtitle languages (OpenSubtitles), YouTube review videos,
+  and a one-time Trakt import. Settings → Movie data sources shows which are on (`lib/movieApis.js`).
+- **Streaming check:** apps you pay for vs what you watched on them in 90 days (on Shows).
+- **Sunday summary** push, a "coming up" card on Home, CSV export from Search, more app-icon shortcuts.
 - **Shared spaces:** split costs with a flatmate or partner through a private link — they
   only see that space, no PIN or account needed.
 - **Ledger:** log expenses by typing, voice, quick-add, or with a receipt photo. Wallet balance
@@ -75,6 +92,7 @@ Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free ti
 | `CRON_SECRET` | yes, for cron jobs | Any long random string. Vercel sends it to cron endpoints automatically; without it the daily jobs refuse to run. |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | for push | Generate with `npx web-push generate-vapid-keys`. |
 | `WATER_NOTIFY_SECRET` | for water reminders | Shared secret for `/api/notify-water?secret=…`. |
+| `OMDB_API_KEY`, `FANART_API_KEY`, `OPENSUBTITLES_API_KEY`, `YOUTUBE_API_KEY`, `TRAKT_CLIENT_ID` | optional | Free keys for extra movie info; see `.env.example`. Each feature stays hidden until its key is set. |
 | `AUTH_SECRET` | no | Session signing secret. If unset, one is generated and stored in the database. |
 | `TMDB_API_KEY` | no | Free key from themoviedb.org (v3 key or v4 read token) for real movie posters. Without it, posters are generated tiles. |
 | `APP_TIMEZONE` | no | Defaults to `Asia/Kolkata`. Decides when "today" starts for recurring items and reminders. |

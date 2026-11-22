@@ -5,11 +5,14 @@ import Link from "next/link";
 import PeopleSection from "../components/PeopleSection";
 import { THEMES, getTheme, saveTheme } from "../lib/theme";
 import AutoBackups from "../components/AutoBackups";
+import MovieSources from "../components/MovieSources";
+import { useLedger } from "../lib/useLedger";
 import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy, Fingerprint } from "lucide-react";
 
 const BASE_CATEGORY_COLORS = ["#B5533C", "var(--warn)", "#3F6E5B", "#5B3A5C", "#2F4858", "var(--amber)", "#6B7A3E", "#8A4B6B", "#6B6558"];
 
 export default function SettingsPage() {
+  const ledger = useLedger();
   const [accent, setAccent] = useState("sunset");
   const [categories, setCategories] = useState([]);
   const [newCat, setNewCat] = useState("");
@@ -18,7 +21,7 @@ export default function SettingsPage() {
   const [ottPlatforms, setOttPlatforms] = useState([]);
   const [newOtt, setNewOtt] = useState("");
   const [recurring, setRecurring] = useState([]);
-  const [recForm, setRecForm] = useState({ amount: "", category: "Bills", note: "", dayOfMonth: "1", upiId: "", variable: false });
+  const [recForm, setRecForm] = useState({ amount: "", category: "Bills", note: "", dayOfMonth: "1", upiId: "", variable: false, accountId: "" });
   const [recError, setRecError] = useState("");
   const [editingRecId, setEditingRecId] = useState(null);
 
@@ -352,10 +355,10 @@ export default function SettingsPage() {
     const res = await fetch("/api/data", {
       method: isEdit ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "recurring", ...(isEdit ? { id: editingRecId } : {}), amount, category: recForm.category, note: recForm.note, dayOfMonth, affectsBalance: true, upiId: recForm.upiId.trim(), variable: recForm.variable }),
+      body: JSON.stringify({ type: "recurring", ...(isEdit ? { id: editingRecId } : {}), amount, category: recForm.category, note: recForm.note, dayOfMonth, affectsBalance: true, upiId: recForm.upiId.trim(), variable: recForm.variable, accountId: recForm.accountId ? Number(recForm.accountId) : null }),
     });
     if (res.ok) {
-      setRecForm({ amount: "", category: "Bills", note: "", dayOfMonth: "1", upiId: "", variable: false });
+      setRecForm({ amount: "", category: "Bills", note: "", dayOfMonth: "1", upiId: "", variable: false, accountId: "" });
       setEditingRecId(null);
       await load();
     } else {
@@ -366,13 +369,13 @@ export default function SettingsPage() {
 
   function startEditRecurring(r) {
     setEditingRecId(r.id);
-    setRecForm({ amount: String(r.amount), category: r.category, note: r.note || "", dayOfMonth: String(r.day_of_month), upiId: r.upi_id || "", variable: !!r.variable });
+    setRecForm({ amount: String(r.amount), category: r.category, note: r.note || "", dayOfMonth: String(r.day_of_month), upiId: r.upi_id || "", variable: !!r.variable, accountId: r.account_id ? String(r.account_id) : "" });
     setRecError("");
   }
 
   function cancelEditRecurring() {
     setEditingRecId(null);
-    setRecForm({ amount: "", category: "Bills", note: "", dayOfMonth: "1", upiId: "", variable: false });
+    setRecForm({ amount: "", category: "Bills", note: "", dayOfMonth: "1", upiId: "", variable: false, accountId: "" });
     setRecError("");
   }
 
@@ -635,6 +638,7 @@ export default function SettingsPage() {
 
       {/* Automatic weekly backups (kept on the server, last 4) */}
       <AutoBackups onRestored={load} />
+      <MovieSources />
 
       {/* Data restore */}
       <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
@@ -919,6 +923,12 @@ export default function SettingsPage() {
           <input type="text" placeholder="Category" value={recForm.category} onChange={(e) => setRecForm({ ...recForm, category: e.target.value })} style={{ width: 110 }} />
           <input type="text" placeholder="Note (e.g. Rent)" value={recForm.note} onChange={(e) => setRecForm({ ...recForm, note: e.target.value })} style={{ width: 130 }} />
           <input type="number" placeholder="Day (1-31)" title="29–31 fall on the last day of shorter months" value={recForm.dayOfMonth} onChange={(e) => setRecForm({ ...recForm, dayOfMonth: e.target.value })} min="1" max="31" style={{ width: 100 }} />
+          {(ledger.data?.accounts || []).filter((a) => !a.archived).length > 0 && (
+            <select aria-label="Paid from" value={recForm.accountId} onChange={(e) => setRecForm({ ...recForm, accountId: e.target.value })} style={{ width: "100%" }}>
+              <option value="">Paid from: 👛 Main wallet</option>
+              {ledger.data.accounts.filter((a) => !a.archived).map((a) => <option key={a.id} value={String(a.id)}>Paid from: {a.kind === "card" ? "💳" : "🏦"} {a.name}</option>)}
+            </select>
+          )}
           <input type="text" placeholder="UPI ID to pay (optional) e.g. landlord@okhdfc" aria-label="UPI ID to pay (optional)" value={recForm.upiId} onChange={(e) => setRecForm({ ...recForm, upiId: e.target.value })} autoCapitalize="none" style={{ width: "100%" }} />
           <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: "var(--text-2)", width: "100%", cursor: "pointer" }}>
             <input type="checkbox" checked={recForm.variable} onChange={(e) => setRecForm({ ...recForm, variable: e.target.checked })} style={{ width: 18, height: 18, margin: "1px 0 0", flexShrink: 0 }} />

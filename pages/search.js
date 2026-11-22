@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Search as SearchIcon } from "lucide-react";
 import { fmt, todayISO } from "../lib/format";
 import { parseQuery, applyQuery } from "../lib/money";
+import { expensesCsv } from "../lib/life";
 
 export default function SearchPage() {
   const [expenses, setExpenses] = useState([]);
@@ -126,6 +127,16 @@ export default function SearchPage() {
 
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
         {results.length} result{results.length !== 1 ? "s" : ""} · <span className="tabnum">{fmt(total)}</span> total (money entries only)
+        {results.some((x) => x.type !== "diet") && (
+          <button type="button" className="chip" style={{ marginLeft: 8 }} onClick={() => {
+            const rows = results.filter((x) => x.type !== "diet");
+            const csv = expensesCsv(rows, (id) => accounts.find((a) => a.id === id)?.name || "");
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" }));
+            a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+            a.click();
+          }}>⬇ CSV for Excel / Sheets</button>
+        )}
       </div>
 
       {results.length === 0 ? (

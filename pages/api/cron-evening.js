@@ -6,7 +6,8 @@ import { sendToUser } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
 import { localDateParts } from "../../lib/dates";
 import { mapExpense, mapMovie, mapTopup, movieItems, recurringPending, todayBudget } from "../../lib/ledger";
-import { mapAccount, mapTransfer, mapLoan, mapAsset, mainBalance, accountBalance, unusualSpend, netWorth } from "../../lib/money";
+import { mapAccount, mapTransfer, mapLoan, mapAsset, mainBalance, accountBalance, unusualSpend, netWorth, isCard } from "../../lib/money";
+import { mapLife, weeklySummary } from "../../lib/life";
 import { fmt } from "../../lib/format";
 
 export default async function handler(req, res) {
@@ -37,7 +38,8 @@ async function runForUser(uid, today) {
     const items = [...expenses, ...movieItems(movieRows.map(mapMovie)), ...recurringPending(recurring, today)];
     const topups = topupRows.map(mapTopup);
     const { balance } = mainBalance(topups, items, transfers, today);
-    const b = todayBudget({ items, balance, todayIso: today, hasMoney: topups.length > 0 || transfers.length > 0 });
+    const cardOwed = accounts.filter((a) => isCard(a) && !a.archived).reduce((s, a) => s + Math.max(0, accountBalance(a, expenses, transfers, today)), 0);
+    const b = todayBudget({ items, balance: balance - cardOwed, todayIso: today, hasMoney: topups.length > 0 || transfers.length > 0 });
 
     let note = null;
     if (!expenses.some((x) => x.date === today)) {
@@ -52,6 +54,19 @@ async function runForUser(uid, today) {
       if (u) note = { title: `👀 ${fmt(u.today)} on ${u.category} today`, body: `That's ${u.times}× your usual ${fmt(u.usual)}. All good? Tap to check today's entries.`, url: "/transactions" };
     }
     const result = note ? await sendToAllDevices(note) : null;
+
+    // Sunday: the week in one line.
+    if (new Date(today + "T00:00:00").getDay() === 0) {
+      try {
+        const [days, habitRows] = await Promise.all([db.listChallengeDays(uid), db.listLife(uid, ["habit_log"])]);
+        const sugarDays = {};
+        for (const x of days) sugarDays[String(x.day_date instanceof Date ? x.day_date.toISOString() : x.day_date).slice(0, 10)] = x.completed;
+        const w = weeklySummary({ items, movies: movieRows.map(mapMovie), sugarDays, habitLogs: habitRows.map(mapLife), todayIso: today });
+        if (w.spent > 0 || w.habits || w.sugarFree) await sendToAllDevices({ title: "📊 Your week", body: w.text, url: "/insights" });
+      } catch (e) {
+        console.error("[cron-evening] weekly summary failed:", e);
+      }
+    }
 
     // This month's net-worth point (the trend on /networth).
     try {

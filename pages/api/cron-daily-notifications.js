@@ -3,7 +3,8 @@ import { hasTmdb, movieDetails, personMovies, freshReleases } from "../../lib/tm
 import { ottKey, userOttApps, SERVICE_NAMES } from "../../lib/movieStats";
 import { mapExpense, mapMovie } from "../../lib/ledger";
 import { mapAccount, mapTransfer, cardCycle, isCard } from "../../lib/money";
-import { listAccounts, listTransfers } from "../../lib/db";
+import { listAccounts, listTransfers, listLifeForReminders, markLifeNotified } from "../../lib/db";
+import { mapLife, dueStatus, warrantyEnds, nextOccurrence, vehicleStats, REMIND_RENEWAL, REMIND_WARRANTY } from "../../lib/life";
 import { buildExport } from "./data";
 import { sendToUser } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
@@ -59,6 +60,54 @@ async function runForUser(uid, local) {
       }
     } catch (e) {
       console.error("[cron-daily] card reminders failed:", e);
+    }
+
+    // Renewals, warranties, birthdays, service due, lent items. Each item
+    // remembers the last reminder it sent (notified), so a re-run that day
+    // doesn't send it twice.
+    try {
+      const rows = await listLifeForReminders(uid);
+      const items = rows.map((r) => ({ ...mapLife(r), notified: r.notified }));
+      const once = async (item, tag, payload) => {
+        if (item.notified === tag) return;
+        await sendToAllDevices(payload);
+        await markLifeNotified(item.id, tag);
+        sentItems.push(`${item.kind}:${tag}`);
+      };
+      const inDays = (n) => (n === 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`);
+      for (const r of items.filter((x) => x.kind === "renewal" && x.date)) {
+        const st = dueStatus(r.date, today);
+        if (REMIND_RENEWAL.includes(st.daysLeft)) {
+          await once(r, `${r.date}|${st.daysLeft}`, { title: `📅 ${r.name} ${st.daysLeft === 0 ? "expires today" : `due ${inDays(st.daysLeft)}`}`, body: r.amount ? `About ₹${Math.round(r.amount).toLocaleString("en-IN")}. Tap to mark it renewed.` : "Tap to mark it renewed.", url: "/renewals" });
+        }
+      }
+      for (const w of items.filter((x) => x.kind === "warranty")) {
+        const ends = warrantyEnds(w);
+        const st = dueStatus(ends, today);
+        if (ends && REMIND_WARRANTY.includes(st.daysLeft)) {
+          await once(w, `${ends}|${st.daysLeft}`, { title: `🧾 ${w.name}: warranty ends ${inDays(st.daysLeft)}`, body: "Anything not working right? Get it checked while it's free.", url: "/renewals" });
+        }
+      }
+      for (const o of items.filter((x) => x.kind === "occasion")) {
+        const nx = nextOccurrence(o, today);
+        const what = o.type === "anniversary" ? "anniversary" : o.type === "birthday" ? "birthday" : "day";
+        if (nx.daysLeft === 7) await once(o, `${nx.date}|7`, { title: `🎁 ${o.person}'s ${what} in a week`, body: o.budget ? `Gift budget ₹${Math.round(o.budget).toLocaleString("en-IN")}. See what you gave last time.` : "Time to plan something. See what you gave last time.", url: "/people" });
+        if (nx.daysLeft === 0) await once(o, `${nx.date}|0`, { title: `🎉 It's ${o.person}'s ${what} today`, body: "Tap to send wishes.", url: "/people" });
+      }
+      const fuel = items.filter((x) => x.kind === "fuel");
+      for (const v of items.filter((x) => x.kind === "vehicle" && x.serviceEveryKm > 0)) {
+        const st = vehicleStats(v, fuel);
+        if (st.kmToService != null && st.kmToService <= 200) await once(v, `service|${st.nextServiceKm}`, { title: `🔧 ${v.name} service due`, body: st.kmToService <= 0 ? "You've passed the service kilometres." : `About ${st.kmToService} km to go.`, url: "/vehicles" });
+      }
+      if (new Date(today + "T00:00:00").getDay() === 0) {
+        const old = items.filter((x) => x.kind === "lent" && !x.returned && x.date && dueStatus(x.date, today).daysLeft <= -30);
+        if (old.length) {
+          const first = old[0];
+          await once(first, `lent|${today}`, { title: `📦 ${old.length === 1 ? `${first.person} still has your ${first.item}` : `${old.length} things you lent aren't back yet`}`, body: "It's been over a month. A gentle reminder?", url: "/people" });
+        }
+      }
+    } catch (e) {
+      console.error("[cron-daily] life reminders failed:", e);
     }
 
     const movies = await listMovies(uid);

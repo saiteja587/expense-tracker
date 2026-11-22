@@ -7,7 +7,7 @@ import Link from "next/link";
 import { Landmark, Plus, Pencil, Trash2, ArrowRightLeft, ExternalLink, Copy, FileUp, X } from "lucide-react";
 import { useLedger, notifyLedgerChanged } from "../lib/useLedger";
 import { ACCOUNT_KINDS, kindOf, isCard, cardCycle } from "../lib/money";
-import { sealSecrets, openSecrets, MIN_PASSPHRASE } from "../lib/vault";
+import { sealSecrets, openSecrets, checkVaultPassphrase, MIN_PASSPHRASE } from "../lib/vault";
 import { apiPost, apiPut, apiDelete } from "../lib/api";
 import { fmt, todayISO } from "../lib/format";
 import { showToast } from "../lib/toast";
@@ -264,6 +264,7 @@ function AccountForm({ form, setForm, onDone }) {
             clean.number = digits;
             body.last4 = digits.slice(-4);
           }
+          await checkVaultPassphrase(pass);
           body.vault = await sealSecrets(clean, pass);
         }
       }
