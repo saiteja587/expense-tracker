@@ -5,7 +5,8 @@ import * as db from "../../lib/db";
 import { sendToUser } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
 import { localDateParts } from "../../lib/dates";
-import { mapExpense, mapMovie, mapTopup, movieItems, recurringPending, balanceOf, todayBudget } from "../../lib/ledger";
+import { mapExpense, mapMovie, mapTopup, movieItems, recurringPending, todayBudget } from "../../lib/ledger";
+import { mapAccount, mapTransfer, mapLoan, mapAsset, mainBalance, accountBalance, unusualSpend, netWorth } from "../../lib/money";
 import { fmt } from "../../lib/format";
 
 export default async function handler(req, res) {
@@ -29,12 +30,14 @@ export default async function handler(req, res) {
 
 async function runForUser(uid, today) {
     const sendToAllDevices = (payload) => sendToUser(uid, payload);
-    const [expRows, movieRows, topupRows, recurring] = await Promise.all([db.listExpenses(uid), db.listMovies(uid), db.listTopups(uid), db.listRecurring(uid)]);
+    const [expRows, movieRows, topupRows, recurring, accRows, trRows] = await Promise.all([
+      db.listExpenses(uid), db.listMovies(uid), db.listTopups(uid), db.listRecurring(uid), db.listAccounts(uid), db.listTransfers(uid)]);
+    const accounts = accRows.map(mapAccount), transfers = trRows.map(mapTransfer);
     const expenses = expRows.map(mapExpense);
     const items = [...expenses, ...movieItems(movieRows.map(mapMovie)), ...recurringPending(recurring, today)];
     const topups = topupRows.map(mapTopup);
-    const { balance } = balanceOf(topups, items, today);
-    const b = todayBudget({ items, balance, todayIso: today, hasMoney: topups.length > 0 });
+    const { balance } = mainBalance(topups, items, transfers, today);
+    const b = todayBudget({ items, balance, todayIso: today, hasMoney: topups.length > 0 || transfers.length > 0 });
 
     let note = null;
     if (!expenses.some((x) => x.date === today)) {
@@ -43,7 +46,25 @@ async function runForUser(uid, today) {
       const tomorrow = Math.max(0, (b.perDay * b.daysLeft - b.spentToday) / Math.max(1, b.daysLeft - 1));
       note = { title: `💸 ${fmt(-b.left)} over today`, body: `No stress — tomorrow's budget adjusts to about ${fmt(tomorrow)}.`, url: "/" };
     }
+    // Nothing else to say? Flag a day far above your usual in a category.
+    if (!note) {
+      const u = unusualSpend(items, today)[0];
+      if (u) note = { title: `👀 ${fmt(u.today)} on ${u.category} today`, body: `That's ${u.times}× your usual ${fmt(u.usual)}. All good? Tap to check today's entries.`, url: "/transactions" };
+    }
     const result = note ? await sendToAllDevices(note) : null;
+
+    // This month's net-worth point (the trend on /networth).
+    try {
+      const [loanRows, assetRows, ious] = await Promise.all([db.listLoans(uid), db.listAssets(uid), db.listIous(uid)]);
+      const balances = {};
+      for (const a of accounts) balances[a.id] = accountBalance(a, expenses, transfers, today);
+      if (accounts.length || assetRows.length || loanRows.length) {
+        const nw = netWorth({ mainBalance: balance, accounts, balances, assets: assetRows.map(mapAsset), loans: loanRows.map(mapLoan), ious, todayIso: today });
+        await db.saveNetWorth(uid, today.slice(0, 7), nw);
+      }
+    } catch (e) {
+      console.error("[cron-evening] net worth snapshot failed:", e);
+    }
 
     // Movies from earlier today that haven't been rated yet (booked ahead, or
     // logged without a take): ask while it's fresh. Shows starting by 6 PM

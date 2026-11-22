@@ -2,6 +2,8 @@ import { listUsers, listMovies, listRecurring, listExpenses, listChallengeDays, 
 import { hasTmdb, movieDetails, personMovies, freshReleases } from "../../lib/tmdb";
 import { ottKey, userOttApps, SERVICE_NAMES } from "../../lib/movieStats";
 import { mapExpense, mapMovie } from "../../lib/ledger";
+import { mapAccount, mapTransfer, cardCycle, isCard } from "../../lib/money";
+import { listAccounts, listTransfers } from "../../lib/db";
 import { buildExport } from "./data";
 import { sendToUser } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
@@ -40,6 +42,24 @@ async function runForUser(uid, local) {
     const day = local.day;
     const sentItems = [];
     const sendToAllDevices = (payload) => sendToUser(uid, payload);
+
+    // Credit-card bills: 3 days before, the day before, and the day after if
+    // still unpaid.
+    try {
+      const [accRows, trRows, expRows] = await Promise.all([listAccounts(uid), listTransfers(uid), listExpenses(uid)]);
+      const exps = expRows.map(mapExpense), transfers = trRows.map(mapTransfer);
+      for (const card of accRows.map(mapAccount).filter((a) => isCard(a) && !a.archived)) {
+        const cy = cardCycle(card, exps, transfers, today);
+        if (!cy.hasCycle || cy.billedDue <= 0 || ![3, 1, -1].includes(cy.daysToDue)) continue;
+        const amount = "₹" + Math.round(cy.billedDue).toLocaleString("en-IN");
+        await sendToAllDevices(cy.daysToDue < 0
+          ? { title: `⚠️ ${card.name} bill overdue`, body: `${amount} was due yesterday. Pay today to keep late fees and interest small.`, url: "/accounts" }
+          : { title: `💳 ${card.name}: ${amount} due ${cy.daysToDue === 1 ? "tomorrow" : "in 3 days"}`, body: "Tap to pay and mark it paid.", url: "/accounts" });
+        sentItems.push(`card:${card.name}`);
+      }
+    } catch (e) {
+      console.error("[cron-daily] card reminders failed:", e);
+    }
 
     const movies = await listMovies(uid);
     const yesterday = addDaysISO(today, -1);

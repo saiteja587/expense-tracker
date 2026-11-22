@@ -1,11 +1,12 @@
 // "Me": your level and badges, plus every page that isn't a main tab.
 import { useMemo } from "react";
 import Link from "next/link";
-import { Flame, PiggyBank, HandCoins, Search, Settings, Trophy, Wind, ChevronRight, Award, Wallet, Users, Tv } from "lucide-react";
+import { Flame, PiggyBank, HandCoins, Search, Settings, Trophy, Wind, ChevronRight, Award, Wallet, Users, Tv, Landmark, TrendingUp, Building2, Plane, Receipt } from "lucide-react";
 import { useLedger } from "../lib/useLedger";
 import { computeBadges, levelFor } from "../lib/achievements";
 import { sugarStreak, loggingStreak } from "../lib/ledger";
 import { fmt } from "../lib/format";
+import { isCard } from "../lib/money";
 
 function Row({ href, Icon, color, title, sub }) {
   return (
@@ -93,6 +94,15 @@ export default function MePage() {
           <Row href="/challenges" Icon={Trophy} color="#2F6F5E" title="Mini challenges" sub="No-delivery week, daily cap, no-spend weekend" />
           <Row href="/budget" Icon={PiggyBank} color="#7C3AED" title="Budget & goals" sub="Limits, savings goal, alerts" />
           <Row href="/transactions" Icon={Wallet} color="#2F4858" title="Balance & transactions" sub={`${fmt(derived.balance)} balance`} />
+          <Row href="/accounts" Icon={Landmark} color="#1F5F8B" title="Accounts & cards" sub={(() => {
+            const accs = (data.accounts || []).filter((a) => !a.archived);
+            const cards = accs.filter(isCard).length;
+            return accs.length ? `${accs.length - cards} account${accs.length - cards === 1 ? "" : "s"} · ${cards} credit card${cards === 1 ? "" : "s"}` : "Bank, UPI, cash, credit cards and bills";
+          })()} />
+          <Row href="/networth" Icon={TrendingUp} color="#2F6F5E" title="Net worth" sub="What you have minus what you owe" />
+          <Row href="/loans" Icon={Building2} color="#5B3A5C" title="Loans & EMIs" sub="Payoff dates and prepayment savings" />
+          <Row href="/trips" Icon={Plane} color="#C98A2C" title="Trips & events" sub="What a trip really cost, per person" />
+          <Row href="/tax" Icon={Receipt} color="#6B7A3E" title="Tax deductions" sub="80C, 80D, rent… for the financial year" />
           <Row href="/ious" Icon={HandCoins} color="#B5533C" title="Who owes what" sub={view.owedToMe || view.iOwe ? `${fmt(view.owedToMe)} owed to you · you owe ${fmt(view.iOwe)}` : "Track money between friends"} />
           <Row href="/shows" Icon={Tv} color="#4F6FB0" title="Shows" sub="Series you're watching — next episode, where it streams" />
           <Row href="/shared" Icon={Users} color="#0D9488" title="Shared spaces" sub="Split rent, groceries or a trip with someone" />

@@ -43,6 +43,16 @@ Ordered by priority. Tick items off as they're fixed.
       envelope jars, "Can I afford it?", bill reminders with UPI pay page, movie ratings/reviews + poster wall, "Pick for me",
       slip triggers, weekly server backups, shared spaces.
 
+## Money features (Nov 2026) — done
+- [x] Accounts & transfers, credit-card cycles + due reminders, encrypted card vault, loans & EMIs, net worth (+ monthly
+      snapshots), refunds/cashback, trips, tax tags & FY summary, unusual-spend alerts, duplicate check, month-end
+      forecast, statement CSV import, plain-English search. Schema v10. Tests: `tests/money*.test.js`.
+
 ## Open follow-ups
 - [ ] Movie cards feel cramped next to the poster on narrow phones; consider moving edit/delete into a ⋯ menu.
+- [ ] Card spending counts toward "left to spend today" when it happens, and the bill payment later moves money out
+      of the main wallet: the daily ring can look tight twice for the same spend. Consider excluding card spends
+      from the ring once card bills are paid from main.
+- [ ] Statement import reads CSV only; PDF statements need converting first.
+- [ ] `schema.sql` is out of date (stops before v4); regenerate it from `ensureTables()`.
 - [ ] Remaining lint warnings (9): React hook dependency warnings and `<img>` for receipt previews. Harmless, but worth a look during the #14 split.

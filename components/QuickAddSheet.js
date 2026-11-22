@@ -7,6 +7,7 @@ import { useLedger, notifyLedgerChanged } from "../lib/useLedger";
 import { allCategories, MOVIE_CATEGORY } from "../lib/categories";
 import { quickSuggestions, addDays } from "../lib/ledger";
 import { learnCategory } from "../lib/smart";
+import { activeTrip, findDuplicates, kindOf, TAX_SECTIONS } from "../lib/money";
 import { guessCategory } from "../lib/smsParse";
 import { parseExpenseText } from "../lib/smsParse";
 import { fmt, todayISO, nowHHMM } from "../lib/format";
@@ -78,6 +79,18 @@ function Sheet({ prefill, onClose }) {
   const [error, setError] = useState("");
   const [listening, setListening] = useState(false);
   const fileRef = useRef(null);
+  // Which account paid (remembered for next time), the trip that's on, a tax section.
+  const accounts = useMemo(() => (data?.accounts || []).filter((a) => !a.archived), [data]);
+  const [accountId, setAccountId] = useState(() => {
+    if (prefill.accountId !== undefined) return prefill.accountId;
+    try { const v = localStorage.getItem("qa_account"); return v ? Number(v) : null; } catch { return null; }
+  });
+  const account = accounts.find((a) => a.id === accountId) || null;
+  const trip = data ? activeTrip(data.trips || [], today) : null;
+  const [inTrip, setInTrip] = useState(true);
+  const [taxTag, setTaxTag] = useState("");
+  const [dupeOk, setDupeOk] = useState(false);
+  const [dupe, setDupe] = useState(null);
 
   const amt = parseFloat(amount) || 0;
   const friends = splitNames.split(",").map((s) => s.trim()).filter(Boolean);
@@ -95,6 +108,7 @@ function Sheet({ prefill, onClose }) {
   function press(k) {
     vibrate(4);
     setError("");
+    setDupe(null); setDupeOk(false);
     setAmount((a) => {
       if (k === "del") return a.slice(0, -1);
       if (k === ".") return a.includes(".") ? a : (a || "0") + ".";
@@ -146,16 +160,25 @@ function Sheet({ prefill, onClose }) {
     const e = entry || { amount: amt, category, note: note.trim(), date, deduct, photo };
     if (!e.amount || e.amount <= 0) { setError("Enter an amount"); return; }
     if (!e.category) { setError("Pick a category"); return; }
+    // Typed entries only: a "usual" one-tap item repeats on purpose.
+    if (!entry && !dupeOk && data) {
+      const d = findDuplicates({ amount: e.amount, date: e.date || today, category: e.category, note: e.note }, data.expenses)[0];
+      if (d) { setDupe(d); setDupeOk(true); return; }
+    }
     setSaving(true);
     setError("");
     const payload = {
       type: "expenses", clientRequestId: newRequestId(), amount: e.amount, category: e.category, note: e.note,
       date: e.date || today, time: (e.date || today) === today ? nowHHMM() : "", affectsBalance: e.deduct !== false, receiptPhoto: e.photo || "",
       isEstimate: !entry && estimate,
+      accountId: account ? account.id : null,
+      tripId: trip && inTrip ? trip.id : null,
+      taxTag: entry ? "" : taxTag,
     };
     const firstToday = data && !data.expenses.some((x) => x.date === today);
     try {
       await postJson(payload);
+      try { if (account) localStorage.setItem("qa_account", String(account.id)); else localStorage.removeItem("qa_account"); } catch { /* ignore */ }
       for (const name of entry ? [] : friends) {
         await postJson({ type: "ious", personName: name, amount: share, direction: "owed_to_me", note: `${e.note || e.category} (split)` });
       }
@@ -215,11 +238,27 @@ function Sheet({ prefill, onClose }) {
         <div className="h-scroll" style={{ margin: "10px 0" }} role="radiogroup" aria-label="Category">
           {categories.map((c) => (
             <button key={c.name} type="button" role="radio" aria-checked={category === c.name}
-              className={`chip${category === c.name ? " active" : ""}`} onClick={() => { vibrate(4); setCategory(c.name); setPickedByHand(true); setAutoPicked(false); setError(""); }}>
+              className={`chip${category === c.name ? " active" : ""}`} onClick={() => { vibrate(4); setCategory(c.name); setPickedByHand(true); setAutoPicked(false); setError(""); setDupe(null); setDupeOk(false); }}>
               <span aria-hidden="true">{c.emoji}</span> {c.name}
             </button>
           ))}
         </div>
+
+        {(accounts.length > 0 || trip) && (
+          <div className="h-scroll" style={{ marginBottom: 10 }} role="radiogroup" aria-label="Paid from">
+            {accounts.length > 0 && (
+              <button type="button" role="radio" aria-checked={!account} className={`chip${!account ? " active" : ""}`} onClick={() => setAccountId(null)}>👛 Main</button>
+            )}
+            {accounts.map((a) => (
+              <button key={a.id} type="button" role="radio" aria-checked={account?.id === a.id} className={`chip${account?.id === a.id ? " active" : ""}`} onClick={() => setAccountId(a.id)}>
+                {kindOf(a.kind).emoji} {a.name}
+              </button>
+            ))}
+            {trip && (
+              <button type="button" className={`chip${inTrip ? " active" : ""}`} aria-pressed={inTrip} onClick={() => setInTrip(!inTrip)}>✈️ {trip.name}{inTrip ? " ✓" : ""}</button>
+            )}
+          </div>
+        )}
 
         <input value={note} onChange={(e) => onNote(e.target.value)} placeholder="Note (optional) — e.g. Swiggy dinner" maxLength={120} style={{ marginBottom: autoPicked ? 4 : 10 }} />
         {autoPicked && category && (
@@ -261,6 +300,11 @@ function Sheet({ prefill, onClose }) {
               <input type="checkbox" checked={deduct} onChange={(e) => setDeduct(e.target.checked)} style={{ width: 18, height: 18 }} />
               Deduct from my balance
             </label>
+            <label className="field-label" htmlFor="qa-tax">Tax deduction (optional)</label>
+            <select id="qa-tax" value={taxTag} onChange={(e) => setTaxTag(e.target.value)}>
+              <option value="">Not for tax</option>
+              {TAX_SECTIONS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
           </div>
         )}
 
@@ -288,6 +332,11 @@ function Sheet({ prefill, onClose }) {
         )}
 
         {error && <div role="alert" style={{ color: "var(--danger)", fontSize: 13, marginBottom: 8 }}>{error}</div>}
+        {dupe && (
+          <div role="alert" style={{ background: "var(--warn-bg)", color: "var(--warn)", fontSize: 13, borderRadius: 10, padding: "8px 10px", marginBottom: 8 }}>
+            Looks like you already logged {fmt(dupe.amount)} {dupe.note ? `“${dupe.note}”` : dupe.category} {dupe.date === today ? "today" : dupe.date === addDays(today, -1) ? "yesterday" : `on ${dupe.date}`}. Tap Save again if this is a new one.
+          </div>
+        )}
 
         <div className="keypad" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 12 }}>
           {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "del"].map((k) => (

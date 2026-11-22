@@ -3,12 +3,14 @@
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, Search as SearchIcon } from "lucide-react";
-import { fmt } from "../lib/format";
+import { fmt, todayISO } from "../lib/format";
+import { parseQuery, applyQuery } from "../lib/money";
 
 export default function SearchPage() {
   const [expenses, setExpenses] = useState([]);
   const [movies, setMovies] = useState([]);
   const [dietDays, setDietDays] = useState([]);
+  const [accounts, setAccounts] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
@@ -16,11 +18,12 @@ export default function SearchPage() {
   const [toDate, setToDate] = useState("");
 
   useEffect(() => {
-    Promise.all([fetch("/api/data?type=expenses"), fetch("/api/data?type=movies"), fetch("/api/data?type=challenge")])
-      .then(async ([e, m, c]) => {
+    Promise.all([fetch("/api/data?type=expenses"), fetch("/api/data?type=movies"), fetch("/api/data?type=challenge"), fetch("/api/data?type=accounts")])
+      .then(async ([e, m, c, a]) => {
+        if (a.ok) setAccounts(((await a.json()).accounts || []).map((x) => ({ id: x.id, name: x.name })));
         if (e.ok) setExpenses((await e.json()).expenses.map((x) => ({
           id: x.id, type: "expense", amount: parseFloat(x.amount), category: x.category,
-          note: x.note || "", date: x.expense_date.slice(0, 10),
+          note: x.note || "", date: x.expense_date.slice(0, 10), accountId: x.account_id ?? null,
         })));
         if (m.ok) setMovies((await m.json()).movies.map((m2) => ({
           id: m2.id, type: "movie", amount: (parseFloat(m2.ticket_price) + parseFloat(m2.canteen_price)) * (m2.quantity || 1),
@@ -47,16 +50,28 @@ export default function SearchPage() {
     return Array.from(set).sort();
   }, [expenses, movies, dietDays]);
 
+  // "food last month over 500", "swiggy on hdfc this week", "shopping in march"
+  const parsed = useMemo(() => parseQuery(query, todayISO(), { categories: allCategories, accounts }), [query, allCategories, accounts]);
+  const understood = useMemo(() => {
+    const bits = [];
+    if (parsed.categories.length) bits.push(parsed.categories.join(", "));
+    if (parsed.accountIds.length) bits.push(`on ${parsed.accountIds.map((id) => accounts.find((a) => a.id === id)?.name).join(", ")}`);
+    const dd = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+    if (parsed.from) bits.push(parsed.from === parsed.to ? dd(parsed.from) : `${dd(parsed.from)} – ${dd(parsed.to)}`);
+    if (parsed.min != null) bits.push(`over ${fmt(parsed.min)}`);
+    if (parsed.max != null) bits.push(`under ${fmt(parsed.max)}`);
+    if (bits.length && parsed.words) bits.push(`“${parsed.words}”`);
+    return bits;
+  }, [parsed, accounts]);
+
   const results = useMemo(() => {
     const all = [...expenses, ...movies, ...dietDays];
-    const q = query.trim().toLowerCase();
-    return all
-      .filter((x) => !q || x.note.toLowerCase().includes(q) || x.category.toLowerCase().includes(q))
+    return applyQuery(all, parsed)
       .filter((x) => !category || x.category === category)
       .filter((x) => !fromDate || x.date >= fromDate)
       .filter((x) => !toDate || x.date <= toDate)
       .sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [expenses, movies, dietDays, query, category, fromDate, toDate]);
+  }, [expenses, movies, dietDays, parsed, category, fromDate, toDate]);
 
   const total = results.reduce((s, x) => s + x.amount, 0);
 
@@ -78,12 +93,16 @@ export default function SearchPage() {
         <SearchIcon size={17} color="var(--muted)" />
         <input
           type="text"
-          placeholder="Search by note, title, or category…"
+          placeholder="Try: food last month over 500"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{ border: "none", padding: "8px 0", flex: 1, background: "transparent", boxShadow: "none", transform: "none" }}
         />
       </div>
+
+      {understood.length > 0 && (
+        <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "-4px 0 10px" }}>✨ Showing: {understood.join(" · ")}</div>
+      )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
         <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ width: 150 }}>

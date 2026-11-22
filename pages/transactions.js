@@ -12,6 +12,8 @@ import CountUp from "../components/CountUp";
 import CategoryIcon from "../components/CategoryIcon";
 import { fmt, todayISO } from "../lib/format";
 import { describeChange } from "../lib/ledger";
+import { mapAccount, mapTransfer, mapTrip, mainWalletTransfers, kindOf, TAX_SECTIONS } from "../lib/money";
+import { notifyLedgerChanged } from "../lib/useLedger";
 
 const CATEGORIES = [
   { name: "Food", color: "#B5533C" },
@@ -35,7 +37,7 @@ function nowTimeHHMM() {
 }
 
 function getEmptyExpenseForm() {
-  return { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "" };
+  return { amount: "", category: CATEGORIES[0].name, note: "", date: todayISO(), time: nowTimeHHMM(), affectsBalance: true, receiptPhoto: "", accountId: "", tripId: "", taxTag: "" };
 }
 // A function, not a constant: a constant computed at module load keeps
 // yesterday's date if the app stays open past midnight.
@@ -88,6 +90,11 @@ export default function TransactionsPage() {
   const [recurring, setRecurring] = useState([]);
   const [challengeMeta, setChallengeMeta] = useState(null);
   const [challengeDays, setChallengeDays] = useState({});
+  const [accounts, setAccounts] = useState([]);
+  const [transfers, setTransfers] = useState([]);
+  const [trips, setTrips] = useState([]);
+  // Refund / cashback on the expense being edited.
+  const [refund, setRefund] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [viewDate, setViewDate] = useState(new Date());
@@ -148,6 +155,13 @@ export default function TransactionsPage() {
         fetch("/api/data?type=categories"),
         fetch("/api/data?type=recurring"),
       ]);
+      // Accounts, transfers and trips (newer; a failure here shouldn't block the page).
+      Promise.all(["accounts", "transfers", "trips"].map((t) => fetch(`/api/data?type=${t}`).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))))
+        .then(([a, t, tr]) => {
+          setAccounts((a.accounts || []).map(mapAccount));
+          setTransfers((t.transfers || []).map(mapTransfer));
+          setTrips((tr.trips || []).map(mapTrip));
+        });
       if (!expRes.ok) throw new Error("Request failed");
       const expData = await expRes.json();
       const mappedExpenses = expData.expenses.map((x) => ({
@@ -160,6 +174,10 @@ export default function TransactionsPage() {
         affectsBalance: x.affects_balance !== false,
         hasReceipt: !!x.has_receipt,
         estimate: !!x.is_estimate,
+        accountId: x.account_id ?? null,
+        tripId: x.trip_id ?? null,
+        taxTag: x.tax_tag || "",
+        refundOf: x.refund_of ?? null,
       }));
       setExpenses(mappedExpenses);
       let mappedMovies = [];
@@ -351,7 +369,14 @@ export default function TransactionsPage() {
     })[0];
   }, [topups]);
 
+  // The balance here is the main wallet: expenses paid from another account
+  // or card count there instead (see Accounts); transfers move money in/out.
+  const mainWallet = useMemo(() => mainWalletTransfers(transfers), [transfers]);
+  const balanceItems = useMemo(() => [...allItems.filter((x) => !x.accountId), ...mainWallet.items], [allItems, mainWallet]);
+  const balanceTopups = useMemo(() => [...topups, ...mainWallet.topups], [topups, mainWallet]);
+
   const balanceCalc = useMemo(() => {
+    const topups = balanceTopups, allItems = balanceItems;
     if (baselineTopup) {
       const afterAdds = topups
         .filter((t) => t.mode === "add" && t.date > baselineTopup.date)
@@ -368,16 +393,32 @@ export default function TransactionsPage() {
     const totalAdded = topups.filter((t) => t.mode === "add").reduce((s, t) => s + t.amount, 0);
     const totalSpent = allItems.filter((x) => x.affectsBalance !== false && x.date <= today).reduce((s, x) => s + x.amount, 0);
     return { balance: totalAdded - totalSpent, addedLabel: `${fmt(totalAdded)} added`, spentLabel: fmt(totalSpent) };
-  }, [topups, allItems, baselineTopup, today]);
+  }, [balanceTopups, balanceItems, baselineTopup, today]);
 
   function startEditExpense(x) {
     setEditingExpenseId(x.id);
-    setExpenseForm({ amount: String(x.amount), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false, receiptPhoto: null, hasReceipt: !!x.hasReceipt, estimate: !!x.estimate, origAmount: x.amount });
+    setExpenseForm({ amount: String(Math.abs(x.amount)), category: x.category, note: x.note, date: x.date, time: x.time || "", affectsBalance: x.affectsBalance !== false, receiptPhoto: null, hasReceipt: !!x.hasReceipt, estimate: !!x.estimate, origAmount: Math.abs(x.amount),
+      accountId: x.accountId != null ? String(x.accountId) : "", tripId: x.tripId != null ? String(x.tripId) : "", taxTag: x.taxTag || "", refundOf: x.refundOf });
+    setRefund(null);
     // Editing always shows the full form — the person may specifically be
     // here to fix the date or the deduct toggle.
     setExpenseMoreOpen(true);
     setSheetOpen(true);
     setFormError("");
+  }
+
+  async function saveRefund() {
+    const amt = parseFloat(refund.amount);
+    if (!(amt > 0)) { setFormError("Enter the amount you got back"); return; }
+    setRefund({ ...refund, busy: true });
+    const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "refund", expenseId: editingExpenseId, amount: amt, date: refund.date, kind: refund.kind }) });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { setFormError(d.error || "Couldn't save the refund"); setRefund({ ...refund, busy: false }); return; }
+    showToast(`${fmt(amt)} ${refund.kind === "cashback" ? "cashback" : "refund"} added`, "↩️");
+    setRefund(null);
+    cancelEditExpense();
+    notifyLedgerChanged();
+    load();
   }
 
   function cancelEditExpense() {
@@ -493,6 +534,9 @@ export default function TransactionsPage() {
       affectsBalance: expenseForm.affectsBalance,
       // On edit: null keeps the stored photo, "" removes it, a data URL replaces it.
       receiptPhoto: isEdit ? expenseForm.receiptPhoto : expenseForm.receiptPhoto || "",
+      accountId: expenseForm.accountId ? Number(expenseForm.accountId) : null,
+      tripId: expenseForm.tripId ? Number(expenseForm.tripId) : null,
+      taxTag: expenseForm.taxTag || "",
       // Changing an estimate's amount means you now know the real figure.
       ...(isEdit && expenseForm.estimate && amt !== expenseForm.origAmount ? { isEstimate: false } : {}),
     };
@@ -783,6 +827,11 @@ export default function TransactionsPage() {
     return Array.from(map.entries());
   }, [monthItems]);
 
+  function accountName(id) {
+    const a = accounts.find((y) => y.id === id);
+    return a ? `${kindOf(a.kind).emoji} ${a.name}` : "";
+  }
+
   function formatDateLabel(iso) {
     const d = new Date(iso + "T00:00:00");
     if (iso === today) return "Today";
@@ -1071,6 +1120,44 @@ export default function TransactionsPage() {
                   <input type="checkbox" checked={expenseForm.affectsBalance} onChange={(e) => setExpenseForm({ ...expenseForm, affectsBalance: e.target.checked })} style={{ width: "auto" }} />
                   Deduct from balance
                 </label>
+                {accounts.length > 0 && (
+                  <select value={expenseForm.accountId} onChange={(e) => setExpenseForm({ ...expenseForm, accountId: e.target.value })} aria-label="Paid from">
+                    <option value="">Paid from: 👛 Main wallet</option>
+                    {accounts.filter((a) => !a.archived || String(a.id) === expenseForm.accountId).map((a) => <option key={a.id} value={String(a.id)}>Paid from: {kindOf(a.kind).emoji} {a.name}</option>)}
+                  </select>
+                )}
+                {trips.length > 0 && (
+                  <select value={expenseForm.tripId} onChange={(e) => setExpenseForm({ ...expenseForm, tripId: e.target.value })} aria-label="Trip">
+                    <option value="">No trip</option>
+                    {trips.map((t) => <option key={t.id} value={String(t.id)}>✈️ {t.name}</option>)}
+                  </select>
+                )}
+                <select value={expenseForm.taxTag} onChange={(e) => setExpenseForm({ ...expenseForm, taxTag: e.target.value })} aria-label="Tax deduction">
+                  <option value="">Not for tax</option>
+                  {TAX_SECTIONS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+                {editingExpenseId && expenseForm.refundOf == null && (
+                  refund ? (
+                    <div style={{ display: "grid", gap: 8, padding: 10, borderRadius: 10, background: "var(--surface-2)" }}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {[["refund", "↩ Refund"], ["cashback", "💸 Cashback"]].map(([k, l]) => (
+                          <button key={k} type="button" className={`chip${refund.kind === k ? " active" : ""}`} onClick={() => setRefund({ ...refund, kind: k })}>{l}</button>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input type="number" inputMode="decimal" value={refund.amount} onChange={(e) => setRefund({ ...refund, amount: e.target.value })} placeholder="Amount back ₹" style={{ flex: 1 }} />
+                        <input type="date" value={refund.date} onChange={(e) => setRefund({ ...refund, date: e.target.value })} style={{ flex: 1 }} />
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button type="button" className="btn btn-primary" disabled={refund.busy} onClick={saveRefund}>Save {refund.kind}</button>
+                        <button type="button" className="chip" onClick={() => setRefund(null)}>Cancel</button>
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)" }}>Logged as money back in the same category{expenseForm.accountId ? " and account" : ""}, so your totals stay right.</div>
+                    </div>
+                  ) : (
+                    <button type="button" className="chip" style={{ alignSelf: "flex-start" }} onClick={() => setRefund({ kind: "refund", amount: String(expenseForm.origAmount || ""), date: todayISO() })}>↩ Got a refund or cashback on this?</button>
+                  )
+                )}
                 {!editingExpenseId && (
                   <button type="button" onClick={() => setExpenseMoreOpen(false)} style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, color: "var(--muted)", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}>
                     Hide date &amp; time options
@@ -1169,6 +1256,8 @@ export default function TransactionsPage() {
                                 {x.note || x.category}
                                 {x.time && <span style={{ fontSize: 11.5, color: "var(--muted)" }}> · {x.time}</span>}
                                 {x.affectsBalance === false && <span style={{ fontSize: 11.5, color: "var(--muted)" }}> · not deducted</span>}
+                                {x.refundOf != null && <span style={{ fontSize: 11.5, color: "var(--success)" }}> · money back</span>}
+                                {x.accountId != null && accountName(x.accountId) && <span style={{ fontSize: 11.5, color: "var(--muted)" }}> · {accountName(x.accountId)}</span>}
                                 {x.pending && <span style={{ fontSize: 11.5, color: "var(--warn)" }}> · pending sync</span>}
                                 {x.isRecurringPending && <span style={{ fontSize: 11.5, color: "var(--amber)" }}> · recurring, not yet posted</span>}
                               </div>
