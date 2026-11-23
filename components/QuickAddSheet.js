@@ -90,6 +90,8 @@ function Sheet({ prefill, onClose }) {
   const [inTrip, setInTrip] = useState(true);
   const [taxTag, setTaxTag] = useState("");
   const [dupeOk, setDupeOk] = useState(false);
+  // Paid in another currency: converted at that day's rate (Frankfurter, free).
+  const [fx, setFx] = useState({ cur: "USD", amt: "", busy: false, note: "" });
   const [dupe, setDupe] = useState(null);
 
   const amt = parseFloat(amount) || 0;
@@ -157,7 +159,7 @@ function Sheet({ prefill, onClose }) {
   }
 
   async function save(entry) {
-    const e = entry || { amount: amt, category, note: note.trim(), date, deduct, photo };
+    const e = entry || { amount: amt, category, note: [note.trim(), fx.note].filter(Boolean).join(" "), date, deduct, photo };
     if (!e.amount || e.amount <= 0) { setError("Enter an amount"); return; }
     if (!e.category) { setError("Pick a category"); return; }
     // Typed entries only: a "usual" one-tap item repeats on purpose.
@@ -278,6 +280,9 @@ function Sheet({ prefill, onClose }) {
           <button type="button" className={`chip${panel === "split" || friends.length ? " active" : ""}`} onClick={() => setPanel(panel === "split" ? null : "split")}>
             <Users size={14} /> Split
           </button>
+          <button type="button" className={`chip${panel === "fx" || fx.note ? " active" : ""}`} onClick={() => setPanel(panel === "fx" ? null : "fx")}>
+            🌍 {fx.note ? fx.cur : "Other currency"}
+          </button>
           <button type="button" className="chip" onClick={pasteFromClipboard}>
             <ClipboardPaste size={14} /> Paste SMS
           </button>
@@ -313,6 +318,26 @@ function Sheet({ prefill, onClose }) {
             <label className="field-label" htmlFor="qa-split">You paid for friends? Their names, comma-separated</label>
             <input id="qa-split" value={splitNames} onChange={(e) => setSplitNames(e.target.value)} placeholder="Ravi, Priya" />
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>The full amount is logged as your expense, and an IOU is added for each friend's share.</div>
+          </div>
+        )}
+
+        {panel === "fx" && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+            <select value={fx.cur} onChange={(e) => setFx({ ...fx, cur: e.target.value })} aria-label="Currency" style={{ width: 90 }}>
+              {["USD", "EUR", "GBP", "SGD", "THB", "MYR", "IDR", "JPY", "KRW", "CNY", "HKD", "AUD", "NZD", "CAD", "CHF"].map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <input type="number" inputMode="decimal" value={fx.amt} onChange={(e) => setFx({ ...fx, amt: e.target.value })} placeholder={`Amount in ${fx.cur}`} style={{ flex: 1 }} />
+            <button type="button" className="btn btn-secondary" disabled={fx.busy || !(parseFloat(fx.amt) > 0)} onClick={async () => {
+              setFx({ ...fx, busy: true });
+              try {
+                const r = await fetch(`/api/data?type=fx&from=${fx.cur}&date=${date > today ? "latest" : date}`).then((x) => x.json());
+                if (!r.fx) throw new Error();
+                const inr = Math.round(parseFloat(fx.amt) * r.fx.rate * 100) / 100;
+                setAmount(String(inr));
+                setFx({ ...fx, busy: false, note: `(${fx.cur} ${fx.amt} @ ₹${r.fx.rate})` });
+                setPanel(null);
+              } catch { setError("Couldn't get the exchange rate. Check your connection."); setFx({ ...fx, busy: false }); }
+            }}>{fx.busy ? "…" : "→ ₹"}</button>
           </div>
         )}
 

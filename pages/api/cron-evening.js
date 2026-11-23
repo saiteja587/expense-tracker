@@ -8,6 +8,7 @@ import { localDateParts } from "../../lib/dates";
 import { mapExpense, mapMovie, mapTopup, movieItems, recurringPending, todayBudget } from "../../lib/ledger";
 import { mapAccount, mapTransfer, mapLoan, mapAsset, mainBalance, accountBalance, unusualSpend, netWorth, isCard } from "../../lib/money";
 import { mapLife, weeklySummary } from "../../lib/life";
+import { mfNav } from "../../lib/freeApis";
 import { fmt } from "../../lib/format";
 
 export default async function handler(req, res) {
@@ -68,8 +69,15 @@ async function runForUser(uid, today) {
       }
     }
 
-    // This month's net-worth point (the trend on /networth).
+    // This month's net-worth point (the trend on /networth), after
+    // re-pricing mutual funds from today's NAV.
     try {
+      const navs = {};
+      for (const code of await db.listFundCodes(uid)) {
+        const n = await mfNav(code).catch(() => null);
+        if (n?.nav) navs[code] = n.nav;
+      }
+      if (Object.keys(navs).length) await db.updateFundValues(uid, navs);
       const [loanRows, assetRows, ious] = await Promise.all([db.listLoans(uid), db.listAssets(uid), db.listIous(uid)]);
       const balances = {};
       for (const a of accounts) balances[a.id] = accountBalance(a, expenses, transfers, today);

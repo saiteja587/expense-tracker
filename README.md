@@ -49,6 +49,19 @@ Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free ti
   and a one-time Trakt import. Settings → Movie data sources shows which are on (`lib/movieApis.js`).
 - **Streaming check:** apps you pay for vs what you watched on them in 90 days (on Shows).
 - **Sunday summary** push, a "coming up" card on Home, CSV export from Search, more app-icon shortcuts.
+- **Cards, smarter:** reward % per category, points & expiry, annual-fee waiver progress, and
+  "Which card should I use?" for a purchase.
+- **Live mutual funds** (mfapi.in, free): search a fund, enter units, value follows the daily NAV
+  into net worth. **Other currencies** in quick-add at that day's rate (Frankfurter / ECB).
+- **Settle up by UPI:** your UPI ID in IOU reminders; "₹ Pay" opens your UPI app with the amount.
+- **PDF statements** (even password-protected) are read on the phone with pdf.js.
+- **Medical:** medicine reminders (via the frequent water-reminder ping), stock & refill alerts,
+  visits/reports with photos, and an **emergency card** viewable from the lock screen.
+- **Home upkeep:** maintenance reminders (AC service, RO filter…), utility meters (units/month,
+  ₹/unit, unusual months), grocery list (can fill from the diet plan), things you own.
+- **Goals** (savings from an account, weight, habit days, anything), **Wishlist** with the
+  30-day rule, **Journal** (a line a day with mood), and "your year beyond money" on the Year page.
+- **Language:** English / తెలుగు / हिन्दी for the bottom bar and Me page (more to come).
 - **Shared spaces:** split costs with a flatmate or partner through a private link — they
   only see that space, no PIN or account needed.
 - **Ledger:** log expenses by typing, voice, quick-add, or with a receipt photo. Wallet balance
@@ -65,6 +78,7 @@ Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free ti
 ## Project layout
 | Path | What it is |
 |---|---|
+| `tests/e2e/*.e2e.mjs` | Browser tests (`npm run e2e`): the real app on an in-memory database, driven by Playwright. |
 | `pages/*.js` | One file per screen. `_app.js` is the shell: bottom nav, lock screen, offline sync. |
 | `pages/api/data.js` | The single data API. `?type=` / `body.type` picks the resource; GET/POST/PUT/DELETE. |
 | `pages/api/cron-*.js` | Daily jobs run by Vercel Cron (see `vercel.json`). |

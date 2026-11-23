@@ -6,6 +6,7 @@ import PeopleSection from "../components/PeopleSection";
 import { THEMES, getTheme, saveTheme } from "../lib/theme";
 import AutoBackups from "../components/AutoBackups";
 import MovieSources from "../components/MovieSources";
+import { LANGS, getLang, setLang } from "../lib/i18n";
 import { useLedger } from "../lib/useLedger";
 import { ArrowLeft, Plus, Trash2, Check, Moon, Sun, Lock, Download, Upload, Pencil, X, Bell, Copy, Fingerprint } from "lucide-react";
 
@@ -719,6 +720,7 @@ export default function SettingsPage() {
       <details className="settings-group">
         <summary>🎨 Appearance</summary>
         <div className="settings-body">
+      <LanguagePicker />
       {/* Dark mode */}
       <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1046,6 +1048,23 @@ export default function SettingsPage() {
         <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Expense Ledger</div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Version 2.0 · Money, Movies & Diet, together</div>
         <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 8 }}>Built for one person. No ads, no accounts, your own database.</div>
+      </div>
+    </div>
+  );
+}
+
+// Language: phase 1 covers the bottom bar and the Me page.
+function LanguagePicker() {
+  const [lang, setL] = useState("en");
+  useEffect(() => { setL(getLang()); }, []);
+  return (
+    <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
+      <div className="lora" style={{ fontSize: 15, fontWeight: 600 }}>Language · భాష · भाषा</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>So far the bottom bar and the Me page; more screens will follow.</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        {LANGS.map(([k, label]) => (
+          <button key={k} type="button" className={`chip${lang === k ? " active" : ""}`} onClick={() => { setLang(k); setL(k); }}>{label}</button>
+        ))}
       </div>
     </div>
   );

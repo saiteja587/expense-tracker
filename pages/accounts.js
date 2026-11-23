@@ -14,12 +14,15 @@ import { showToast } from "../lib/toast";
 import { newRequestId } from "../lib/offlineQueue";
 import PageHeader, { Loading, pageStyle, Stat } from "../components/PageHeader";
 import { RevealSecrets, SecretsEditor } from "../components/CardVault";
+import { feeWaiver, pointsExpiring, pickCard } from "../lib/lifePlus";
+import { allCategories, MOVIE_CATEGORY } from "../lib/categories";
 
 const NETWORKS = ["Visa", "Mastercard", "RuPay", "Amex", "Diners"];
 const shortDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 const emptyForm = (kind = "bank") => ({
   id: null, name: "", kind, openingBalance: "", openingDate: todayISO(), creditLimit: "", statementDay: "", dueDay: "",
   bank: "", network: "", last4: "", loginUrl: "", loginUsername: "", note: "", archived: false, hasVault: false, vault: "",
+  rewardType: "", rewardDefault: "", rewardRules: [], points: "", pointsExpiry: "", annualFee: "", feeWaiverSpend: "", feeMonth: "",
 });
 
 export default function AccountsPage() {
@@ -32,7 +35,7 @@ export default function AccountsPage() {
     const accounts = data.accounts || [];
     const bal = derived.accountBalances || {};
     const live = accounts.filter((a) => !a.archived);
-    const cards = live.filter(isCard).map((c) => ({ ...c, cycle: cardCycle(c, data.expenses, data.transfers || [], today) }));
+    const cards = live.filter(isCard).map((c) => ({ ...c, cycle: cardCycle(c, data.expenses, data.transfers || [], today), fw: feeWaiver(c, data.expenses, today), pts: pointsExpiring(c, today) }));
     const others = live.filter((a) => !isCard(a));
     const cash = others.reduce((s, a) => s + (bal[a.id] || 0), derived.balance);
     const owed = cards.reduce((s, c) => s + Math.max(0, c.cycle.outstanding), 0);
@@ -105,6 +108,7 @@ export default function AccountsPage() {
           No cards yet. <button type="button" className="chip" onClick={() => setForm(emptyForm("card"))}><Plus size={14} /> Add a credit card</button>
         </div>
       )}
+      {view.cards.length > 1 && <CardPicker cards={view.cards} data={data} today={today} />}
       {view.cards.map((c) => <CardTile key={c.id} c={c} onEdit={() => edit(c)} onDelete={() => remove(c)} onPay={() => payBill(c)} />)}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "18px 0" }}>
@@ -198,6 +202,13 @@ function CardTile({ c, onEdit, onDelete, onPay }) {
         </div>
       )}
 
+      {c.fw && (
+        <div style={{ fontSize: 12.5, marginTop: 8, color: c.fw.done ? "var(--success)" : "var(--text-2)" }}>
+          {c.fw.done ? `✅ Annual fee of ${fmt(c.annualFee)} waived this year` : `Spend ${fmt(c.fw.left)} more by ${shortDate(c.fw.end)} to waive the ${fmt(c.annualFee)} fee (~${fmt(c.fw.perMonth)}/month)`}
+        </div>
+      )}
+      {c.pts && <div style={{ fontSize: 12.5, marginTop: 4, color: c.pts.daysLeft <= 14 ? "var(--danger)" : "var(--amber)" }}>⭐ {c.pts.points.toLocaleString("en-IN")} points expire {c.pts.daysLeft <= 0 ? "today" : `in ${c.pts.daysLeft} days`}. Redeem them.</div>}
+      {!c.pts && c.points > 0 && <div style={{ fontSize: 12, marginTop: 4, color: "var(--muted)" }}>⭐ {c.points.toLocaleString("en-IN")} points</div>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
         {cy.outstanding > 0 && <button type="button" className="btn btn-primary" onClick={onPay}>Pay bill</button>}
         {c.loginUrl && <a className="chip" href={/^https?:\/\//.test(c.loginUrl) ? c.loginUrl : `https://${c.loginUrl}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}><ExternalLink size={14} /> Log in</a>}
@@ -251,6 +262,11 @@ function AccountForm({ form, setForm, onDone }) {
         creditLimit: parseFloat(form.creditLimit) || 0, statementDay: form.statementDay, dueDay: form.dueDay,
         bank: form.bank, network: form.network, last4: form.last4, loginUrl: form.loginUrl, loginUsername: form.loginUsername,
         note: form.note, archived: form.archived,
+        ...(card ? {
+          rewardType: form.rewardType || "", rewardDefault: form.rewardDefault, points: form.points, pointsExpiry: form.pointsExpiry || null,
+          rewardRules: (form.rewardRules || []).filter((r) => r.category && parseFloat(r.pct) > 0),
+          annualFee: form.annualFee, feeWaiverSpend: form.feeWaiverSpend, feeMonth: form.feeMonth,
+        } : {}),
       };
       if (secretsMode === "editing") {
         const clean = Object.fromEntries(Object.entries(secrets).map(([k, v]) => [k, String(v || "").trim()]).filter(([, v]) => v));
@@ -314,6 +330,36 @@ function AccountForm({ form, setForm, onDone }) {
             <label style={{ width: 90, display: "grid", gap: 3 }}><span className="field-label">Statement day</span><input type="number" inputMode="numeric" min="1" max="31" value={form.statementDay} onChange={set("statementDay")} placeholder="20" /></label>
             <label style={{ width: 90, display: "grid", gap: 3 }}><span className="field-label">Due day</span><input type="number" inputMode="numeric" min="1" max="31" value={form.dueDay} onChange={set("dueDay")} placeholder="8" /></label>
           </div>
+          <details style={{ borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+            <summary style={{ fontSize: 14, fontWeight: 600, cursor: "pointer" }}>🎁 Rewards &amp; annual fee (for "Which card?")</summary>
+            <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+              <div className="h-scroll">{[["cashback", "💸 Cashback"], ["points", "⭐ Points"]].map(([k, l]) => <button key={k} type="button" className={`chip${form.rewardType === k ? " active" : ""}`} onClick={() => setForm({ ...form, rewardType: form.rewardType === k ? "" : k })}>{l}</button>)}</div>
+              <label style={{ display: "grid", gap: 3 }}><span className="field-label">Usual reward % on everything</span><input type="number" inputMode="decimal" step="0.1" value={form.rewardDefault} onChange={set("rewardDefault")} placeholder="1" /></label>
+              <div className="field-label">Higher % on some categories</div>
+              {(form.rewardRules || []).map((r, k) => (
+                <div key={k} style={{ display: "flex", gap: 8 }}>
+                  <select value={r.category} onChange={(e) => setForm({ ...form, rewardRules: form.rewardRules.map((x, j) => (j === k ? { ...x, category: e.target.value } : x)) })} style={{ flex: 2 }}>
+                    <option value="">Category…</option>
+                    {allCategories().map((c) => <option key={c.name} value={c.name}>{c.emoji} {c.name}</option>)}
+                  </select>
+                  <input type="number" inputMode="decimal" step="0.1" value={r.pct} onChange={(e) => setForm({ ...form, rewardRules: form.rewardRules.map((x, j) => (j === k ? { ...x, pct: e.target.value } : x)) })} placeholder="%" style={{ flex: 1 }} />
+                  <button type="button" className="icon-btn danger" aria-label="Remove" onClick={() => setForm({ ...form, rewardRules: form.rewardRules.filter((_, j) => j !== k) })}><X size={16} /></button>
+                </div>
+              ))}
+              <button type="button" className="chip" style={{ justifySelf: "start" }} onClick={() => setForm({ ...form, rewardRules: [...(form.rewardRules || []), { category: "", pct: "" }] })}>+ Category rate</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <label style={{ flex: 1, display: "grid", gap: 3 }}><span className="field-label">Points balance</span><input type="number" inputMode="numeric" value={form.points} onChange={set("points")} /></label>
+                <label style={{ flex: 1, display: "grid", gap: 3 }}><span className="field-label">Points expire on</span><input type="date" value={form.pointsExpiry || ""} onChange={set("pointsExpiry")} /></label>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <label style={{ flex: 1, display: "grid", gap: 3 }}><span className="field-label">Annual fee ₹</span><input type="number" inputMode="decimal" value={form.annualFee} onChange={set("annualFee")} /></label>
+                <label style={{ flex: 1, display: "grid", gap: 3 }}><span className="field-label">Waived if you spend ₹</span><input type="number" inputMode="decimal" value={form.feeWaiverSpend} onChange={set("feeWaiverSpend")} /></label>
+                <label style={{ width: 100, display: "grid", gap: 3 }}><span className="field-label">Fee month</span>
+                  <select value={form.feeMonth || ""} onChange={set("feeMonth")}><option value="">—</option>{["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map((m, k) => <option key={m} value={k + 1}>{m}</option>)}</select>
+                </label>
+              </div>
+            </div>
+          </details>
         </>
       )}
 
@@ -393,5 +439,34 @@ function TransferForm({ t, setT, accounts, onDone }) {
       {error && <div role="alert" style={{ color: "var(--danger)", fontSize: 13 }}>{error}</div>}
       <button type="submit" className="btn btn-primary btn-block" disabled={busy}>{busy ? "Saving…" : "Save"}</button>
     </form>
+  );
+}
+
+// "Which card should I use?" — best reward that fits, explained.
+function CardPicker({ cards, data, today }) {
+  const [category, setCategory] = useState("Food");
+  const [amount, setAmount] = useState("");
+  const amt = parseFloat(amount) || 0;
+  const cycles = Object.fromEntries(cards.map((c) => [c.id, c.cycle]));
+  const ranked = amt > 0 ? pickCard({ cards, category, amount: amt, cycles, expenses: data.expenses, todayIso: today }) : [];
+  const anyRewards = cards.some((c) => c.rewardDefault || (c.rewardRules || []).length || c.annualFee);
+  return (
+    <div className="card" style={{ borderRadius: 16, padding: 14, marginBottom: 12 }}>
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>🤔 Which card should I use?</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ flex: 1 }}>
+          {allCategories(data.customCategories).filter((c) => c.name !== MOVIE_CATEGORY.name).concat([MOVIE_CATEGORY]).map((c) => <option key={c.name} value={c.name}>{c.emoji} {c.name}</option>)}
+        </select>
+        <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Amount ₹" style={{ flex: 1 }} />
+      </div>
+      {!anyRewards && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Add each card&apos;s reward % and annual fee (edit ✎ → Rewards) for better picks.</div>}
+      {amt > 0 && ranked.length === 0 && <div style={{ fontSize: 13, color: "var(--danger)", marginTop: 8 }}>No card has {fmt(amt)} of limit available.</div>}
+      {ranked.slice(0, 3).map((r, k) => (
+        <div key={r.card.id} style={{ marginTop: 8, padding: "8px 10px", borderRadius: 10, background: k === 0 ? "var(--success-bg)" : "var(--surface-2)" }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{k === 0 ? "👉 " : ""}{r.card.name}{r.reward ? ` · ≈ ${fmt(r.reward)} back` : ""}</div>
+          {r.reasons.length > 0 && <div style={{ fontSize: 12, color: "var(--text-2)" }}>{r.reasons.join(" · ")}</div>}
+        </div>
+      ))}
+    </div>
   );
 }

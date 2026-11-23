@@ -1,4 +1,7 @@
-import { getChallengeMeta, listChallengeDays, getUserSetting, setUserSetting, listUsers } from "../../lib/db";
+import { getChallengeMeta, listChallengeDays, getUserSetting, setUserSetting, listUsers, listLifeForReminders, markLifeNotified } from "../../lib/db";
+import { mapLife } from "../../lib/life";
+import { dueDoses } from "../../lib/lifePlus";
+import { localDateParts, localHHMM } from "../../lib/dates";
 import { sendToUser } from "../../lib/push";
 
 function toISODate(v) {
@@ -33,10 +36,34 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Invalid secret" });
   }
   try {
+    // Medicine doses for everyone who has them: due within the last 2 hours
+    // and not marked taken. Each medicine remembers which of today's times
+    // it already reminded about.
+    const medsSent = [];
+    try {
+      const today = localDateParts().iso, now = localHHMM();
+      for (const u of await listUsers()) {
+        const rows = await listLifeForReminders(u.id);
+        const items = rows.map((r) => ({ ...mapLife(r), notified: r.notified }));
+        const due = dueDoses(items.filter((x) => x.kind === "medicine"), items.filter((x) => x.kind === "dose"), today, now);
+        for (const { med, time } of due) {
+          const [day, list = ""] = String(med.notified || "").split("#");
+          const sent = day === today ? list.split(",").filter(Boolean) : [];
+          if (sent.includes(time)) continue;
+          await sendToUser(u.id, { title: `💊 ${med.name}${med.dose ? ` — ${med.dose}` : ""}`, body: `Your ${time} dose${med.person ? ` (for ${med.person})` : ""}. Tap to mark it taken.`, url: "/medical" });
+          med.notified = `${today}#${[...sent, time].join(",")}`;
+          await markLifeNotified(med.id, med.notified);
+          medsSent.push(`${u.id}:${med.name}@${time}`);
+        }
+      }
+    } catch (e) {
+      console.error("[notify-water] medicine reminders failed:", e);
+    }
+
     // A personal reminder set up by the app's owner (via an external
     // scheduler) — it goes to the owner's devices only, not to everyone.
     const owner = (await listUsers()).find((u) => u.is_owner);
-    if (!owner) return res.status(200).json({ ok: true, result: null });
+    if (!owner) return res.status(200).json({ ok: true, result: null, medicines: medsSent });
     const uid = owner.id;
     const sendToAllDevices = (payload) => sendToUser(uid, payload);
     const result = await sendToAllDevices({
@@ -73,7 +100,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ ok: true, result });
+    return res.status(200).json({ ok: true, result, medicines: medsSent });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Failed to send" });
