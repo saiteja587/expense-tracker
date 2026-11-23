@@ -6,6 +6,8 @@ import { useMemo, useRef, useState } from "react";
 import { FileUp } from "lucide-react";
 import { useLedger, notifyLedgerChanged } from "../lib/useLedger";
 import { parseStatementCsv, findDuplicates, kindOf, isCard } from "../lib/money";
+import { parsePdfStatementLines } from "../lib/lifePlus";
+import { pdfLines } from "../lib/pdfText";
 import { allCategories, MOVIE_CATEGORY } from "../lib/categories";
 import { learnCategory } from "../lib/smart";
 import { guessCategory } from "../lib/smsParse";
@@ -31,8 +33,8 @@ export default function ImportPage() {
   const accounts = (data.accounts || []).filter((a) => !a.archived);
   const account = accounts.find((a) => String(a.id) === accountId) || null;
 
-  function prepare(text) {
-    const { rows: parsed, error: e } = parseStatementCsv(text);
+  function prepare(text, preParsed) {
+    const { rows: parsed, error: e } = preParsed ? { rows: preParsed } : parseStatementCsv(text);
     if (e) { setError(e); setRows(null); return; }
     if (!parsed.length) { setError("No transactions found in that file."); setRows(null); return; }
     setError("");
@@ -52,8 +54,25 @@ export default function ImportPage() {
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
-    if (/\.pdf$/i.test(f.name)) { setError("PDF statements can't be read here. Download the CSV (or Excel → save as CSV) from net banking instead."); return; }
+    if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") { readPdf(f); return; }
     prepare(await f.text());
+  }
+
+  // PDFs are read on this phone (pdf.js); locked ones ask for the password.
+  async function readPdf(f, password) {
+    setBusy(true); setError("");
+    try {
+      const lines = await pdfLines(f, password);
+      const parsed = parsePdfStatementLines(lines);
+      if (!parsed.length) { setError("Couldn't find transactions in this PDF. Some banks' PDF layouts don't work; try the CSV/Excel download instead."); return; }
+      prepare("", parsed);
+    } catch (e) {
+      if (e.needsPassword) {
+        const pw = window.prompt(`${e.message} Enter its password (often your date of birth or customer ID). It's only used on this phone.`);
+        if (pw) return readPdf(f, pw);
+        setError("This PDF needs its password.");
+      } else setError(e.message);
+    } finally { setBusy(false); }
   }
 
   const chosen = (rows || []).filter((r) => r.include);
@@ -75,7 +94,7 @@ export default function ImportPage() {
   return (
     <div className="page-container" style={pageStyle}>
       <PageHeader back="/accounts" backLabel="Accounts" icon={<FileUp size={22} color="var(--accent-solid)" />} title="Import a statement"
-        sub="Download your bank or card statement as CSV from net banking, then pick it here. You'll check every row before anything is added." />
+        sub="Pick your bank or card statement (CSV, or PDF, even password-protected). It's read on this phone, and you check every row before anything is added." />
 
       <div className="card" style={{ borderRadius: 16, padding: 16, marginBottom: 14, display: "grid", gap: 10 }}>
         <label style={{ display: "grid", gap: 3 }}>
@@ -85,8 +104,8 @@ export default function ImportPage() {
             {accounts.map((a) => <option key={a.id} value={String(a.id)}>{kindOf(a.kind).emoji} {a.name}</option>)}
           </select>
         </label>
-        <input ref={fileRef} type="file" accept=".csv,.txt,text/csv" onChange={onFile} style={{ display: "none" }} />
-        <button type="button" className="btn btn-primary" onClick={() => fileRef.current?.click()}><FileUp size={16} /> Choose CSV file</button>
+        <input ref={fileRef} type="file" accept=".csv,.txt,text/csv,.pdf,application/pdf" onChange={onFile} style={{ display: "none" }} />
+        <button type="button" className="btn btn-primary" onClick={() => fileRef.current?.click()}><FileUp size={16} /> {busy && !rows ? "Reading…" : "Choose CSV or PDF"}</button>
         <details>
           <summary style={{ fontSize: 13, color: "var(--muted)", cursor: "pointer" }}>Or paste the statement text</summary>
           <textarea rows={5} placeholder="Date,Narration,Withdrawal,Deposit…" onBlur={(e) => e.target.value.trim() && prepare(e.target.value)} style={{ marginTop: 8 }} />

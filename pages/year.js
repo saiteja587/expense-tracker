@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { fmt } from "../lib/format";
+import LifeYear from "../components/LifeYear";
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -165,7 +166,7 @@ export default function YearPage() {
             <ArrowLeft size={13} /> Insights
           </Link>
           <div className="lora gradient-title" style={{ fontSize: 24, fontWeight: 600 }}>Year view</div>
-          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Money, movies and diet across the whole year.</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Money, movies, diet and life across the whole year.</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button onClick={() => setYear(year - 1)} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }} aria-label="Previous year"><ChevronLeft size={18} /></button>
@@ -278,6 +279,7 @@ export default function YearPage() {
           </ResponsiveContainer>
         </div>
       </div>
+      <LifeYear year={year} />
     </div>
   );
 }

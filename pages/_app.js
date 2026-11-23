@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import EmergencyInfo from "../components/EmergencyInfo";
+import { useT } from "../lib/i18n";
 import { useRouter } from "next/router";
 import "../styles/globals.css";
 import { flushQueue, getQueue } from "../lib/offlineQueue";
@@ -187,6 +189,7 @@ function BottomNav({ currentPath, router }) {
   const navRef = useRef(null);
   const itemRefs = useRef([]);
   const [highlight, setHighlight] = useState(null);
+  const { t } = useT();
   const currentTab = tabFor(currentPath);
   const activeIndex = NAV_ITEMS.findIndex((i) => i.href === currentTab);
 
@@ -219,7 +222,7 @@ function BottomNav({ currentPath, router }) {
         }}
       >
         <Icon size={21} strokeWidth={active ? 2.3 : 1.8} />
-        <span className="nav-label">{label}</span>
+        <span className="nav-label">{t(label)}</span>
       </a>
     );
   }
@@ -229,7 +232,7 @@ function BottomNav({ currentPath, router }) {
       <nav className="bottom-nav" ref={navRef} aria-label="Main">
         {highlight && <span className="bottom-nav-highlight" style={{ left: highlight.left, width: highlight.width }} />}
         {NAV_ITEMS.slice(0, 2).map((item, i) => tab(item, i))}
-        <button type="button" className="nav-fab" aria-label="Add an expense" onClick={() => { vibrate(10); openQuickAdd(); }}>
+        <button type="button" className="nav-fab" aria-label={t("Add an expense")} onClick={() => { vibrate(10); openQuickAdd(); }}>
           <Plus size={26} strokeWidth={2.4} />
         </button>
         {NAV_ITEMS.slice(2).map((item, i) => tab(item, i + 2))}
@@ -495,6 +498,7 @@ function LockScreen({ onUnlock, multiUser }) {
           {checking ? "Checking…" : "Unlock"}
         </button>
         <Link href="/join" style={{ display: "inline-block", marginTop: 16, fontSize: 13.5, color: "var(--accent-solid)", fontWeight: 600, textDecoration: "none" }}>New here? Join with an invite code →</Link>
+        <div><EmergencyInfo /></div>
       </div>
     </div>
   );

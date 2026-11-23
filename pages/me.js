@@ -1,12 +1,13 @@
 // "Me": your level and badges, plus every page that isn't a main tab.
 import { useMemo } from "react";
 import Link from "next/link";
-import { Flame, PiggyBank, HandCoins, Search, Settings, Trophy, Wind, ChevronRight, Award, Wallet, Users, Tv, Landmark, TrendingUp, Building2, Plane, Receipt, ListChecks, HeartPulse, Salad, CalendarClock, Bike, Gift } from "lucide-react";
+import { Flame, PiggyBank, HandCoins, Search, Settings, Trophy, Wind, ChevronRight, Award, Wallet, Users, Tv, Landmark, TrendingUp, Building2, Plane, Receipt, ListChecks, HeartPulse, Salad, CalendarClock, Bike, Gift, Target, ShoppingBag, Pill, BookOpen, Home as HomeIcon } from "lucide-react";
 import { useLedger } from "../lib/useLedger";
 import { computeBadges, levelFor } from "../lib/achievements";
 import { sugarStreak, loggingStreak } from "../lib/ledger";
 import { fmt } from "../lib/format";
 import { isCard } from "../lib/money";
+import { useT } from "../lib/i18n";
 
 function Row({ href, Icon, color, title, sub }) {
   return (
@@ -25,6 +26,7 @@ function Row({ href, Icon, color, title, sub }) {
 
 export default function MePage() {
   const { data, derived, today, loaded } = useLedger();
+  const { t } = useT();
   const view = useMemo(() => {
     if (!data) return null;
     const badges = computeBadges(data, today);
@@ -44,7 +46,7 @@ export default function MePage() {
 
   return (
     <div className="page-container" style={{ maxWidth: 560, margin: "0 auto", padding: "28px 20px 100px" }}>
-      <h1 className="lora gradient-title" style={{ fontSize: 28, fontWeight: 700, margin: "0 0 16px" }}>Me</h1>
+      <h1 className="lora gradient-title" style={{ fontSize: 28, fontWeight: 700, margin: "0 0 16px" }}>{t("Me")}</h1>
 
       <Link href="/badges" style={{ textDecoration: "none", color: "inherit" }}>
         <div style={{ borderRadius: 22, padding: 20, color: "#fff", background: "var(--accent-gradient)", boxShadow: "var(--accent-glow)", marginBottom: 18 }}>
@@ -88,37 +90,57 @@ export default function MePage() {
         ))}
       </div>
 
-      <div className="card" style={{ borderRadius: 20, padding: "0 14px" }}>
-        <div style={{ marginTop: -1 }}>
-          <Row href="/habits" Icon={ListChecks} color="#2F6F5E" title="Habits" sub="Walk, gym, read, sleep on time: streaks" />
-          <Row href="/health" Icon={HeartPulse} color="#B5533C" title="Health" sub="Weight, sleep, mood, steps, water" />
-          <Row href="/diet" Icon={Salad} color="#6B7A3E" title="Diet" sub="Indian food log, 7-day plan, shopping list" />
-          <Row href="/sugar-challenge" Icon={Flame} color="#E8731F" title="No-sugar challenge" sub={data.challengeMeta ? `${view.sugar}-day streak` : "Start a challenge"} />
-          <Row href="/challenges" Icon={Trophy} color="#2F6F5E" title="Mini challenges" sub="No-delivery week, daily cap, no-spend weekend" />
-          <Row href="/budget" Icon={PiggyBank} color="#7C3AED" title="Budget & goals" sub="Limits, savings goal, alerts" />
-          <Row href="/transactions" Icon={Wallet} color="#2F4858" title="Balance & transactions" sub={`${fmt(derived.balance)} balance`} />
-          <Row href="/accounts" Icon={Landmark} color="#1F5F8B" title="Accounts & cards" sub={(() => {
+      {[
+        ["Money", [
+          ["/transactions", Wallet, "#2F4858", "Balance & transactions", `${fmt(derived.balance)} balance`],
+          ["/accounts", Landmark, "#1F5F8B", "Accounts & cards", (() => {
             const accs = (data.accounts || []).filter((a) => !a.archived);
             const cards = accs.filter(isCard).length;
             return accs.length ? `${accs.length - cards} account${accs.length - cards === 1 ? "" : "s"} · ${cards} credit card${cards === 1 ? "" : "s"}` : "Bank, UPI, cash, credit cards and bills";
-          })()} />
-          <Row href="/networth" Icon={TrendingUp} color="#2F6F5E" title="Net worth" sub="What you have minus what you owe" />
-          <Row href="/loans" Icon={Building2} color="#5B3A5C" title="Loans & EMIs" sub="Payoff dates and prepayment savings" />
-          <Row href="/trips" Icon={Plane} color="#C98A2C" title="Trips & events" sub="What a trip really cost, per person" />
-          <Row href="/tax" Icon={Receipt} color="#6B7A3E" title="Tax deductions" sub="80C, 80D, rent… for the financial year" />
-          <Row href="/renewals" Icon={CalendarClock} color="#8A4B6B" title="Renewals & documents" sub="Insurance, PUC, licence, warranties, IDs" />
-          <Row href="/vehicles" Icon={Bike} color="#3F6E5B" title="Vehicles" sub="Mileage, fuel cost, service due" />
-          <Row href="/people" Icon={Gift} color="#C98A2C" title="People" sub="Birthdays, gifts, things you lent" />
-          <Row href="/ious" Icon={HandCoins} color="#B5533C" title="Who owes what" sub={view.owedToMe || view.iOwe ? `${fmt(view.owedToMe)} owed to you · you owe ${fmt(view.iOwe)}` : "Track money between friends"} />
-          <Row href="/shows" Icon={Tv} color="#4F6FB0" title="Shows" sub="Series you're watching — next episode, where it streams" />
-          <Row href="/shared" Icon={Users} color="#0D9488" title="Shared spaces" sub="Split rent, groceries or a trip with someone" />
-          <Row href="/search" Icon={Search} color="#3F6E5B" title="Search" sub="Every expense, movie and note" />
-          <Row href="/pause" Icon={Wind} color="#4F6BED" title="Pause" sub="A moment before you spend" />
-          <Row href="/settings" Icon={Settings} color="#6B6558" title="Settings" sub="PIN, backup, theme, notifications" />
+          })()],
+          ["/budget", PiggyBank, "#7C3AED", "Budget & goals", "Limits, savings goal, alerts"],
+          ["/goals", Target, "#2F6F5E", "Goals", "Save, lose weight, build a habit: live progress"],
+          ["/networth", TrendingUp, "#2F6F5E", "Net worth", "Accounts, funds (live NAV), loans"],
+          ["/loans", Building2, "#5B3A5C", "Loans & EMIs", "Payoff dates and prepayment savings"],
+          ["/ious", HandCoins, "#B5533C", "Who owes what", view.owedToMe || view.iOwe ? `${fmt(view.owedToMe)} owed to you · you owe ${fmt(view.iOwe)}` : "Track money between friends, settle by UPI"],
+          ["/wishlist", ShoppingBag, "#A3763F", "Wishlist", "Wait 30 days before buying"],
+          ["/trips", Plane, "#C98A2C", "Trips & events", "What a trip really cost, per person"],
+          ["/tax", Receipt, "#6B7A3E", "Tax deductions", "80C, 80D, rent… for the financial year"],
+          ["/shared", Users, "#0D9488", "Shared spaces", "Split rent, groceries or a trip with someone"],
+        ]],
+        ["Health & life", [
+          ["/habits", ListChecks, "#2F6F5E", "Habits", "Walk, gym, read, sleep on time: streaks"],
+          ["/health", HeartPulse, "#B5533C", "Health", "Weight, sleep, mood, steps, water"],
+          ["/diet", Salad, "#6B7A3E", "Diet", "Indian food log, 7-day plan, shopping list"],
+          ["/medical", Pill, "#B5533C", "Medical", "Medicine reminders, reports, emergency card"],
+          ["/journal", BookOpen, "#4F6BED", "Journal", "A line a day, with your mood"],
+          ["/sugar-challenge", Flame, "#E8731F", "No-sugar challenge", data.challengeMeta ? `${view.sugar}-day streak` : "Start a challenge"],
+          ["/challenges", Trophy, "#2F6F5E", "Mini challenges", "No-delivery week, daily cap, no-spend weekend"],
+        ]],
+        ["Home & people", [
+          ["/household", HomeIcon, "#2F4858", "Home upkeep", "Maintenance, meters, grocery list, things you own"],
+          ["/renewals", CalendarClock, "#8A4B6B", "Renewals & documents", "Insurance, PUC, licence, warranties, IDs"],
+          ["/vehicles", Bike, "#3F6E5B", "Vehicles", "Mileage, fuel cost, service due"],
+          ["/people", Gift, "#C98A2C", "People", "Birthdays, gifts, things you lent"],
+        ]],
+        ["More", [
+          ["/shows", Tv, "#4F6FB0", "Shows", "Series you're watching — next episode, where it streams"],
+          ["/search", Search, "#3F6E5B", "Search", "Every expense, movie and note"],
+          ["/pause", Wind, "#4F6BED", "Pause", "A moment before you spend"],
+          ["/settings", Settings, "#6B6558", "Settings", "PIN, backup, theme, language, notifications"],
+        ]],
+      ].map(([group, rows]) => (
+        <div key={group} style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".06em", margin: "0 6px 6px" }}>{t(group)}</div>
+          <div className="card" style={{ borderRadius: 20, padding: "0 14px" }}>
+            <div style={{ marginTop: -1 }}>
+              {rows.map(([href, Icon, color, title, sub]) => <Row key={href} href={href} Icon={Icon} color={color} title={t(title)} sub={sub} />)}
+            </div>
+          </div>
         </div>
-        <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", marginTop: 20, lineHeight: 1.5 }}>
-          Movie and TV data from TMDB; streaming info via JustWatch.<br />This app uses the TMDB API but is not endorsed or certified by TMDB.<br />Extra movie info (when switched on) from OMDb, Wikipedia/Wikidata (CC BY-SA), TVmaze (CC BY-SA), fanart.tv, OpenSubtitles and YouTube.
-        </div>
+      ))}
+      <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center", marginTop: 8, lineHeight: 1.5 }}>
+        Movie and TV data from TMDB; streaming info via JustWatch.<br />This app uses the TMDB API but is not endorsed or certified by TMDB.<br />Extra movie info (when switched on) from OMDb, Wikipedia/Wikidata (CC BY-SA), TVmaze (CC BY-SA), fanart.tv, OpenSubtitles and YouTube. Fund prices from mfapi.in; exchange rates from Frankfurter (ECB).
       </div>
     </div>
   );

@@ -6,13 +6,12 @@ import { HeartPulse } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { useLife } from "../lib/useLife";
 import { useLedger } from "../lib/useLedger";
-import { healthSummary, sleepHoursFrom } from "../lib/life";
+import { healthSummary, sleepHoursFrom, MOODS } from "../lib/life";
 import { todayISO, fmt } from "../lib/format";
 import { addDays } from "../lib/ledger";
 import { showToast } from "../lib/toast";
 import PageHeader, { Loading, pageStyle, Stat } from "../components/PageHeader";
 
-export const MOODS = [[1, "😣", "Awful"], [2, "😕", "Low"], [3, "😐", "Okay"], [4, "🙂", "Good"], [5, "😄", "Great"]];
 
 export default function HealthPage() {
   const life = useLife(["day_log"]);

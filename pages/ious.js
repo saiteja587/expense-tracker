@@ -5,18 +5,19 @@ import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, Pencil, Check, X, HandCoins, MessageCircle } from "lucide-react";
 
 // A friendly, ready-to-send WhatsApp message for an IOU.
-function whatsappText(i) {
+function whatsappText(i, myUpi) {
   const amount = "₹" + Math.round(i.amount).toLocaleString("en-IN");
   const what = i.note ? ` for ${i.note}` : "";
   const due = i.dueDate ? ` (due ${new Date(i.dueDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })})` : "";
   return i.direction === "owed_to_me"
-    ? `Hey ${i.personName}! Quick reminder about the ${amount}${what}${due} 🙂 No rush — UPI whenever you get a moment. Thanks!`
+    ? `Hey ${i.personName}! Quick reminder about the ${amount}${what}${due} 🙂 No rush — UPI whenever you get a moment${myUpi ? ` (my UPI ID: ${myUpi})` : ""}. Thanks!`
     : `Hey ${i.personName}! I owe you ${amount}${what}${due} — sending it soon. Thanks for covering! 🙏`;
 }
 import { showToast } from "../lib/toast";
 import { fmt, todayISO, nowHHMM } from "../lib/format";
 import { notifyLedgerChanged } from "../lib/useLedger";
 import { newRequestId } from "../lib/offlineQueue";
+import { upiLink, isUpiId } from "../lib/lifePlus";
 
 const emptyForm = { personName: "", amount: "", direction: "owed_to_me", note: "", dueDate: "" };
 
@@ -31,6 +32,29 @@ export default function IousPage() {
   // After settling: offer to move the money in/out of your balance.
   const [settlePrompt, setSettlePrompt] = useState(null);
   const [promptBusy, setPromptBusy] = useState(false);
+  // Your UPI ID goes into reminders; theirs lets you pay in one tap.
+  const [myUpi, setMyUpi] = useState("");
+  const [myUpiInput, setMyUpiInput] = useState(null);
+  useEffect(() => { fetch("/api/data?type=my-upi").then((r) => (r.ok ? r.json() : {})).then((d) => setMyUpi(d.upi || "")).catch(() => {}); }, []);
+  async function saveMyUpi() {
+    const v = (myUpiInput || "").trim();
+    if (v && !isUpiId(v)) { showToast("That doesn't look like a UPI ID (name@bank)", "⚠️"); return; }
+    const res = await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "my-upi", upi: v }) });
+    if (res.ok) { setMyUpi(v); setMyUpiInput(null); showToast("Saved", "✅"); }
+  }
+  async function payTo(i) {
+    let vpa = i.upiId;
+    if (!vpa) {
+      vpa = window.prompt(`${i.personName}'s UPI ID (e.g. name@okhdfc):`, "");
+      if (!vpa) return;
+      if (!isUpiId(vpa)) { showToast("That doesn't look like a UPI ID", "⚠️"); return; }
+      await fetch("/api/data", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "iou-upi", id: i.id, upiId: vpa }) });
+      setIous((xs) => xs.map((x) => (x.id === i.id ? { ...x, upiId: vpa } : x)));
+    }
+    const link = upiLink({ vpa, name: i.personName, amount: i.amount, note: i.note || "Settling up" });
+    if (link) window.location.href = link;
+    showToast("After paying, tap ✓ to mark it settled", "💸");
+  }
 
   async function load() {
     try {
@@ -46,6 +70,7 @@ export default function IousPage() {
             note: i.note || "",
             dueDate: i.due_date ? i.due_date.slice(0, 10) : "",
             settled: !!i.settled,
+            upiId: i.upi_id || "",
           }))
         );
       }
@@ -186,6 +211,14 @@ export default function IousPage() {
         <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>Track money owed to you and money you owe others. When one is settled, you can add the money to (or take it from) your balance in one tap.</div>
       </div>
 
+      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 14, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        {myUpiInput === null ? (
+          <>Your UPI ID: <b style={{ color: "var(--ink)" }}>{myUpi || "not set"}</b><button type="button" className="chip" onClick={() => setMyUpiInput(myUpi)}>{myUpi ? "Change" : "Add (goes in reminders)"}</button></>
+        ) : (
+          <><input value={myUpiInput} onChange={(e) => setMyUpiInput(e.target.value)} placeholder="you@okaxis" autoCapitalize="none" style={{ flex: 1, minWidth: 160 }} /><button type="button" className="btn btn-primary" onClick={saveMyUpi}>Save</button></>
+        )}
+      </div>
+
       <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
         <div className="panel-soft" style={{ flex: 1, borderRadius: 6, padding: "14px 16px", background: "var(--success-bg)" }}>
           <div style={{ fontSize: 12, color: "#4d7a68" }}>Owed to you</div>
@@ -272,13 +305,16 @@ export default function IousPage() {
                 <span className="tabnum" style={{ fontSize: 15, fontWeight: 600, color: i.direction === "owed_to_me" ? "var(--success)" : "var(--danger)", marginRight: 4 }}>{fmt(i.amount)}</span>
                 {!i.settled && (
                   <a
-                    href={`https://wa.me/?text=${encodeURIComponent(whatsappText(i))}`}
+                    href={`https://wa.me/?text=${encodeURIComponent(whatsappText(i, myUpi))}`}
                     target="_blank" rel="noopener noreferrer"
                     className="icon-btn" aria-label={`Send ${i.personName} a WhatsApp reminder`} title="Remind on WhatsApp"
                     style={{ color: "#1FA855" }}
                   >
                     <MessageCircle size={18} />
                   </a>
+                )}
+                {!i.settled && i.direction === "i_owe" && (
+                  <button type="button" onClick={() => payTo(i)} className="chip" style={{ marginRight: 2 }} title={i.upiId ? `Pay ${i.upiId}` : "Add their UPI ID and pay"}>₹ Pay</button>
                 )}
                 <button onClick={() => toggleSettled(i)} className="icon-btn" aria-label={i.settled ? "Mark unsettled" : "Mark settled"} title={i.settled ? "Mark unsettled" : "Mark settled"} style={{ color: i.settled ? "var(--muted)" : "var(--success)" }}>
                   <Check size={18} />

@@ -7,6 +7,7 @@ import { sendToUser } from "../../lib/push";
 import * as food from "../../lib/food";
 import { LIFE_KINDS } from "../../lib/life";
 import * as movieApis from "../../lib/movieApis";
+import * as freeApis from "../../lib/freeApis";
 
 // Calls the lock screen needs before the user has unlocked. Everything else
 // requires a valid session cookie whenever a PIN is set.
@@ -234,6 +235,11 @@ export default async function handler(req, res) {
         const imdbId = await safe(movieApis.imdbIdFor(tmdbId, "tv"));
         return res.status(200).json({ tvmaze: await safe(movieApis.tvmazeInfo(imdbId)) });
       }
+      // Mutual funds (mfapi.in) and currency rates (Frankfurter): free, no key.
+      if (type === "mf-search") return res.status(200).json({ results: (await safe(freeApis.mfSearch(String(req.query.q || "").slice(0, 60)))) || [] });
+      if (type === "mf-nav") return res.status(200).json({ nav: await safe(freeApis.mfNav(req.query.code)) });
+      if (type === "fx") return res.status(200).json({ fx: await safe(freeApis.fxRate(req.query.from, req.query.date)), currencies: freeApis.CURRENCIES });
+      if (type === "my-upi") return res.status(200).json({ upi: (await db.getUserSetting(uid, "my_upi")) || "", name: user.name });
       if (type === "movie-sources") return res.status(200).json({ sources: { tmdb: tmdbApi.hasTmdb(), ...movieApis.sources() } });
       if (type === "movie-details") {
         if (!tmdbApi.hasTmdb()) return res.status(200).json({ details: null });
@@ -503,6 +509,27 @@ export default async function handler(req, res) {
         if (await db.getUserSetting(uid, "vault_check")) return res.status(200).json({ ok: true, existed: true });
         await db.setUserSetting(uid, "vault_check", db.cleanVault(body.check));
         return res.status(201).json({ ok: true });
+      }
+
+      if (type === "my-upi") {
+        const v = String(body.upi || "").trim();
+        if (v && !/^[\w.-]{2,64}@[a-zA-Z]{2,64}$/.test(v)) return err(res, "That doesn't look like a UPI ID (name@bank)");
+        await db.setUserSetting(uid, "my_upi", v);
+        return res.status(200).json({ upi: v });
+      }
+
+      if (type === "iou-upi") {
+        const row = await db.setIouUpi(uid, parseInt(body.id, 10), body.upiId);
+        if (!row) return err(res, "Not found", 404);
+        return res.status(200).json(row);
+      }
+
+      // Re-price mutual funds from today's NAV.
+      if (type === "refresh-funds") {
+        const codes = await db.listFundCodes(uid);
+        const navs = {};
+        for (const c of codes) { const n = await safe(freeApis.mfNav(c)); if (n?.nav) navs[c] = n.nav; }
+        return res.status(200).json({ updated: await db.updateFundValues(uid, navs) });
       }
 
       if (type === "trakt-import") {

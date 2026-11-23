@@ -5,6 +5,7 @@ import { mapExpense, mapMovie } from "../../lib/ledger";
 import { mapAccount, mapTransfer, cardCycle, isCard } from "../../lib/money";
 import { listAccounts, listTransfers, listLifeForReminders, markLifeNotified } from "../../lib/db";
 import { mapLife, dueStatus, warrantyEnds, nextOccurrence, vehicleStats, REMIND_RENEWAL, REMIND_WARRANTY } from "../../lib/life";
+import { choreNext, medicineDay, pointsExpiring, feeWaiver, taxNudge } from "../../lib/lifePlus";
 import { buildExport } from "./data";
 import { sendToUser } from "../../lib/push";
 import { isAuthorizedCron, rejectCron } from "../../lib/cronAuth";
@@ -49,7 +50,22 @@ async function runForUser(uid, local) {
     try {
       const [accRows, trRows, expRows] = await Promise.all([listAccounts(uid), listTransfers(uid), listExpenses(uid)]);
       const exps = expRows.map(mapExpense), transfers = trRows.map(mapTransfer);
+      // Tax: in January–March, twice a month, how much 80C room is left.
+      if ([5, 20].includes(local.day)) {
+        const tn = taxNudge(exps, today);
+        if (tn) { await sendToAllDevices({ title: `🧾 ₹${Math.round(tn.room).toLocaleString("en-IN")} of 80C room left`, body: `${tn.daysLeft} days until ${tn.fy} ends. PPF, ELSS or insurance? Tag them in the app.`, url: "/tax" }); sentItems.push("tax"); }
+      }
       for (const card of accRows.map(mapAccount).filter((a) => isCard(a) && !a.archived)) {
+        const pts = pointsExpiring(card, today);
+        if (pts && [30, 7, 1].includes(pts.daysLeft)) {
+          await sendToAllDevices({ title: `⭐ ${card.name}: ${pts.points.toLocaleString("en-IN")} points expire ${pts.daysLeft === 1 ? "tomorrow" : `in ${pts.daysLeft} days`}`, body: "Redeem them before they're gone.", url: "/accounts" });
+          sentItems.push(`points:${card.name}`);
+        }
+        const fw = feeWaiver(card, exps, today);
+        if (fw && !fw.done && fw.daysLeft === 30) {
+          await sendToAllDevices({ title: `💳 ${card.name}: ₹${Math.round(fw.left).toLocaleString("en-IN")} more to waive the fee`, body: `Spend it on this card in the next 30 days to skip the ₹${Math.round(card.annualFee)} annual fee.`, url: "/accounts" });
+          sentItems.push(`fee:${card.name}`);
+        }
         const cy = cardCycle(card, exps, transfers, today);
         if (!cy.hasCycle || cy.billedDue <= 0 || ![3, 1, -1].includes(cy.daysToDue)) continue;
         const amount = "₹" + Math.round(cy.billedDue).toLocaleString("en-IN");
@@ -98,6 +114,20 @@ async function runForUser(uid, local) {
       for (const v of items.filter((x) => x.kind === "vehicle" && x.serviceEveryKm > 0)) {
         const st = vehicleStats(v, fuel);
         if (st.kmToService != null && st.kmToService <= 200) await once(v, `service|${st.nextServiceKm}`, { title: `🔧 ${v.name} service due`, body: st.kmToService <= 0 ? "You've passed the service kilometres." : `About ${st.kmToService} km to go.`, url: "/vehicles" });
+      }
+      for (const c of items.filter((x) => x.kind === "chore")) {
+        const nx = choreNext(c, today);
+        if (nx.daysLeft === 3 || nx.daysLeft === 0) await once(c, `${nx.next}|${nx.daysLeft}`, { title: `🔧 ${c.name} ${nx.daysLeft === 0 ? "is due today" : "due in 3 days"}`, body: c.vendor ? `Call ${c.vendor}${c.phone ? ` (${c.phone})` : ""}.` : "Tap to mark it done.", url: "/household" });
+      }
+      const doses = items.filter((x) => x.kind === "dose");
+      for (const m of items.filter((x) => x.kind === "medicine" && !x.paused)) {
+        const day = medicineDay(m, doses, today);
+        // Mondays and Thursdays while low (medicines' notified field is used by dose reminders).
+        if (day.refill && [1, 4].includes(local.weekday)) await sendToAllDevices({ title: `💊 ${m.name} is running low`, body: `${m.stock} left${day.daysLeft != null ? ` (~${day.daysLeft} days)` : ""}. Time to refill.`, url: "/medical" }).then(() => sentItems.push(`refill:${m.name}`));
+      }
+      if (local.day === 1 && items.some((x) => x.kind === "meter")) {
+        const m = items.find((x) => x.kind === "meter");
+        await once(m, `reading|${local.ym}`, { title: "📟 New month: note your meter reading", body: "Takes 10 seconds, and shows you when a month is unusually high.", url: "/household" });
       }
       if (new Date(today + "T00:00:00").getDay() === 0) {
         const old = items.filter((x) => x.kind === "lent" && !x.returned && x.date && dueStatus(x.date, today).daysLeft <= -30);

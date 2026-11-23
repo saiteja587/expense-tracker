@@ -55,11 +55,20 @@ Ordered by priority. Tick items off as they're fixed.
 - [x] Recurring bills can be paid from an account or card; one vault passphrase is enforced (`vault_check`).
 - [x] Card spends no longer count twice in "left to spend today" (card dues are set aside from the pool).
 
+## Batch 3 (Nov 2026) — done
+- [x] Card picker & rewards, fee waiver, points expiry · free-trial renewals · goals (incl. savings from an account) ·
+      tax nudges Jan–Mar · UPI settle-up · PDF statements · Telugu/Hindi phase 1 · live mutual funds (mfapi.in) ·
+      foreign currency (Frankfurter) · meters · wishlist · medicines + emergency card · medical records ·
+      home inventory · maintenance · grocery list · journal · year beyond money. Schema v12.
+- [x] Browser tests: `npm run e2e` (Playwright, Chromium at phone size, PGlite in place of Neon). Every page is
+      opened and checked for errors; key flows are exercised end to end.
+
 ## Open follow-ups
 - [ ] Movie cards feel cramped next to the poster on narrow phones; consider moving edit/delete into a ⋯ menu.
 - [ ] Statement import reads CSV only; PDF statements need converting first.
 - [ ] `schema.sql` is out of date (stops before v4); regenerate it from `ensureTables()`.
-- [ ] Telugu / Hindi: needs the app's text moved into translation files first (all strings are inline today).
+- [ ] Telugu / Hindi phase 2: translate the remaining screens (lib/i18n.js; strings are keyed by their English text).
+- [ ] Grocery list is per person; a list shared between people would need a shared table (like watch-together lists).
 - [ ] Live Google Sheets sync needs a Google sign-in for the app; CSV export from Search covers it for now.
 - [ ] Health/diet preferences (goal, veg/non-veg) are kept per device (localStorage).
 - [ ] Photos on warranties/documents aren't in backups (same as receipts in the weekly backups).
