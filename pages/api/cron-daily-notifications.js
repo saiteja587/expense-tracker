@@ -1,5 +1,5 @@
-import { listUsers, listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup, getBillsPaid, listWatchlist, updateWatchlistMeta, listFollows, setFollowNotified } from "../../lib/db";
-import { hasTmdb, movieDetails, personMovies, freshReleases } from "../../lib/tmdb";
+import { listUsers, listMovies, listRecurring, listExpenses, listChallengeDays, saveBackup, getBillsPaid, listWatchlist, updateWatchlistMeta, listFollows, setFollowNotified, getUserSetting, setUserSetting } from "../../lib/db";
+import { hasTmdb, movieDetails, personMovies, freshReleases, newInLanguage, nowShowing, LANG_CODES } from "../../lib/tmdb";
 import { ottKey, userOttApps, SERVICE_NAMES } from "../../lib/movieStats";
 import { mapExpense, mapMovie } from "../../lib/ledger";
 import { mapAccount, mapTransfer, cardCycle, isCard } from "../../lib/money";
@@ -168,6 +168,13 @@ async function runForUser(uid, local) {
       } catch (e) {
         console.error(`[cron-daily] follow alerts for user ${uid} failed:`, e);
       }
+      if (local.weekday === 5) {
+        try {
+          sentItems.push(...(await fridayReleases(uid, today, movies, sendToAllDevices)));
+        } catch (e) {
+          console.error(`[cron-daily] Friday releases for user ${uid} failed:`, e);
+        }
+      }
     }
 
     const recurring = await listRecurring(uid);
@@ -254,6 +261,27 @@ async function runForUser(uid, local) {
     }
 
     return sentItems;
+}
+
+// Fridays: what's new in theatres in the languages you watch most. Only for
+// people who log movies, once per Friday.
+export async function fridayReleases(uid, today, movieRows, send) {
+  const ids = [...new Set(movieRows.map((m) => m.tmdb_id).filter((x) => x > 0))].slice(0, 40);
+  if (!ids.length || (await getUserSetting(uid, "friday_sent")) === today) return [];
+  const counts = {};
+  for (let k = 0; k < ids.length; k += 8) {
+    const ds = await Promise.all(ids.slice(k, k + 8).map((id) => movieDetails(id).catch(() => null)));
+    for (const d of ds) if (LANG_CODES[d?.language]) counts[d.language] = (counts[d.language] || 0) + 1;
+  }
+  const langs = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([l]) => l);
+  const lists = langs.length ? await Promise.all(langs.map((l) => newInLanguage(LANG_CODES[l]).catch(() => []))) : [(await nowShowing()).nowPlaying];
+  const skip = new Set(ids);
+  const from = addDaysISO(today, -2), to = addDaysISO(today, 2);
+  const films = lists.flat().filter((f) => f.releaseDate >= from && f.releaseDate <= to && !skip.has(f.tmdbId) && skip.add(f.tmdbId));
+  if (!films.length) return [];
+  await setUserSetting(uid, "friday_sent", today);
+  await send({ title: `🎬 New this Friday${langs.length ? ` in ${langs.join(" & ")}` : ""}`, body: films.slice(0, 4).map((f) => f.title).join(" · "), url: "/movies?tab=discover" });
+  return [`friday:${films.length}`];
 }
 
 async function watchlistAlerts(uid, today, movieRows, send) {

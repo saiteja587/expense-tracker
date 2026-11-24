@@ -148,6 +148,47 @@ test("goals and grocery list", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Clear bought" })).toBeVisible();
 });
 
+test("movie corner: import, rank, stub, and the settings group", async ({ page }) => {
+  await page.goto("/movie-corner");
+  await page.getByRole("tab", { name: /Import/ }).click();
+  const csv = "Date,Name,Year,Letterboxd URI,Rating,Rewatch,Tags,Watched Date\n2026-01-03,Alpha,2020,x,4,,,2026-01-02\n2026-01-04,Beta,2021,y,4,,,2026-01-03\n";
+  await page.locator('input[type="file"]').setInputFiles({ name: "diary.csv", mimeType: "text/csv", buffer: Buffer.from(csv) });
+  await page.getByRole("button", { name: "Import 2 films" }).click();
+  await expect(page.getByText("Added 2.")).toBeVisible();
+
+  await page.getByRole("tab", { name: /Ranking/ }).click();
+  await page.getByRole("button", { name: "Beta was better" }).click();
+  await expect(page.getByText("1 match played")).toBeVisible();
+  await expect(page.getByRole("listitem").first()).toContainText("Beta");
+
+  await page.getByRole("tab", { name: /Stubs/ }).click();
+  await page.getByRole("button", { name: "Add stub" }).click();
+  await page.getByLabel("Stub movie").fill("Alpha");
+  await page.getByLabel("Seat", { exact: true }).fill("H12");
+  await page.locator('input[type="file"]').setInputFiles({ name: "t.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64") });
+  await expect(page.getByText("Photo added ✓")).toBeVisible();
+  await page.getByRole("button", { name: "Save stub" }).click();
+  await expect(page.getByRole("img", { name: "Ticket for Alpha" })).toBeVisible();
+
+  await page.goto("/movies?tab=stats");
+  await expect(page.getByText(/2 in 2026/)).toBeVisible();
+  await page.getByRole("button", { name: "Compare a pass" }).click();
+  await page.getByLabel("Pass name").fill("Test pass");
+  await page.getByLabel("Price a month").fill("400");
+  await page.getByLabel("Tickets a month").fill("4");
+  await page.getByRole("button", { name: "Check it" }).click();
+  await expect(page.getByText(/No theatre visits it would cover/)).toBeVisible();
+
+  await page.goto("/movies?tab=discover");
+  await page.getByRole("button", { name: "Find films" }).click();
+  await expect(page.getByText(/needs the TMDB key/)).toBeVisible(); // no key in tests
+
+  // The sources list has its own group, not hidden inside Backup.
+  await page.goto("/settings");
+  await page.getByText("🎬 Movie data sources").click();
+  await expect(page.getByText("Wikipedia + Wikidata")).toBeVisible();
+});
+
 test("language: Telugu labels on the bottom bar and Me", async ({ page }) => {
   await page.goto("/settings");
   await page.getByText("🎨 Appearance").click();

@@ -13,6 +13,9 @@ import MovieSearchInput from "../components/MovieSearchInput";
 import NowShowing from "../components/NowShowing";
 import MovieDetailSheet from "../components/MovieDetailSheet";
 import WatchTogether from "../components/WatchTogether";
+import { Tonight, ForYou } from "../components/MovieTonight";
+import MovieStatsMore from "../components/MovieStatsMore";
+import { bookingOverBudget } from "../lib/movieLab";
 import SwipeRow from "../components/SwipeRow";
 import { shareMovieCard, shareYearCard } from "../lib/shareCard";
 import { parseBooking, matchTheatre } from "../lib/bookingParse";
@@ -107,6 +110,8 @@ export default function MoviesPage() {
   const [tab, setTab] = useState("diary");
   const [wlFilter, setWlFilter] = useState("all");
   const [wlShowAll, setWlShowAll] = useState(false);
+  const [wlSort, setWlSort] = useState("mine");
+  const [wlRatings, setWlRatings] = useState({});
   // Monthly movie budget (a "Movies" category limit) and movie-night splits.
   const [movieBudget, setMovieBudget] = useState(null);
   const [budgetDraft, setBudgetDraft] = useState(null); // null = not editing
@@ -237,7 +242,11 @@ export default function MoviesPage() {
   const watchKey = watchlist.map((w) => w.id).join(",");
   useEffect(() => {
     if (!watchKey) { setWlInfo({}); return; }
-    fetch("/api/data?type=watchlist-info").then((r) => (r.ok ? r.json() : null)).then((d) => d && setWlInfo(d.items || {})).catch(() => {});
+    fetch("/api/data?type=watchlist-info").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (d) setWlInfo(d.items || {});
+      // After that call has matched each film to TMDB, ask for IMDb / RT.
+      return fetch("/api/data?type=watchlist-ratings").then((r) => (r.ok ? r.json() : null)).then((x) => x && setWlRatings(x.ratings || {}));
+    }).catch(() => {});
   }, [watchKey]);
 
   // Links from notifications: ?details=<tmdbId> opens the details sheet,
@@ -293,7 +302,9 @@ export default function MoviesPage() {
   };
   const wlCounts = { stream: 0, theatres: 0, soon: 0 };
   for (const w of watchlist) { const k = wlKind(w); if (k) wlCounts[k]++; }
-  const wlFiltered = wlFilter === "all" ? watchlist : watchlist.filter((w) => wlKind(w) === wlFilter);
+  const wlScore = { imdb: (w) => wlRatings[w.id]?.imdb || 0, rt: (w) => parseInt(wlRatings[w.id]?.rt, 10) || 0, tmdb: (w) => wlInfo[w.id]?.rating || 0 }[wlSort];
+  const wlKept = wlFilter === "all" ? watchlist : watchlist.filter((w) => wlKind(w) === wlFilter);
+  const wlFiltered = wlScore ? [...wlKept].sort((a, b) => wlScore(b) - wlScore(a)) : wlKept;
   const wlVisible = wlShowAll ? wlFiltered : wlFiltered.slice(0, 8);
 
   function switchTab(k) {
@@ -814,7 +825,10 @@ export default function MoviesPage() {
           <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>
             Tickets, snacks, who you went with, and whether the crowd agreed with you.
           </div>
-          <Link href="/shows" className="chip" style={{ textDecoration: "none", marginTop: 8, display: "inline-flex" }}>📺 Your TV shows →</Link>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+            <Link href="/shows" className="chip" style={{ textDecoration: "none", display: "inline-flex" }}>📺 Your TV shows →</Link>
+            <Link href="/movie-corner" className="chip" style={{ textDecoration: "none", display: "inline-flex" }}>🏆 Movie corner →</Link>
+          </div>
         </div>
         {(tab === "diary" || tab === "stats") && <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button onClick={() => setViewDate(new Date(year, month - 1, 1))} style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: "var(--text-2)" }} aria-label="Previous month">
@@ -1127,6 +1141,11 @@ export default function MoviesPage() {
                 {form.booked ? "Who with, genre, note →" : "Who with, genre, stars, review, note →"}
               </button>
             )}
+            {(() => {
+              const cost = ((parseFloat(form.ticketPrice) || 0) + (form.booked ? 0 : parseFloat(form.canteenPrice) || 0)) * (form.quantity || 1);
+              const over = bookingOverBudget({ movies, budget: movieBudget, date: form.date, cost, ignoreId: editingId });
+              return over && <div role="status" style={{ fontSize: 12.5, color: "var(--warn)", background: "var(--warn-bg)", borderRadius: 8, padding: "8px 10px" }}>🎯 This takes the month to {fmt(over.after)}, {fmt(over.over)} over your {fmt(movieBudget)} movie budget.</div>;
+            })()}
             {formError && <div style={{ fontSize: 12, color: "var(--danger)" }}>{formError}</div>}
             <div style={{ display: "flex", gap: 8 }}>
               <button
@@ -1292,6 +1311,16 @@ export default function MoviesPage() {
           <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing on your watchlist yet.</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {watchlist.length > 1 && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Sort by
+                <select aria-label="Sort watchlist" value={wlSort} onChange={(e) => setWlSort(e.target.value)} style={{ width: "auto", padding: "4px 8px", fontSize: 12.5 }}>
+                  <option value="mine">My order</option>
+                  <option value="tmdb">TMDB rating</option>
+                  {Object.values(wlRatings).some((r) => r.imdb) && <option value="imdb">IMDb rating</option>}
+                  {Object.values(wlRatings).some((r) => r.rt) && <option value="rt">Rotten Tomatoes</option>}
+                </select>
+              </label>
+            )}
             {watchlist.length > 4 && (
               <div className="h-scroll" data-no-tab-swipe="1" style={{ gap: 6, marginBottom: 6 }}>
                 {[["all", `All · ${watchlist.length}`], ["stream", `📺 On your apps · ${wlCounts.stream}`], ["theatres", `🍿 In theatres · ${wlCounts.theatres}`], ["soon", `🗓️ Coming soon · ${wlCounts.soon}`]]
@@ -1306,7 +1335,7 @@ export default function MoviesPage() {
               <div ref={(el) => { rowRefs.current[w.id] = el; }}
                 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--line)", gap: 8, background: "var(--bg)",
                   ...(dragOrder && dragRef.current?.id === w.id ? { boxShadow: "var(--shadow-md)", borderRadius: 12, position: "relative", zIndex: 2, transform: "scale(1.02)" } : {}) }}>
-                {wlFilter === "all" && watchlist.length > 1 && (
+                {wlFilter === "all" && wlSort === "mine" && watchlist.length > 1 && (
                   <span role="button" tabIndex={0} aria-label={`Drag to reorder ${w.title}`} title="Drag to reorder"
                     onPointerDown={(e) => startDrag(e, w.id)} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}
                     onTouchStart={(e) => e.stopPropagation()}
@@ -1330,6 +1359,7 @@ export default function MoviesPage() {
                       : null;
                     return (
                       <>
+                        {wlRatings[w.id] && <div style={{ fontSize: 12, color: "var(--text-2)" }}>{[wlRatings[w.id].imdb && `IMDb ${wlRatings[w.id].imdb.toFixed(1)}`, wlRatings[w.id].rt && `🍅 ${wlRatings[w.id].rt}`].filter(Boolean).join(" · ")}</div>}
                         {badge && <div style={{ fontSize: 12, color: badge.c, fontWeight: 600 }}>{badge.t}</div>}
                         {w.note && <div style={{ fontSize: 12, color: "var(--muted)" }}>{w.note}</div>}
                       </>
@@ -1345,7 +1375,7 @@ export default function MoviesPage() {
               </div>
               </SwipeRow>
             ))}
-            {watchlist.length > 1 && wlFilter === "all" && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Drag ⋮⋮ to put your “watch next” on top · swipe a row left to delete</div>}
+            {watchlist.length > 1 && wlFilter === "all" && wlSort === "mine" && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Drag ⋮⋮ to put your “watch next” on top · swipe a row left to delete</div>}
             {wlFiltered.length > wlVisible.length && (
               <button type="button" className="btn btn-secondary btn-block" style={{ marginTop: 8, minHeight: 40 }} onClick={() => setWlShowAll(true)}>
                 Show all {wlFiltered.length}
@@ -1360,6 +1390,7 @@ export default function MoviesPage() {
       )}
       {tab === "discover" && (
         <>
+      <Tonight onOpen={(m) => setDetail(m)} />
       <NowShowing
         savedTitles={watchlist.map((w) => w.title)}
         langs={browseLangs}
@@ -1372,6 +1403,7 @@ export default function MoviesPage() {
           goToForm();
         }}
       />
+      <ForYou onOpen={(m) => setDetail(m)} userApps={userApps} />
       {recs.length > 0 && (
         <section aria-label="Recommended for you" style={{ marginBottom: 28 }}>
           <div className="lora" style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>✨ Because you loved {recs[0].because}{new Set(recs.map((r) => r.because)).size > 1 ? " & more" : ""}</div>
@@ -1502,6 +1534,7 @@ export default function MoviesPage() {
         </section>
       )}
       <MovieMoneyCard movies={moviesWithIds} meta={meta?.meta} expenses={expenses} recurring={ledger?.recurring || []} nightOut={nightOut} today={today} />
+      <MovieStatsMore movies={moviesWithIds} meta={meta?.meta} today={today} />
       <TasteCard movies={moviesWithIds} meta={meta?.meta} />
       <FollowingCard onOpen={(m) => setDetail(m)} prefs={prefs} savePrefs={savePrefs} />
       {yearWrapUp && (

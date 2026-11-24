@@ -8,6 +8,9 @@ import * as food from "../../lib/food";
 import { LIFE_KINDS } from "../../lib/life";
 import * as movieApis from "../../lib/movieApis";
 import * as freeApis from "../../lib/freeApis";
+import { MOODS, COMPANY, PROVIDER_IDS, pickTonight, tasteMatch, starsOf } from "../../lib/movieLab";
+import { userOttApps } from "../../lib/movieStats";
+import { mapMovie, mapExpense } from "../../lib/ledger";
 
 // Calls the lock screen needs before the user has unlocked. Everything else
 // requires a valid session cookie whenever a PIN is set.
@@ -319,6 +322,84 @@ export default async function handler(req, res) {
           return { ...p, stream: d?.providers?.stream || [], inTheatres: inTheatres.has(p.tmdbId) };
         });
         return res.status(200).json({ results: withWhere });
+      }
+      // Three films for tonight, streaming on apps you use.
+      if (type === "tonight") {
+        if (!tmdbApi.hasTmdb()) return res.status(200).json({ picks: [], apps: [], noTmdb: true });
+        const mood = MOODS[req.query.mood] ? req.query.mood : "any";
+        const company = COMPANY[req.query.company] ? req.query.company : "solo";
+        const maxMinutes = Math.min(400, Math.max(0, parseInt(req.query.minutes, 10) || 0));
+        const [movies, watchlist, expenses] = await Promise.all([db.listMovies(uid), db.listWatchlist(uid), db.listExpenses(uid)]);
+        const apps = userOttApps({ movies: movies.map(mapMovie), expenses: expenses.map(mapExpense), todayIso: localDateParts().iso });
+        if (!apps.size) return res.status(200).json({ picks: [], apps: [] });
+        const seenIds = new Set(movies.map((m) => m.tmdb_id).filter((x) => x > 0));
+        const skip = new Set(String(req.query.skip || "").split(",").map(Number).filter(Boolean));
+        const saved = new Set(watchlist.map((w) => w.tmdb_id).filter(Boolean));
+        const found = (await safe(tmdbApi.discoverOn([...apps].flatMap((a) => PROVIDER_IDS[a] || []), { genres: MOODS[mood].ids, maxMinutes }))) || [];
+        const ids = [...new Set([...[...saved].slice(0, 25), ...found.map((f) => f.tmdbId)])].filter((id) => !skip.has(id) && !seenIds.has(id)).slice(0, 40);
+        const films = (await inBatches(ids, 8, (id) => safe(tmdbApi.movieDetails(id)))).filter(Boolean).map((d) => ({ ...d, saved: saved.has(d.tmdbId) }));
+        const picks = pickTonight({ films, apps, mood, maxMinutes, company, seenIds });
+        return res.status(200).json({
+          apps: [...apps],
+          picks: picks.map((p) => ({ tmdbId: p.tmdbId, title: p.title, year: p.year, poster: p.poster, runtime: p.runtime, rating: p.rating, language: p.language, genres: p.genres.slice(0, 2), on: p.on, saved: p.saved })),
+        });
+      }
+      // IMDb / Rotten Tomatoes for each watchlist film (cached 3 days).
+      if (type === "watchlist-ratings") {
+        if (!tmdbApi.hasTmdb() || !process.env.OMDB_API_KEY) return res.status(200).json({ ratings: {} });
+        const items = (await db.listWatchlist(uid)).filter((w) => w.tmdb_id > 0).slice(0, 60);
+        const ratings = {};
+        await inBatches(items, 6, async (w) => {
+          const r = await safe(movieApis.omdbRatings(await safe(movieApis.imdbIdFor(w.tmdb_id))));
+          if (r && (r.imdb || r.rottenTomatoes)) ratings[w.id] = { imdb: r.imdb, rt: r.rottenTomatoes };
+        });
+        return res.status(200).json({ ratings });
+      }
+      // Films by the directors and actors you rate highest, not seen or saved.
+      if (type === "for-you") {
+        if (!tmdbApi.hasTmdb()) return res.status(200).json({ results: [], people: [] });
+        const [movies, watchlist] = await Promise.all([db.listMovies(uid), db.listWatchlist(uid)]);
+        const best = new Map();
+        for (const m of movies) {
+          const stars = starsOf({ rating: m.rating || 0, myTake: m.my_take });
+          if (m.tmdb_id > 0 && stars > (best.get(m.tmdb_id) || 0)) best.set(m.tmdb_id, stars);
+        }
+        const details = (await inBatches([...best.keys()].slice(0, 80), 8, (id) => safe(tmdbApi.movieDetails(id)))).filter(Boolean);
+        const people = new Map();
+        for (const d of details) {
+          const add = (p, role, weight) => {
+            if (!p.id) return;
+            const x = people.get(p.id) || { id: p.id, name: p.name, role, films: 0, score: 0 };
+            x.films++;
+            x.score += (best.get(d.tmdbId) - 3) * weight;
+            people.set(p.id, x);
+          };
+          (d.directorPeople || []).forEach((p) => add(p, "director", 2));
+          d.cast.slice(0, 3).forEach((p) => add(p, "actor", 1));
+        }
+        const top = [...people.values()].filter((p) => p.films > 1 && p.score > 1).sort((a, b) => b.score - a.score).slice(0, 4);
+        const skip = new Set([...movies.map((m) => m.tmdb_id), ...watchlist.map((w) => w.tmdb_id)].filter(Boolean));
+        const today = localDateParts().iso;
+        const lists = await inBatches(top, 4, async (p) => {
+          const films = ((await safe(tmdbApi.personMovies(p.id))) || []).filter((f) => f.poster && f.releaseDate && f.releaseDate <= today && !skip.has(f.tmdbId)).slice(0, 8);
+          const ds = (await inBatches(films, 4, (f) => safe(tmdbApi.movieDetails(f.tmdbId)))).filter((d) => d && d.rating >= 6.3);
+          return ds.sort((a, b) => b.rating - a.rating).slice(0, 4).map((d) => ({ tmdbId: d.tmdbId, title: d.title, year: d.year, poster: d.poster, rating: d.rating, stream: d.providers.stream, why: p.role === "director" ? `By ${p.name}` : `With ${p.name}` }));
+        });
+        const results = [];
+        for (let k = 0; k < 4; k++) for (const l of lists) if (l[k] && !results.some((r) => r.tmdbId === l[k].tmdbId)) results.push(l[k]);
+        return res.status(200).json({ results: results.slice(0, 12), people: top.map((p) => p.name) });
+      }
+      // How closely your ratings agree with friends who share theirs.
+      if (type === "taste-match") {
+        const { sharing, rows } = await db.sharedRatings(uid);
+        const by = {};
+        for (const r of rows) {
+          const f = (by[r.friend_id] = by[r.friend_id] || { name: r.name, pairs: [] });
+          const mine = starsOf({ rating: r.my_rating || 0, myTake: r.my_take }), theirs = starsOf({ rating: r.their_rating || 0, myTake: r.their_take });
+          if (mine && theirs) f.pairs.push({ title: r.title, mine, theirs });
+        }
+        const friends = Object.values(by).map((f) => ({ name: f.name, ...tasteMatch(f.pairs) })).filter((f) => f.count).sort((a, b) => b.pct - a.pct);
+        return res.status(200).json({ sharing, friends });
       }
       if (type === "watch-lists") {
         return res.status(200).json({ lists: await db.listWatchLists(uid), me: uid });
@@ -687,6 +768,36 @@ export default async function handler(req, res) {
         if (!personId || !name) return err(res, "Pick someone to follow");
         await db.followPerson(uid, { personId, name, role: String(body.role || "").slice(0, 20) });
         return res.status(201).json({ ok: true });
+      }
+      // Films from a Letterboxd / IMDb export, read on the phone (lib/movieLab.js).
+      if (type === "movie-import") {
+        const source = ["imdb", "letterboxd"].includes(body.source) ? body.source : null;
+        const kind = ["watched", "watchlist"].includes(body.kind) ? body.kind : null;
+        if (!source || !kind || !Array.isArray(body.items)) return err(res, "Nothing to import");
+        if (body.items.length > 500) return err(res, "Send at most 500 films at a time");
+        const today = localDateParts().iso;
+        const realDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || "") && !isNaN(new Date(v + "T00:00:00Z")) && v <= today;
+        const items = body.items.map((x) => ({
+          title: String(x?.title || "").trim().slice(0, 200), year: /^\d{4}$/.test(x?.year || "") ? x.year : "",
+          date: realDate(x?.date) ? x.date : today,
+          rating: [1, 2, 3, 4, 5].includes(x?.rating) ? x.rating : null, review: String(x?.review || "").slice(0, 280),
+        })).filter((x) => x.title);
+        return res.status(200).json(await db.importMovieList(uid, { source, kind, exactDates: !!body.exactDates, items }));
+      }
+      if (type === "watch-list-date") {
+        const listId = parseInt(body.listId, 10);
+        const day = String(body.day || "");
+        if (!listId || !/^\d{4}-\d{2}-\d{2}$/.test(day) || day < localDateParts().iso) return err(res, "Pick a date from today on");
+        const d = await db.addWatchListDate(uid, listId, { day, at: /^([01]\d|2[0-3]):[0-5]\d$/.test(body.at || "") ? body.at : "" });
+        if (!d) return err(res, "You're not in that list", 403);
+        const others = await db.watchListOthers(uid, listId);
+        await Promise.all(others.map((o) => sendToUser(o, { title: `📅 ${user.name} suggested a movie night`, body: "Tap to vote for the day that suits you.", url: "/movies?tab=watchlist" }).catch(() => {})));
+        return res.status(201).json({ id: d.id });
+      }
+      if (type === "watch-list-date-vote") {
+        const d = await db.voteWatchListDate(uid, parseInt(body.id, 10) || 0, !!body.on);
+        if (!d) return err(res, "Not found", 404);
+        return res.status(200).json({ ok: true });
       }
       if (type === "watch-list-vote") {
         const id = parseInt(body.id, 10);
@@ -1108,6 +1219,7 @@ export default async function handler(req, res) {
       else if (type === "tv-show") await db.deleteTvShow(uid, numId);
       else if (type === "watch-list") await db.leaveOrDeleteWatchList(uid, numId);
       else if (type === "watch-list-item") await db.deleteWatchListItem(uid, numId);
+      else if (type === "watch-list-date") await db.deleteWatchListDate(uid, numId);
       else if (type === "follow") await db.unfollowPerson(uid, numId);
       else if (type === "sugar-log") await db.deleteSugarLog(uid, numId);
       else if (type === "accounts") await db.deleteAccount(uid, numId);

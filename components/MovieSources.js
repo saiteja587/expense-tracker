@@ -19,8 +19,9 @@ export default function MovieSources() {
   const [on, setOn] = useState(null);
   const [user, setUser] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { apiGet("movie-sources").then((r) => setOn(r.sources)).catch(() => setOn({})); }, []);
-  if (!on) return null;
+  useEffect(() => { apiGet("movie-sources").then((r) => setOn(r.sources)).catch(() => setOn("error")); }, []);
+  if (!on) return <div style={{ fontSize: 13, color: "var(--muted)" }}>Checking…</div>;
+  if (on === "error") return <div style={{ fontSize: 13, color: "var(--danger)" }}>Couldn't check the sources. Close and reopen Settings to try again.</div>;
 
   async function importTrakt(e) {
     e.preventDefault();
@@ -33,8 +34,7 @@ export default function MovieSources() {
 
   return (
     <div className="card" style={{ borderRadius: 16, padding: 16, marginBottom: 16 }}>
-      <div className="lora" style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>🎬 Movie data sources</div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>All free. One with a key switches on after you add that key in Vercel → Settings → Environment Variables and redeploy.</div>
+      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 8 }}>All free. One with a key switches on after you add that key in Vercel → Settings → Environment Variables and redeploy. Tap any movie poster to see what they add.</div>
       {LIST.map(([id, name, what, env]) => (
         <div key={id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--line)" }}>
           <span aria-hidden="true">{on[id] ? "🟢" : "⚪"}</span>

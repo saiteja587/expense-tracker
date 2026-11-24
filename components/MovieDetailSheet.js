@@ -3,6 +3,7 @@
 // franchise progress and "More like this". Data from TMDB.
 import { useEffect, useState } from "react";
 import MovieMoreInfo from "./MovieMoreInfo";
+import MovieCheapest from "./MovieCheapest";
 import { onYourApps, theatreVerdict } from "../lib/movieStats";
 import { rememberPoster } from "./Poster";
 import { todayISO } from "../lib/format";
@@ -159,6 +160,8 @@ export default function MovieDetailSheet({ target, onClose, onLog, onSave, userA
                     </div>
                   )}
                 </div>
+
+                <MovieCheapest d={d} userApps={userApps} nightOut={nightOut} inTheatres={!!rel && rel <= today && (new Date(today) - new Date(rel)) / 86400000 <= 35} />
 
                 {(d.tagline || d.overview) && (
                   <div style={{ marginTop: 16, fontSize: 14, lineHeight: 1.5, color: "var(--text-2)" }}>

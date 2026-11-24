@@ -88,6 +88,7 @@ function ListCard({ list, me, onChanged, onOpen }) {
           <button type="button" className="icon-btn danger" aria-label={`Remove ${i.title}`} onClick={() => remove(i)}><Trash2 size={17} /></button>
         </div>
       ))}
+      <Dates list={list} me={me} onChanged={onChanged} />
       {done.length > 0 && (
         <button type="button" onClick={() => setShowDone(!showDone)} style={{ background: "none", border: "none", padding: "8px 0 0", color: "var(--muted)", fontSize: 12.5, cursor: "pointer" }}>
           {showDone ? "Hide" : "Show"} watched ({done.length})
@@ -97,6 +98,42 @@ function ListCard({ list, me, onChanged, onOpen }) {
         <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", fontSize: 13, color: "var(--muted)" }}>
           <span style={{ flex: 1, textDecoration: "line-through" }}>{i.title}</span>
           <button type="button" className="chip" onClick={() => toggle(i)} style={{ minHeight: 28, fontSize: 11.5 }}>Undo</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Suggest days for a movie night; everyone ticks the ones that suit them.
+function Dates({ list, me, onChanged }) {
+  const [f, setF] = useState(null);
+  const dates = list.dates || [];
+  const n = list.members.length;
+  async function act(fn) {
+    try { await fn(); onChanged(); return true; } catch (e) { showToast(e.message, "⚠️"); return false; }
+  }
+  const label = (d) => new Date(d.day + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }) + (d.at ? ` · ${d.at}` : "");
+  const all = dates.find((d) => d.votes === n && n > 1);
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>📅 Movie night</div>
+        {!f && <button type="button" className="chip" style={{ minHeight: 28, fontSize: 12 }} onClick={() => setF({ day: "", at: "" })}>Suggest a day</button>}
+      </div>
+      {all && <div style={{ fontSize: 12.5, color: "var(--success)", fontWeight: 600, marginTop: 4 }}>🎉 Everyone can make {label(all)}</div>}
+      {f && (
+        <form style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }} onSubmit={async (e) => { e.preventDefault(); if (await act(() => api("POST", { type: "watch-list-date", listId: list.id, ...f }))) setF(null); }}>
+          <input type="date" aria-label="Movie night date" value={f.day} onChange={(e) => setF({ ...f, day: e.target.value })} style={{ flex: "1 1 130px" }} />
+          <input type="time" aria-label="Movie night time" value={f.at} onChange={(e) => setF({ ...f, at: e.target.value })} style={{ flex: "1 1 100px" }} />
+          <button type="submit" className="btn btn-primary" disabled={!f.day}>Add</button>
+          <button type="button" className="btn btn-secondary" onClick={() => setF(null)}>Cancel</button>
+        </form>
+      )}
+      {dates.map((d) => (
+        <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+          <div style={{ flex: 1, fontSize: 13.5 }}>{label(d)}<div style={{ fontSize: 11.5, color: "var(--muted)" }}>{d.voters || "No votes"}</div></div>
+          <button type="button" className={`chip${d.my_vote ? " active" : ""}`} aria-pressed={!!d.my_vote} aria-label={`${d.my_vote ? "I can't make" : "I can make"} ${label(d)}`} style={{ minHeight: 30, fontSize: 12 }} onClick={() => act(() => api("POST", { type: "watch-list-date-vote", id: d.id, on: !d.my_vote }))}>👍 {d.votes}/{n}</button>
+          {(d.added_by === me || list.owner_id === me) && <button type="button" className="icon-btn danger" aria-label={`Remove ${label(d)}`} onClick={() => act(() => api("DELETE", null, `?type=watch-list-date&id=${d.id}`))}><Trash2 size={15} /></button>}
         </div>
       ))}
     </div>

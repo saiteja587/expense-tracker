@@ -124,6 +124,7 @@ export default function MePage() {
           ["/people", Gift, "#C98A2C", "People", "Birthdays, gifts, things you lent"],
         ]],
         ["More", [
+          ["/movie-corner", Trophy, "#8A4B6B", "Movie corner", "Rank films, quiz, ticket stubs, Letterboxd import"],
           ["/shows", Tv, "#4F6FB0", "Shows", "Series you're watching — next episode, where it streams"],
           ["/search", Search, "#3F6E5B", "Search", "Every expense, movie and note"],
           ["/pause", Wind, "#4F6BED", "Pause", "A moment before you spend"],

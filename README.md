@@ -47,6 +47,11 @@ Next.js (pages router) + Postgres on Neon, deployed on Vercel — all on free ti
   budget vs box office and a summary (Wikidata + Wikipedia, no key), exact episode air times
   (TVmaze, no key), logos (fanart.tv), subtitle languages (OpenSubtitles), YouTube review videos,
   and a one-time Trakt import. Settings → Movie data sources shows which are on (`lib/movieApis.js`).
+- **Movies, more:** "Tonight" (mood, time, company → three films on your apps), "For you", IMDb / RT
+  and sorting on the watchlist, Friday releases push, cheapest way to watch, snacks vs tickets,
+  theatre-pass check, over-budget warning, heatmap, people stats, rewatches, on this day, movie-night
+  dates in shared lists; **Movie corner** has the ranking game, quiz, ticket stubs, taste match and
+  Letterboxd / IMDb import (`lib/movieLab.js`, schema v13).
 - **Streaming check:** apps you pay for vs what you watched on them in 90 days (on Shows).
 - **Sunday summary** push, a "coming up" card on Home, CSV export from Search, more app-icon shortcuts.
 - **Cards, smarter:** reward % per category, points & expiry, annual-fee waiver progress, and

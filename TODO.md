@@ -63,9 +63,16 @@ Ordered by priority. Tick items off as they're fixed.
 - [x] Browser tests: `npm run e2e` (Playwright, Chromium at phone size, PGlite in place of Neon). Every page is
       opened and checked for errors; key flows are exercised end to end.
 
+## Movies batch (Nov 2026) — done
+- [x] Tonight, For you, watchlist ratings & sort, Friday releases, cheapest way, snacks, pass value, budget warning,
+      Letterboxd/IMDb import, ticket stubs, heatmap, people stats, rewatches, on this day, ranking game, movie-night
+      dates, taste match, quiz. Schema v13. Tests: `tests/movie-lab.test.js`.
+- [x] Daily/evening jobs read dates correctly (database Date objects used to become "Mon Nov 23" in the mappers).
+- [x] Movie data sources has its own Settings group.
+
 ## Open follow-ups
+- [ ] "Leaving soon" on streaming apps: no reliable free source.
 - [ ] Movie cards feel cramped next to the poster on narrow phones; consider moving edit/delete into a ⋯ menu.
-- [ ] Statement import reads CSV only; PDF statements need converting first.
 - [ ] `schema.sql` is out of date (stops before v4); regenerate it from `ensureTables()`.
 - [ ] Telugu / Hindi phase 2: translate the remaining screens (lib/i18n.js; strings are keyed by their English text).
 - [ ] Grocery list is per person; a list shared between people would need a shared table (like watch-together lists).
