@@ -6,7 +6,7 @@ const PAGES = [
   "/settings", "/pause", "/year", "/report", "/badges", "/wrapped", "/shared",
   "/accounts", "/networth", "/loans", "/trips", "/tax", "/import",
   "/habits", "/health", "/diet", "/renewals", "/vehicles", "/people",
-  "/medical", "/household", "/goals", "/wishlist", "/journal",
+  "/medical", "/household", "/goals", "/wishlist", "/journal", "/movie-corner",
 ];
 
 test("every page renders cleanly", async ({ page }) => {

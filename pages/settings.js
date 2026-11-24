@@ -623,6 +623,13 @@ export default function SettingsPage() {
 
       <PeopleSection />
 
+      <details className="settings-group" id="movie-sources">
+        <summary>🎬 Movie data sources</summary>
+        <div className="settings-body">
+          <MovieSources />
+        </div>
+      </details>
+
       <details className="settings-group">
         <summary>💾 Backup & restore</summary>
         <div className="settings-body">
@@ -639,7 +646,6 @@ export default function SettingsPage() {
 
       {/* Automatic weekly backups (kept on the server, last 4) */}
       <AutoBackups onRestored={load} />
-      <MovieSources />
 
       {/* Data restore */}
       <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "16px 18px", marginBottom: 16 }}>
